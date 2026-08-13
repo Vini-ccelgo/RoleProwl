@@ -27,6 +27,9 @@ model User {
   candidateDocuments       CandidateDocument[]
   documentExtractions      DocumentExtraction[]
   candidateFactProposals   CandidateFactProposal[]
+  candidateFacts           CandidateFact[]
+  generatedClaims          GeneratedClaim[]
+  claimEvidence            GeneratedClaimEvidence[]
 
   @@unique([authProvider, externalAuthId])
   @@index([email])
@@ -56,6 +59,13 @@ enum CandidateFactProposalStatus {
   ACCEPTED
   EDITED_AND_ACCEPTED
   REJECTED
+}
+
+enum GeneratedClaimClassification {
+  DIRECT_FACT
+  SUPPORTED_REWRITE
+  SUPPORTED_INFERENCE
+  UNSUPPORTED
 }
 
 model CandidateDocument {
@@ -108,15 +118,68 @@ model CandidateFactProposal {
   sourceRegion  Json
   confidence    Float?
   status        CandidateFactProposalStatus @default(PENDING)
+  acceptedValue Json?
+  canonicalType String?
+  canonicalId   String?
   reviewedAt    DateTime?
   createdAt     DateTime                    @default(now())
   updatedAt     DateTime                    @updatedAt
   user          User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
   document      CandidateDocument           @relation(fields: [documentId], references: [id], onDelete: Cascade)
   extraction    DocumentExtraction          @relation(fields: [extractionId], references: [id], onDelete: Cascade)
+  canonicalFact CandidateFact?
 
   @@index([userId, status])
   @@index([documentId])
+}
+
+model CandidateFact {
+  id                String                @id @default(cuid())
+  userId            String
+  factType          String
+  value             Json
+  verificationState VerificationState     @default(VERIFIED)
+  source            FactSource            @default(RESUME_EXTRACTED)
+  sourceProposalId  String                @unique
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceProposal    CandidateFactProposal @relation(fields: [sourceProposalId], references: [id], onDelete: Restrict)
+
+  @@index([userId, factType])
+}
+
+model GeneratedClaim {
+  id             String                       @id @default(cuid())
+  userId         String
+  text           String
+  classification GeneratedClaimClassification
+  generator      String
+  promptVersion  String
+  assertions     Json                         @default("[]")
+  verifiedAt     DateTime?
+  createdAt      DateTime                     @default(now())
+  updatedAt      DateTime                     @updatedAt
+  user           User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceEvidence GeneratedClaimEvidence[]
+
+  @@index([userId, classification])
+}
+
+model GeneratedClaimEvidence {
+  id               String         @id @default(cuid())
+  userId           String
+  claimId          String
+  evidenceType     String
+  evidenceId       String
+  evidenceField    String
+  evidenceSnapshot Json
+  createdAt        DateTime       @default(now())
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  claim            GeneratedClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@unique([claimId, evidenceType, evidenceId, evidenceField])
+  @@index([userId, evidenceType, evidenceId])
 }
 
 enum VerificationState {

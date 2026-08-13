@@ -30,3 +30,12 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** `20260813150000_add_resume_import`
 - **Known limitations:** OCR is intentionally unsupported. The local filesystem adapter is not production-ready and live authenticated uploads require the Clerk/PostgreSQL setup already recorded.
 - **Follow-up:** RP-005 will provide the explicit candidate review and canonicalization workflow for pending proposals.
+
+### RP-005 — Fact verification and claim provenance
+
+- **Status:** Pass
+- **Major implementation:** Candidate accept/edit-and-accept/reject review UI and API, transactional canonical-fact creation, retained proposal history, generated-claim and evidence graph models, deterministic claim classification and readiness guardrails.
+- **Tests:** Decision lifecycle, empty edits, repeated decisions, foreign proposal concealment, invented certification, changed employer, exaggerated duration, unsupported management/numeric claims, valid paraphrase, supported synthesis, and unsupported-readiness rejection.
+- **Migration:** `20260813180000_add_fact_verification`
+- **Known limitations:** Claim generation itself begins in later AI/application tickets; RP-005 supplies and validates the policy and persistence boundary those workflows must use.
+- **Follow-up:** Phase B begins with RP-006 canonical job ingestion.

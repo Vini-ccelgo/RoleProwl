@@ -1,5 +1,6 @@
 import { connection } from "next/server";
 import { ResumeImporter } from "@/components/candidate/resume-importer";
+import { FactProposalReview } from "@/components/candidate/fact-proposal-review";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
@@ -21,6 +22,17 @@ export default async function OnboardingPage() {
       _count: { select: { proposals: true } },
     },
   });
+  const proposals = await databaseClient().candidateFactProposal.findMany({
+    where: { userId: actor.id, status: "PENDING" },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      factType: true,
+      proposedValue: true,
+      sourceRegion: true,
+      confidence: true,
+    },
+  });
 
   return (
     <div className="grid gap-7">
@@ -34,6 +46,25 @@ export default async function OnboardingPage() {
           createdAt: createdAt.toISOString(),
           proposalCount: _count.proposals,
         }))}
+      />
+      <FactProposalReview
+        proposals={proposals.map((proposal) => {
+          const value = proposal.proposedValue as { text?: unknown };
+          const source = proposal.sourceRegion as { text?: unknown };
+          return {
+            id: proposal.id,
+            factType: proposal.factType,
+            confidence: proposal.confidence,
+            value:
+              typeof value.text === "string"
+                ? value.text
+                : JSON.stringify(value),
+            sourceText:
+              typeof source.text === "string"
+                ? source.text
+                : "Extracted document region",
+          };
+        })}
       />
     </div>
   );

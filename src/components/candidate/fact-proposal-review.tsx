@@ -1,0 +1,136 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Check, Pencil, X } from "lucide-react";
+
+interface ProposalSummary {
+  readonly confidence: number | null;
+  readonly factType: string;
+  readonly id: string;
+  readonly sourceText: string;
+  readonly value: string;
+}
+
+export function FactProposalReview({
+  proposals,
+}: {
+  proposals: ProposalSummary[];
+}) {
+  const router = useRouter();
+  const [busyId, setBusyId] = useState<string>();
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState<string>();
+
+  async function decide(
+    proposal: ProposalSummary,
+    decision: "ACCEPT" | "EDIT_AND_ACCEPT" | "REJECT",
+  ) {
+    setBusyId(proposal.id);
+    setMessage(undefined);
+    try {
+      const response = await fetch(
+        `/api/candidate/fact-proposals/${proposal.id}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            decision,
+            ...(decision === "EDIT_AND_ACCEPT"
+              ? { editedValue: { text: edits[proposal.id] ?? proposal.value } }
+              : {}),
+          }),
+        },
+      );
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Review failed.");
+      setMessage(
+        decision === "REJECT"
+          ? "Proposal rejected and retained in history."
+          : "Fact accepted into your verified Truth Vault.",
+      );
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Review failed.");
+    } finally {
+      setBusyId(undefined);
+    }
+  }
+
+  return (
+    <section className="grid gap-3" aria-labelledby="fact-review-title">
+      <div>
+        <h2 id="fact-review-title" className="text-lg font-semibold">
+          Review extracted facts
+        </h2>
+        <p className="mt-1 text-sm">
+          Accept, correct, or reject each suggestion. Only accepted values
+          become verified facts.
+        </p>
+      </div>
+      <p role="status" className="m-0 text-sm">
+        {message}
+      </p>
+      {proposals.length === 0 ? (
+        <div className="card p-6 text-sm text-foreground-muted">
+          No pending facts need review.
+        </div>
+      ) : (
+        proposals.map((proposal) => (
+          <article className="card grid gap-3 p-4" key={proposal.id}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <strong className="text-sm">
+                {proposal.factType.replaceAll("_", " ").toLowerCase()}
+              </strong>
+              <span className="badge">
+                {proposal.confidence == null
+                  ? "Unscored"
+                  : `${Math.round(proposal.confidence * 100)}% parser confidence`}
+              </span>
+            </div>
+            <label className="grid gap-1 text-xs font-medium">
+              Proposed value
+              <input
+                className="rounded-lg border border-border-default bg-white px-3 py-2 text-sm font-normal"
+                value={edits[proposal.id] ?? proposal.value}
+                onChange={(event) =>
+                  setEdits((current) => ({
+                    ...current,
+                    [proposal.id]: event.target.value,
+                  }))
+                }
+              />
+            </label>
+            <p className="m-0 text-xs">Source: “{proposal.sourceText}”</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="button button-primary"
+                type="button"
+                disabled={busyId === proposal.id}
+                onClick={() => decide(proposal, "ACCEPT")}
+              >
+                <Check size={16} aria-hidden="true" /> Accept original
+              </button>
+              <button
+                className="button button-secondary"
+                type="button"
+                disabled={busyId === proposal.id}
+                onClick={() => decide(proposal, "EDIT_AND_ACCEPT")}
+              >
+                <Pencil size={16} aria-hidden="true" /> Accept edited
+              </button>
+              <button
+                className="button button-ghost"
+                type="button"
+                disabled={busyId === proposal.id}
+                onClick={() => decide(proposal, "REJECT")}
+              >
+                <X size={16} aria-hidden="true" /> Reject
+              </button>
+            </div>
+          </article>
+        ))
+      )}
+    </section>
+  );
+}

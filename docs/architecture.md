@@ -43,3 +43,9 @@ Extracted text and source-line locations live in `DocumentExtraction` and `Candi
 ## Database
 
 Prisma 7 targets PostgreSQL via `prisma.config.ts`. The generated client has an explicit output directory, and `src/lib/db/client.ts` creates a server-only, lazy singleton using the PostgreSQL driver adapter. No candidate, job, or application schema is created in RP-001.
+
+## Verification and claim provenance
+
+RP-005 separates extracted proposals, user decisions, verified canonical facts, generated claims, and claim evidence. Accepting or editing a pending proposal transactionally creates a `CandidateFact` and records the canonical identifier on the proposal. Rejecting changes only the proposal status, so provenance history remains without influencing the candidate. Reviewed proposals cannot be decided twice and foreign identifiers remain concealed.
+
+Every generated claim carries a classification, generator identity, prompt version, structured assertions, and immutable evidence snapshots. Deterministic policy checks high-risk atoms such as employer names, credentials, durations, management scope, and numeric achievements against owned evidence. `UNSUPPORTED` and evidence-free claims are categorically ineligible for application readiness.
