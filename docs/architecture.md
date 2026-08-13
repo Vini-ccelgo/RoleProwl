@@ -53,3 +53,7 @@ Prisma 7 targets PostgreSQL via `prisma.config.ts`. The generated client has an 
 RP-005 separates extracted proposals, user decisions, verified canonical facts, generated claims, and claim evidence. Accepting or editing a pending proposal transactionally creates a `CandidateFact` and records the canonical identifier on the proposal. Rejecting changes only the proposal status, so provenance history remains without influencing the candidate. Reviewed proposals cannot be decided twice and foreign identifiers remain concealed.
 
 Every generated claim carries a classification, generator identity, prompt version, structured assertions, and immutable evidence snapshots. Deterministic policy checks high-risk atoms such as employer names, credentials, durations, management scope, and numeric achievements against owned evidence. `UNSUPPORTED` and evidence-free claims are categorically ineligible for application readiness.
+
+## Matching
+
+Matching v1 is deterministic and evidence-bearing. It evaluates hard constraints first, then qualification signals, then candidate preferences as a separate score. Exact normalized skill identities prevent substring matches such as Java/JavaScript, C/C++, React/React Native, and SQL/PostgreSQL. Duration and proficiency are evaluated only when explicit evidence exists. Unknown candidate or job data lowers confidence and appears as an unknown; it is never silently converted into false, zero, or a gap. Hard conflicts cap overall fit regardless of other scores.

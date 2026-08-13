@@ -77,3 +77,12 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** None; RP-006 source-association tables support this workflow.
 - **Known limitations:** Description similarity is a conservative token-overlap signal, not an embedding model; ambiguous openings remain separate.
 - **Follow-up:** RP-010 evaluates candidate qualification and preference with evidence-bearing deterministic layers.
+
+### RP-010 — Matching engine v1
+
+- **Status:** Pass
+- **Major implementation:** Deterministic hard-constraint, qualification, and preference layers; evidence-bearing strengths/partials/gaps/conflicts/unknowns; confidence calculation; hard-conflict fit cap; versioned scoring.
+- **Tests:** Highly suitable and clearly unsuitable fixtures, sponsorship conflict, unknown requirements, Java/JavaScript, C/C++, React/React Native, SQL/PostgreSQL, proficiency/duration non-inference, sparse descriptions, and contradictory requirements.
+- **Migration:** None; RP-011 persists candidate-facing analyses.
+- **Known limitations:** V1 intentionally uses explicit normalized facts and requirements; semantic comparison remains a separately governed AI task.
+- **Follow-up:** RP-011 stores and displays the evidence behind every score.
