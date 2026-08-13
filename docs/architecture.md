@@ -34,6 +34,8 @@ Skills use a canonical normalized name per user while preserving display spellin
 
 Each future job/application source implements a narrow contract and advertises a `SourceCapabilitySet`. Use cases check capabilities rather than provider names. This lets RoleProwl distinguish read-only sources, schema-aware sources, supported submission paths, partner authentication, and required user interaction without placing ATS-specific branches throughout the app.
 
+Canonical jobs are separate from `JobSourceRecord`. A canonical opportunity may retain multiple source associations without discarding raw source payloads or pretending source-specific identifiers are global. Nullable scalar/JSON fields preserve the difference between “not specified” and explicit false, zero, or empty values. Content hashes track material revisions while first-seen, last-seen, last-verified, expiry, and status timestamps support refresh and staleness policy.
+
 ## Résumé import boundary
 
 RP-004 accepts only signature-checked, size-limited PDF and DOCX uploads. The original bytes are stored behind `ObjectStorageProvider` under a randomized private key; the API exposes document metadata, never a public object URL. `unpdf` handles machine-readable PDF text and Mammoth handles DOCX raw text. Encrypted, malformed, scanned, or text-empty documents produce the explicit `EXTRACTION_UNSUPPORTED` state because OCR is outside the alpha scope.

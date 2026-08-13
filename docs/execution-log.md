@@ -39,3 +39,14 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** `20260813180000_add_fact_verification`
 - **Known limitations:** Claim generation itself begins in later AI/application tickets; RP-005 supplies and validates the policy and persistence boundary those workflows must use.
 - **Follow-up:** Phase B begins with RP-006 canonical job ingestion.
+
+## Phase B — Jobs and matching
+
+### RP-006 — Canonical job model
+
+- **Status:** Pass
+- **Major implementation:** Source-neutral canonical job, distinct source records, nullable unknown fields, compensation/location/authorization structures, source/raw metadata retention, lifecycle timestamps/status, and content hashing.
+- **Tests:** Sparse/unknown source fields, stable identity normalization, material content changes, and contradictory salary bounds.
+- **Migration:** `20260813200000_add_canonical_jobs`
+- **Known limitations:** Discovery adapters and cross-source deduplication are deliberately implemented by RP-007 through RP-009 rather than embedded in persistence models.
+- **Follow-up:** RP-007 adds capability-advertising, failure-isolated adapter orchestration.

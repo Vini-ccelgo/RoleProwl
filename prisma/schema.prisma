@@ -35,6 +35,80 @@ model User {
   @@index([email])
 }
 
+enum JobStatus {
+  ACTIVE
+  STALE
+  EXPIRED
+  CLOSED
+}
+
+enum JobRemoteType {
+  ONSITE
+  HYBRID
+  REMOTE
+}
+
+model Job {
+  id                      String            @id @default(cuid())
+  canonicalApplicationUrl String?
+  company                 String
+  normalizedCompany       String
+  title                   String
+  normalizedTitle         String
+  description             String?
+  locations               Json?
+  remoteType              JobRemoteType?
+  employmentType          String?
+  seniority               String?
+  salaryMin               Decimal?
+  salaryMax               Decimal?
+  salaryCurrency          String?
+  salaryInterval          String?
+  requirements            Json?
+  preferredRequirements   Json?
+  skills                  Json?
+  educationRequirements   Json?
+  experienceRequirements  Json?
+  workAuthorization       Json?
+  sponsorship             Json?
+  postedAt                DateTime?
+  expiresAt               DateTime?
+  contentHash             String
+  firstSeenAt             DateTime          @default(now())
+  lastSeenAt              DateTime          @default(now())
+  lastVerifiedAt          DateTime?
+  status                  JobStatus         @default(ACTIVE)
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+  sourceRecords           JobSourceRecord[]
+
+  @@index([normalizedCompany, normalizedTitle])
+  @@index([status, lastSeenAt])
+  @@index([contentHash])
+}
+
+model JobSourceRecord {
+  id             String    @id @default(cuid())
+  jobId          String
+  source         String
+  externalId     String
+  sourceUrl      String?
+  applicationUrl String?
+  sourceMetadata Json?
+  rawPayload     Json
+  contentHash    String
+  firstSeenAt    DateTime  @default(now())
+  lastSeenAt     DateTime  @default(now())
+  lastVerifiedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  job            Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([source, externalId])
+  @@index([jobId])
+  @@index([applicationUrl])
+}
+
 enum CandidateDocumentFormat {
   PDF
   DOCX
