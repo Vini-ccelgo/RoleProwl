@@ -81,3 +81,7 @@ RP-016 maps semantically equivalent application wording to a bounded set of cano
 ## Answer authority
 
 RP-017 is a pure deterministic boundary after classification. Sensitive questions always use `NO_INFERENCE` and require review, even if an answer exists. Consequential questions auto-answer only from a fresh memory explicitly sourced as consequential. Attestations always require direct user review. Unknown questions fail closed, narrative questions may only prepare a draft, and ordinary canonical answers must be fresh and explicitly auto-answerable.
+
+## Candidate application policy
+
+RP-018 stores candidate-defined authority separately from preferences and evaluates it as a pure versioned function. Hard exclusions reject; unknown salary, location, role, work mode, or employment type require review rather than being treated as false. Sensitive questions, unsupported claims, daily limits, source submission capability, and explicit submission authorization are evaluated before autonomy. `ELIGIBLE_FOR_SUBMISSION` is only a policy result and does not execute an application.

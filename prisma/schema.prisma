@@ -35,6 +35,7 @@ model User {
   resumeVersions           ResumeVersion[]
   writingArtifacts         ApplicationWritingArtifact[]
   answerMemories           AnswerMemory[]
+  applicationPolicy        ApplicationPolicy?
 
   @@unique([authProvider, externalAuthId])
   @@index([email])
@@ -405,6 +406,31 @@ model AnswerMemory {
 
   @@unique([userId, concept])
   @@index([userId, verifiedAt])
+}
+
+enum ApplicationAutonomyLevel {
+  RECOMMEND_ONLY
+  AUTO_PREPARE
+  AUTO_SUBMIT_AUTHORIZED
+}
+
+model ApplicationPolicy {
+  id                          String                   @id @default(cuid())
+  userId                      String                   @unique
+  allowedRoleFamilies         String[]                 @default([])
+  minimumOverallFit           Int                      @default(70)
+  excludedSeniorities         String[]                 @default([])
+  salaryMinimum               Int?
+  allowedLocations            String[]                 @default([])
+  requireRemote               Boolean                  @default(false)
+  allowedEmploymentTypes      String[]                 @default([])
+  rejectAuthorizationConflict Boolean                  @default(true)
+  companyBlacklist            String[]                 @default([])
+  dailyApplicationLimit       Int                      @default(10)
+  autonomyLevel               ApplicationAutonomyLevel @default(RECOMMEND_ONLY)
+  createdAt                   DateTime                 @default(now())
+  updatedAt                   DateTime                 @updatedAt
+  user                        User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model GeneratedClaimEvidence {

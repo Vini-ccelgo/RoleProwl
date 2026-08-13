@@ -157,3 +157,14 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Status:** Pass (noncredential-dependent)
 - **Dataset:** 12 reusable cases covering fabricated degree, fabricated certification, ambiguous experience, valid paraphrase, salary, sponsorship, demographics, attestation, motivation, unsupported skill, conflicting résumé dates, and contradictory job requirements.
 - **Result:** Structural schemas and deterministic safety invariants pass with the mandatory mocked provider. Live OpenAI evaluation is deferred until credentials are supplied; no production rule is weakened by that absence.
+
+## Phase D — Agent authority
+
+### RP-018 — Application policy engine
+
+- **Status:** Pass
+- **Major implementation:** Persisted candidate policy for role, fit, seniority, salary, location, remote requirement, employment type, authorization, company blacklist, daily limit, and autonomy; versioned deterministic evaluation; explicit reject/recommend/prepare/review/eligibility outputs; reason codes; and unknown-data review semantics.
+- **Tests:** Authorized eligibility, authorization conflict, salary floor/unknown, weak fit, company/seniority/role/employment/location/remote exclusions, unknown job fields, sensitive questions, unsupported claims, daily limit, source capability, missing submission authorization, autonomy levels, configuration bounds, and deterministic replay.
+- **Migration:** `20260814040000_add_application_policy`
+- **Known limitations:** The policy is persisted and enforced in the domain; the candidate-facing settings editor is completed with the real-settings page work in Phase F.
+- **Follow-up:** RP-019 creates the auditable human review queue for cases that policy cannot safely resolve.
