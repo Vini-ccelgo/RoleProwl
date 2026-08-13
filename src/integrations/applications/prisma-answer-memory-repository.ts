@@ -8,29 +8,45 @@ export class PrismaAnswerMemoryRepository implements AnswerMemoryRepository {
     const questionExamples = input.normalizedQuestionExample
       ? [input.normalizedQuestionExample]
       : [];
-    return databaseClient().answerMemory.upsert({
-      where: {
-        userId_concept: { userId: input.userId, concept: input.concept },
-      },
-      create: {
-        userId: input.userId,
-        concept: input.concept,
-        answer: input.answer as Prisma.InputJsonObject,
-        source: input.source,
-        verifiedAt: input.verifiedAt,
-        reverifyAfterDays: input.reverifyAfterDays,
-        autoAnswerAllowed: input.autoAnswerAllowed,
-        normalizedQuestionExamples: questionExamples,
-      },
-      update: {
-        answer: input.answer as Prisma.InputJsonObject,
-        source: input.source,
-        verifiedAt: input.verifiedAt,
-        reverifyAfterDays: input.reverifyAfterDays,
-        autoAnswerAllowed: input.autoAnswerAllowed,
-        normalizedQuestionExamples: { push: questionExamples },
-      },
-      select: { id: true },
+    return databaseClient().$transaction(async (transaction) => {
+      const memory = await transaction.answerMemory.upsert({
+        where: {
+          userId_concept: { userId: input.userId, concept: input.concept },
+        },
+        create: {
+          userId: input.userId,
+          concept: input.concept,
+          answer: input.answer as Prisma.InputJsonObject,
+          source: input.source,
+          verifiedAt: input.verifiedAt,
+          reverifyAfterDays: input.reverifyAfterDays,
+          autoAnswerAllowed: input.autoAnswerAllowed,
+          normalizedQuestionExamples: questionExamples,
+        },
+        update: {
+          answer: input.answer as Prisma.InputJsonObject,
+          source: input.source,
+          verifiedAt: input.verifiedAt,
+          reverifyAfterDays: input.reverifyAfterDays,
+          autoAnswerAllowed: input.autoAnswerAllowed,
+          normalizedQuestionExamples: { push: questionExamples },
+        },
+        select: { id: true },
+      });
+      await transaction.auditEvent.create({
+        data: {
+          actorUserId: input.userId,
+          action: "QUESTION_ANSWERED",
+          entityType: "answerMemory",
+          entityId: memory.id,
+          metadata: {
+            concept: input.concept,
+            source: input.source,
+            autoAnswerAllowed: input.autoAnswerAllowed,
+          },
+        },
+      });
+      return memory;
     });
   }
 }

@@ -80,6 +80,24 @@ export async function PATCH(
       });
       if (updated.count !== 1)
         throw new ConflictError("This proposal has already been reviewed.");
+      await transaction.auditEvent.create({
+        data: {
+          actorUserId: actor.id,
+          action:
+            body.decision === "EDIT_AND_ACCEPT"
+              ? "CANDIDATE_FACT_CHANGED"
+              : "CANDIDATE_FACT_VERIFIED",
+          entityType: "candidateFact",
+          entityId: fact.id,
+          metadata:
+            body.decision === "EDIT_AND_ACCEPT"
+              ? {
+                  factType: proposal!.factType,
+                  changedFields: Object.keys(body.editedValue ?? {}),
+                }
+              : { factType: proposal!.factType, source: "RESUME_EXTRACTED" },
+        },
+      });
       return { status: decision.status, canonicalFactId: fact.id };
     });
 

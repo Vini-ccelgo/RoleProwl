@@ -47,6 +47,18 @@ export const applicationWorkflowFunction = inngest.createFunction(
           },
           update: {},
         });
+        await transaction.auditEvent.create({
+          data: {
+            actorUserId: run.userId,
+            action: "SUBMISSION_FAILED",
+            entityType: "applicationWorkflowRun",
+            entityId: workflowRunId,
+            metadata: {
+              failureCode: "RETRIES_EXHAUSTED",
+              retryable: false,
+            },
+          },
+        });
       });
     },
   },

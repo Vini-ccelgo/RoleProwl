@@ -149,6 +149,18 @@ export class PrismaApplicationSubmissionRepository implements ApplicationSubmiss
         },
         update: {},
       });
+      await transaction.auditEvent.create({
+        data: {
+          actorUserId: current.userId,
+          action: "APPLICATION_SUBMITTED",
+          entityType: "application",
+          entityId: applicationId,
+          metadata: json({
+            mechanism: application.submissionMechanism,
+            confirmation,
+          }),
+        },
+      });
       return recordFrom(application);
     });
   }

@@ -43,6 +43,7 @@ model User {
   applications             Application[]
   applicationEvents        ApplicationEvent[]
   notifications            Notification[]
+  auditEvents              AuditEvent[]
 
   @@unique([authProvider, externalAuthId])
   @@index([email])
@@ -646,6 +647,35 @@ model Notification {
 
   @@unique([userId, dedupeKey])
   @@index([userId, readAt, createdAt])
+}
+
+enum AuditAction {
+  CANDIDATE_FACT_VERIFIED
+  CANDIDATE_FACT_CHANGED
+  POLICY_CHANGED
+  APPLICATION_GENERATED
+  CLAIM_BLOCKED
+  QUESTION_ANSWERED
+  REVIEW_APPROVED
+  APPLICATION_SUBMITTED
+  SUBMISSION_FAILED
+  STATUS_CHANGED
+  ACCOUNT_EXPORT_REQUESTED
+  ACCOUNT_DELETION_REQUESTED
+}
+
+model AuditEvent {
+  id          String      @id @default(cuid())
+  actorUserId String?
+  action      AuditAction
+  entityType  String
+  entityId    String
+  metadata    Json
+  createdAt   DateTime    @default(now())
+  actor       User?       @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt])
+  @@index([entityType, entityId, createdAt])
 }
 
 model ReviewQueueAuditEvent {

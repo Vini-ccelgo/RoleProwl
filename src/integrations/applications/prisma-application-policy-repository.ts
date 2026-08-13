@@ -14,9 +14,29 @@ export async function upsertApplicationPolicy(
   untrusted: unknown,
 ) {
   const value = applicationPolicySchema.parse(untrusted);
-  return databaseClient().applicationPolicy.upsert({
-    where: { userId },
-    create: { userId, ...value },
-    update: value,
+  return databaseClient().$transaction(async (transaction) => {
+    const previous = await transaction.applicationPolicy.findUnique({
+      where: { userId },
+    });
+    const policy = await transaction.applicationPolicy.upsert({
+      where: { userId },
+      create: { userId, ...value },
+      update: value,
+    });
+    const changedFields = Object.keys(value).filter(
+      (key) =>
+        JSON.stringify(previous?.[key as keyof typeof previous]) !==
+        JSON.stringify(value[key as keyof typeof value]),
+    );
+    await transaction.auditEvent.create({
+      data: {
+        actorUserId: userId,
+        action: "POLICY_CHANGED",
+        entityType: "applicationPolicy",
+        entityId: policy.id,
+        metadata: { policyVersion: "application-policy-v1", changedFields },
+      },
+    });
+    return policy;
   });
 }

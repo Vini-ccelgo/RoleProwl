@@ -258,3 +258,12 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **External setup:** None. Email and SMS delivery are intentionally outside the alpha.
 - **Known limitations:** Notifications are in-product only and are retained with the account until RP-028 deletion.
 - **Follow-up:** RP-027 unifies consequential behavior in a safe audit-event model.
+
+### RP-027 — Audit history
+
+- **Status:** Pass
+- **Major implementation:** Typed audit action vocabulary; provider boundary; append-only event table; per-action safe-metadata allowlists; settings history UI; and transactional audit writes at fact, policy, answer, review, submission, workflow-failure, and application-state boundaries.
+- **Tests:** Unknown/nested sensitive metadata removal, allowed metadata preservation, required entity identity, strict repository typing, and production route compilation.
+- **Migration:** `20260814100000_add_audit_events` creates actor/action/entity/timestamp/safe-metadata records.
+- **Known limitations:** Audit records intentionally do not reproduce sensitive content. The application detail remains the owner-authorized source for exact sent materials.
+- **Follow-up:** RP-028 implements portable account export and controlled deletion with explicit external-data limits.

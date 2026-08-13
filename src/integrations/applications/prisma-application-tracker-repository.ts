@@ -43,6 +43,15 @@ export class PrismaApplicationTrackerRepository implements ApplicationTrackerRep
           detail: input.detail ? json(input.detail) : undefined,
         },
       });
+      await transaction.auditEvent.create({
+        data: {
+          actorUserId: input.userId,
+          action: "STATUS_CHANGED",
+          entityType: "application",
+          entityId: input.applicationId,
+          metadata: json({ fromState: input.from, toState: input.to }),
+        },
+      });
     });
   }
 }

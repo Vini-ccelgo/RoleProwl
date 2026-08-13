@@ -112,6 +112,16 @@ export async function mutateReviewQueueItem(input: {
         note: mutation.audit.note,
       },
     });
+    if (input.action === "APPROVED")
+      await transaction.auditEvent.create({
+        data: {
+          actorUserId: input.userId,
+          action: "REVIEW_APPROVED",
+          entityType: "reviewQueueItem",
+          entityId: item.id,
+          metadata: json({ reasonCodes: item.reasonCodes }),
+        },
+      });
     return mutation.update;
   });
 }

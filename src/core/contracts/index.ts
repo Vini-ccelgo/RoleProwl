@@ -1,4 +1,5 @@
 export * from "./ai-provider";
+export * from "./audit-recorder";
 export * from "./application-adapter";
 export * from "./auth-provider";
 export * from "./job-source-adapter";

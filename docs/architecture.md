@@ -121,3 +121,7 @@ RP-025 replaces the authenticated dashboard placeholder with owner-scoped databa
 ## Internal notifications
 
 RP-026 uses a provider-neutral `NotificationProvider` with PostgreSQL as the alpha delivery channel. Notifications are owner-scoped, bounded, deduplicated by user and causal event, and support read/unread state. Review creation, unresolved questions, exhausted workflow retries, confirmed submissions, and explicit job-unavailable transitions generate durable notifications at their existing transaction or use-case boundary. The authenticated shell displays an unread count and `/notifications` is the inbox. No email address, phone number, external messaging vendor, or behavioral tracking is required.
+
+## Consequential audit history
+
+RP-027 adds a separate append-only audit stream for candidate fact verification/change, policy changes, application generation and submission, blocked claims, answered questions, approvals, failures, state changes, and future export/deletion requests. A per-action metadata allowlist strips unknown keys and nested content before persistence; audit records contain actor, action, entity reference, timestamp, and only bounded scalar/array metadata. They never copy candidate answers, generated prose, résumé content, tokens, or credentials. User-attributed events are visible in Settings; deletion policy is defined in RP-028.
