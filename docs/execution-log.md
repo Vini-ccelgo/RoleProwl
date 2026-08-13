@@ -142,3 +142,18 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** `20260814030000_add_answer_memory`
 - **Known limitations:** The initial concept catalog is intentionally bounded and English-first. New concepts require an explicit domain addition instead of silently creating labels from model output.
 - **Follow-up:** RP-017 applies hard answer-authority rules to sensitive, consequential, attestation, and stale-memory cases.
+
+### RP-017 — Sensitive and consequential question handling
+
+- **Status:** Pass
+- **Major implementation:** Deterministic answer-authority decisions with separate handling/disposition, sensitive-data `NO_INFERENCE`, explicit fresh source requirement for consequential answers, non-automatable attestations, stale-memory blocking, unknown fail-closed behavior, and review-only narrative drafts.
+- **Tests:** Sensitive missing/present answers, explicit/stale/wrong-source consequential answers, attestations, narrative drafts, stale ordinary memories, unknown questions, and the full reusable Phase C adversarial evaluation dataset.
+- **Migration:** None.
+- **Known limitations:** Sensitive answers are intentionally review-only in the alpha even when explicitly stored. This is stricter than the minimum no-inference rule.
+- **Follow-up:** Phase D begins with candidate-defined deterministic application authority.
+
+### Phase C AI evaluation gate
+
+- **Status:** Pass (noncredential-dependent)
+- **Dataset:** 12 reusable cases covering fabricated degree, fabricated certification, ambiguous experience, valid paraphrase, salary, sponsorship, demographics, attestation, motivation, unsupported skill, conflicting résumé dates, and contradictory job requirements.
+- **Result:** Structural schemas and deterministic safety invariants pass with the mandatory mocked provider. Live OpenAI evaluation is deferred until credentials are supplied; no production rule is weakened by that absence.

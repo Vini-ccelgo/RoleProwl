@@ -49,7 +49,7 @@ const RULES: readonly Rule[] = [
     classification: "USER_POLICY",
     code: "CANDIDATE_PREFERENCE_OR_POLICY",
     pattern:
-      /\b(desired salary|salary expectation|compensation expectation|willing to relocate|relocation|travel.{0,20}(?:percent|%)|available to start|start date|notice period|remote work|onsite|hybrid schedule|shift preference)\b/iu,
+      /\b(desired salary|salary expectations?|compensation expectations?|willing to relocate|relocation|travel.{0,20}(?:percent|%)|available to start|start date|notice period|remote work|onsite|hybrid schedule|shift preference)\b/iu,
   },
   {
     classification: "COMPUTABLE_FACT",

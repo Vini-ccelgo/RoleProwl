@@ -77,3 +77,7 @@ RP-015 classifies application questions before selecting an answer path. Ordered
 ## Answer memory
 
 RP-016 maps semantically equivalent application wording to a bounded set of canonical concepts; it does not use exact-question equality as identity. Each user-owned memory retains structured answer data, its source, verification timestamp, explicit auto-answer permission, example wording, and a concept-specific re-verification interval. Freshness is deterministic. An expired or permission-disabled memory remains available for review but cannot auto-answer.
+
+## Answer authority
+
+RP-017 is a pure deterministic boundary after classification. Sensitive questions always use `NO_INFERENCE` and require review, even if an answer exists. Consequential questions auto-answer only from a fresh memory explicitly sourced as consequential. Attestations always require direct user review. Unknown questions fail closed, narrative questions may only prepare a draft, and ordinary canonical answers must be fresh and explicitly auto-answerable.
