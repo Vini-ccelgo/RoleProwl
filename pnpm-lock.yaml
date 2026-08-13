@@ -16,6 +16,9 @@ importers:
       "@prisma/client":
         specifier: 7.0.0
         version: 7.0.0(prisma@7.0.0(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3))(typescript@5.9.3)
+      docx:
+        specifier: ^9.7.1
+        version: 9.7.1
       dotenv:
         specifier: ^17.0.0
         version: 17.4.2
@@ -68,9 +71,6 @@ importers:
       "@types/react-dom":
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.14)
-      docx:
-        specifier: ^9.7.1
-        version: 9.7.1
       eslint:
         specifier: ^9.0.0
         version: 9.39.5(jiti@2.7.0)

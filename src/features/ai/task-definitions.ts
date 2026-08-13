@@ -15,6 +15,18 @@ const generatedClaim = z.object({
     "SUPPORTED_INFERENCE",
     "UNSUPPORTED",
   ]),
+  assertions: z.array(
+    z.object({
+      kind: z.enum([
+        "EMPLOYER_NAME",
+        "CREDENTIAL_NAME",
+        "DURATION_MONTHS",
+        "MANAGEMENT_SCOPE",
+        "NUMERIC_ACHIEVEMENT",
+      ]),
+      value: z.string(),
+    }),
+  ),
   sourceEvidence: z.array(evidenceReference),
 });
 

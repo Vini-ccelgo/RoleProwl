@@ -20,7 +20,7 @@ describe("DeterministicAIProvider", () => {
       data: { answer: "fixture" },
       metadata: {
         correlationId: "corr-test-1",
-        model: "deterministic-test-double",
+        model: "deterministic-test-provider",
         promptVersion: "test-v1",
         providerRequestId: null,
         task: "FREE_TEXT_APPLICATION_GENERATION",

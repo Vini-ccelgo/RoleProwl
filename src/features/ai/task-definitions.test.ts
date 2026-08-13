@@ -30,6 +30,7 @@ describe("AI task definitions", () => {
         {
           text: "Built systems",
           classification: "DIRECT_FACT",
+          assertions: [],
           sourceEvidence: [
             {
               evidenceType: "fact",

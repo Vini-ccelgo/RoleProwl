@@ -59,3 +59,9 @@ Every generated claim carries a classification, generator identity, prompt versi
 ## Matching
 
 Matching v1 is deterministic and evidence-bearing. It evaluates hard constraints first, then qualification signals, then candidate preferences as a separate score. Exact normalized skill identities prevent substring matches such as Java/JavaScript, C/C++, React/React Native, and SQL/PostgreSQL. Duration and proficiency are evaluated only when explicit evidence exists. Unknown candidate or job data lowers confidence and appears as an unknown; it is never silently converted into false, zero, or a gap. Hard conflicts cap overall fit regardless of other scores.
+
+## Tailored résumé pipeline
+
+RP-013 selects a bounded subset of candidate evidence using deterministic target-job overlap, then sends only that evidence and target job to the dedicated structured AI task. A generated résumé cannot be rendered unless every non-empty headline, summary, and bullet has a matching claim; every claim cites known input evidence; and the RP-005 deterministic assertion policy accepts high-risk employer, credential, duration, management, and numeric atoms. Unsupported or unknown-evidence claims fail the entire operation before storage.
+
+Accepted content and its immutable claim/evidence graph are stored in `ResumeVersion`, versioned by prompt and document template. The server-side DOCX renderer is intentionally plain and replaceable. Rendered files use private randomized storage keys while user-facing filenames are sanitized from the target role and company.

@@ -3,6 +3,7 @@ import type {
   StructuredAIRequest,
   StructuredAIResult,
 } from "@/core/contracts/ai-provider";
+import { AIInvalidOutputError } from "@/core/errors/application-errors";
 
 export class DeterministicAIProvider implements AIProvider {
   constructor(
@@ -14,8 +15,15 @@ export class DeterministicAIProvider implements AIProvider {
   async generateStructured<T>(
     request: StructuredAIRequest<T>,
   ): Promise<StructuredAIResult<T>> {
+    const parsed = request.schema.safeParse(this.resolve(request));
+    if (!parsed.success) {
+      throw new AIInvalidOutputError(
+        "The deterministic AI fixture violated the requested schema.",
+        parsed.error,
+      );
+    }
     return {
-      data: request.schema.parse(this.resolve(request)),
+      data: parsed.data,
       metadata: {
         correlationId: request.correlationId,
         task: request.task,

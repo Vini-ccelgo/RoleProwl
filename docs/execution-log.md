@@ -106,3 +106,12 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **External setup:** Live tasks require `OPENAI_API_KEY`; model and operational overrides are consolidated in `docs/setup-required.md` and `.env.example`.
 - **Known limitations:** RP-012 establishes the governed boundary only. Ticket-specific evidence selection, claim persistence, document rendering, and application behavior are implemented in RP-013 onward.
 - **Follow-up:** RP-013 composes evidence-grounded résumé generation on this boundary.
+
+### RP-013 — Tailored résumé engine
+
+- **Status:** Pass
+- **Major implementation:** Deterministic target-evidence selection, dedicated structured résumé generation, complete statement-to-claim coverage, known-evidence resolution, RP-005 high-risk assertion validation, persistent versioned résumé/claim graph, randomized private object key, safe attachment filename, and maintainable server-side DOCX renderer.
+- **Tests:** Relevance ordering, successful full pipeline, rendered/stored/persisted output, invented employer rejection, uncovered statement rejection, deterministic fixture schema rejection, valid DOCX ZIP signature, and text round-trip extraction.
+- **Migration:** `20260814010000_add_resume_versions`
+- **Known limitations:** The alpha template prioritizes stable document structure over visual customization. Live generation and persistence require the OpenAI, PostgreSQL, and private-storage setup already recorded.
+- **Follow-up:** RP-014 generalizes the same evidence and claim guarantees for cover letters and application free text.

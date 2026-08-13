@@ -32,6 +32,7 @@ model User {
   claimEvidence            GeneratedClaimEvidence[]
   jobMatchAnalyses         JobMatchAnalysis[]
   matchFeedback            MatchFeedback[]
+  resumeVersions           ResumeVersion[]
 
   @@unique([authProvider, externalAuthId])
   @@index([email])
@@ -84,6 +85,7 @@ model Job {
   updatedAt               DateTime           @updatedAt
   sourceRecords           JobSourceRecord[]
   matchAnalyses           JobMatchAnalysis[]
+  resumeVersions          ResumeVersion[]
 
   @@index([normalizedCompany, normalizedTitle])
   @@index([status, lastSeenAt])
@@ -305,8 +307,39 @@ model GeneratedClaim {
   updatedAt      DateTime                     @updatedAt
   user           User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
   sourceEvidence GeneratedClaimEvidence[]
+  resumeVersions ResumeVersionClaim[]
 
   @@index([userId, classification])
+}
+
+model ResumeVersion {
+  id                  String               @id @default(cuid())
+  userId              String
+  targetJobId         String
+  content             Json
+  templateVersion     String
+  generator           String
+  promptVersion       String
+  renderedStorageKey  String               @unique
+  renderedFileName    String
+  renderedContentType String
+  generatedAt         DateTime             @default(now())
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetJob           Job                  @relation(fields: [targetJobId], references: [id], onDelete: Cascade)
+  claims              ResumeVersionClaim[]
+
+  @@index([userId, generatedAt])
+  @@index([targetJobId])
+}
+
+model ResumeVersionClaim {
+  resumeVersionId String
+  claimId         String
+  resumeVersion   ResumeVersion  @relation(fields: [resumeVersionId], references: [id], onDelete: Cascade)
+  claim           GeneratedClaim @relation(fields: [claimId], references: [id], onDelete: Restrict)
+
+  @@id([resumeVersionId, claimId])
+  @@index([claimId])
 }
 
 model GeneratedClaimEvidence {
