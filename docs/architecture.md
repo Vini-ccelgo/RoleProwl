@@ -101,3 +101,9 @@ RP-021 retains durable application state in PostgreSQL and uses `WorkflowProvide
 ## Integration capability registry
 
 RP-022 centralizes source permissions in one typed registry. Greenhouse and Lever public listings advertise read access and partner-auth requirements, but never submission without explicit legitimate authorization. LinkedIn and Indeed are permanently represented as prohibited automation/manual-external sources in the alpha, so a configuration flag cannot accidentally enable them. Business decisions receive their capability input through a registry resolver rather than provider-name conditionals.
+
+## Application submission boundary
+
+RP-023 makes application adapters a discriminated union. Only an `AUTHORIZED_API` adapter exposes `submit` and `verifySubmission`; external/manual adapters can resolve a destination but cannot impersonate an API submission path. Execution rechecks the resolved registry capability, exact source identity, and advertised `SUBMIT_APPLICATION` capability before invoking an adapter.
+
+Every attempt first persists an immutable payload snapshot containing the exact résumé reference, private document references, generated text, and answers. External/manual paths stop at `READY` with a validated HTTPS employer/ATS destination. They reach `SUBMITTED` only through explicit candidate confirmation. Authorized adapters must return and verify a receipt. Application and event records retain the mechanism and state change so RP-024 can answer what was prepared and sent.

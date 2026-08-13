@@ -40,6 +40,8 @@ model User {
   reviewQueueAuditEvents   ReviewQueueAuditEvent[]
   applicationDecisions     ApplicationDecision[]
   applicationWorkflowRuns  ApplicationWorkflowRun[]
+  applications             Application[]
+  applicationEvents        ApplicationEvent[]
 
   @@unique([authProvider, externalAuthId])
   @@index([email])
@@ -97,6 +99,7 @@ model Job {
   reviewQueueItems        ReviewQueueItem[]
   applicationDecisions    ApplicationDecision[]
   applicationWorkflowRuns ApplicationWorkflowRun[]
+  applications            Application[]
 
   @@index([normalizedCompany, normalizedTitle])
   @@index([status, lastSeenAt])
@@ -338,6 +341,7 @@ model ResumeVersion {
   generatedAt         DateTime             @default(now())
   user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   targetJob           Job                  @relation(fields: [targetJobId], references: [id], onDelete: Cascade)
+  applications        Application[]
   claims              ResumeVersionClaim[]
 
   @@index([userId, generatedAt])
@@ -496,6 +500,7 @@ model ApplicationDecision {
   job             Job                      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   reviewQueueItem ReviewQueueItem?
   workflowRuns    ApplicationWorkflowRun[]
+  applications    Application[]
 
   @@unique([userId, jobId, inputHash, decisionVersion])
   @@index([userId, createdAt])
@@ -529,9 +534,92 @@ model ApplicationWorkflowRun {
   user           User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   job            Job                       @relation(fields: [jobId], references: [id], onDelete: Cascade)
   decision       ApplicationDecision       @relation(fields: [decisionId], references: [id], onDelete: Restrict)
+  application    Application?
 
   @@index([userId, status, createdAt])
   @@index([decisionId])
+}
+
+enum ApplicationState {
+  DISCOVERED
+  SHORTLISTED
+  PREPARING
+  NEEDS_REVIEW
+  READY
+  SUBMITTING
+  SUBMITTED
+  RESPONSE
+  INTERVIEW
+  REJECTED
+  WITHDRAWN
+  OFFER
+  CLOSED
+  FAILED
+}
+
+enum SubmissionMechanism {
+  AUTHORIZED_API
+  EXTERNAL_APPLICATION
+  MANUAL_EXTERNAL
+  UNSUPPORTED
+}
+
+enum ApplicationEventType {
+  PREPARED
+  READY_FOR_EXTERNAL_SUBMISSION
+  SUBMISSION_STARTED
+  SUBMISSION_CONFIRMED
+  SUBMISSION_FAILED
+  STATE_CHANGED
+}
+
+model Application {
+  id                        String                  @id @default(cuid())
+  userId                    String
+  jobId                     String
+  decisionId                String?
+  workflowRunId             String?                 @unique
+  resumeVersionId           String?
+  state                     ApplicationState        @default(PREPARING)
+  fitSnapshot               Json
+  generatedTextSnapshot     Json
+  answersSnapshot           Json
+  documentsSnapshot         Json
+  policyResultSnapshot      Json
+  submissionPayloadSnapshot Json
+  submissionMechanism       SubmissionMechanism
+  submissionDestination     String?
+  externalSubmissionId      String?
+  submittedAt               DateTime?
+  externalConfirmedAt       DateTime?
+  createdAt                 DateTime                @default(now())
+  updatedAt                 DateTime                @updatedAt
+  user                      User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job                       Job                     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  decision                  ApplicationDecision?    @relation(fields: [decisionId], references: [id], onDelete: SetNull)
+  workflowRun               ApplicationWorkflowRun? @relation(fields: [workflowRunId], references: [id], onDelete: SetNull)
+  resumeVersion             ResumeVersion?          @relation(fields: [resumeVersionId], references: [id], onDelete: SetNull)
+  events                    ApplicationEvent[]
+
+  @@index([userId, state, updatedAt])
+  @@index([jobId])
+  @@index([decisionId])
+}
+
+model ApplicationEvent {
+  id            String               @id @default(cuid())
+  applicationId String
+  actorUserId   String?
+  type          ApplicationEventType
+  fromState     ApplicationState?
+  toState       ApplicationState
+  detail        Json?
+  createdAt     DateTime             @default(now())
+  application   Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  actor         User?                @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([applicationId, createdAt])
+  @@index([actorUserId, createdAt])
 }
 
 model ReviewQueueAuditEvent {

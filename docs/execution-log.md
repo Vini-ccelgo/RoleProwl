@@ -213,3 +213,13 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** None.
 - **Known limitations:** Registry authorization is an input from deployed credentials/configuration. RP-023 verifies that a matching authorized adapter actually exists before invocation.
 - **Follow-up:** RP-023 provides honest authorized and external/manual adapter behavior without bypass automation.
+
+### RP-023 — Authorized submission and external application adapters
+
+- **Status:** Pass
+- **Major implementation:** Discriminated adapter contract; registry/source/capability rechecks; HTTPS destination validation; complete preparation snapshots; explicit external confirmation; authorized receipt verification; durable application and history records; and documented ATS/platform boundaries.
+- **Tests:** External-ready fallback, exact package preservation, authorized mock submission and verification, absent adapter, prohibited source, explicit confirmation, and unsafe destination rejection. No test contacts or submits to a real employer.
+- **Migration:** `20260814080000_add_application_records` creates auditable application and event storage plus the full alpha state vocabulary.
+- **External setup:** A real authorized adapter requires source/account-specific credentials and integration permission documented in `docs/setup-required.md`; none is inferred by default.
+- **Known limitations:** The alpha ships no live authorized ATS submission adapter. The persistence models are surfaced in the tracker in RP-024.
+- **Follow-up:** RP-024 implements owner-scoped list/detail tracking and state history.
