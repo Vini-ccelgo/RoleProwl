@@ -24,6 +24,12 @@ Application routes are protected in RP-002 at the server layout/resource boundar
 
 Identity webhooks are signature-verified and provide eventual synchronization. Authenticated requests also resolve the active external identity to an internal account, preventing the domain from treating the Clerk user object as its user model.
 
+## Candidate Truth Vault
+
+RP-003 stores candidate facts in user-owned tables with explicit `VerificationState` and `FactSource` values. User-entered data begins unverified. Extracted résumé data will enter through proposal records in RP-004 rather than writing directly to canonical tables. Every read and mutation derives `userId` from the authenticated actor and scopes record identifiers by that owner; foreign and missing records produce the same not-found behavior.
+
+Skills use a canonical normalized name per user while preserving display spelling and distinct technical identifiers such as `C`, `C++`, Java, and JavaScript. Work authorization and sponsorship are explicit records, never computed from other profile fields.
+
 ## Source adapter strategy
 
 Each future job/application source implements a narrow contract and advertises a `SourceCapabilitySet`. Use cases check capabilities rather than provider names. This lets RoleProwl distinguish read-only sources, schema-aware sources, supported submission paths, partner authentication, and required user interaction without placing ATS-specific branches throughout the app.

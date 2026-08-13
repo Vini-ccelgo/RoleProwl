@@ -783,6 +783,217 @@ p {
   background: var(--brand-soft);
   color: var(--brand);
 }
+.profile-page {
+  max-width: 1200px;
+}
+.vault-jump-nav {
+  position: sticky;
+  z-index: 4;
+  top: 0;
+  display: flex;
+  gap: 0.45rem;
+  overflow-x: auto;
+  margin-bottom: 1.5rem;
+  padding: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.94);
+  backdrop-filter: blur(10px);
+}
+.vault-jump-nav a {
+  padding: 0.45rem 0.7rem;
+  border-radius: 7px;
+  color: var(--foreground-muted);
+  font-size: 0.76rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.vault-jump-nav a:hover {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.vault-sections {
+  display: grid;
+  gap: 1.25rem;
+}
+.vault-sections > div {
+  scroll-margin-top: 85px;
+}
+.vault-section {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 8px 30px rgb(17 21 19 / 0.035);
+}
+.vault-section > header {
+  padding: 1.25rem 1.4rem;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(110deg, var(--surface), var(--surface-muted));
+}
+.vault-section h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.vault-section header p {
+  max-width: 760px;
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+}
+.vault-section-body {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.25rem 1.4rem;
+}
+.vault-form {
+  display: grid;
+  gap: 1rem;
+}
+.vault-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+.field {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.field > span {
+  color: var(--foreground);
+  font-size: 0.73rem;
+  font-weight: 700;
+}
+.field input,
+.field textarea,
+.field select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  padding: 0.65rem 0.75rem;
+  background: var(--surface);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.82rem;
+}
+.field textarea {
+  resize: vertical;
+}
+.field input:focus,
+.field textarea:focus,
+.field select:focus {
+  border-color: var(--brand);
+  outline: 3px solid rgb(18 132 116 / 0.16);
+}
+.field-wide {
+  grid-column: 1 / -1;
+}
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  align-self: end;
+  min-height: 42px;
+  grid-template-columns: auto 1fr;
+}
+.checkbox-field input {
+  width: 18px;
+  min-height: 18px;
+}
+.vault-form-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.form-message {
+  margin: 0;
+  font-size: 0.75rem;
+}
+.form-message.success {
+  color: var(--success);
+}
+.form-message.error {
+  color: var(--danger);
+}
+.vault-record {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 0.85rem;
+  background: var(--surface-muted);
+}
+.vault-record-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.vault-record-heading > div {
+  display: grid;
+}
+.vault-record-heading small {
+  margin-top: 0.2rem;
+  color: var(--foreground-muted);
+}
+.record-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+.vault-record details,
+.add-record {
+  margin-top: 0.75rem;
+}
+.skill-evidence {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.skill-evidence h4 {
+  margin: 0;
+  font-size: 0.78rem;
+}
+.evidence-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 7px;
+  background: var(--surface);
+}
+.evidence-row > span {
+  display: grid;
+}
+.evidence-row small {
+  color: var(--foreground-muted);
+  font-size: 0.67rem;
+}
+.vault-record summary,
+.add-record > summary {
+  color: var(--brand);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.vault-record details > .vault-form,
+.add-record > .vault-form {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.add-record {
+  border: 1px dashed var(--border-strong);
+  border-radius: 9px;
+  padding: 0.85rem;
+}
 .app-mobile-header {
   display: none;
 }
@@ -922,6 +1133,20 @@ p {
   .auth-panel {
     align-items: start;
     padding: 2rem 1rem;
+  }
+  .vault-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .field-wide {
+    grid-column: auto;
+  }
+  .vault-section > header,
+  .vault-section-body {
+    padding-inline: 1rem;
+  }
+  .vault-form-footer {
+    align-items: stretch;
+    flex-direction: column;
   }
   .legal-page {
     min-height: 500px;

@@ -8,14 +8,204 @@ datasource db {
 }
 
 model User {
-  id             String    @id @default(cuid())
-  authProvider   String
-  externalAuthId String
-  email          String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  deletedAt      DateTime?
+  id                       String                    @id @default(cuid())
+  authProvider             String
+  externalAuthId           String
+  email                    String?
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  deletedAt                DateTime?
+  candidateProfile         CandidateProfile?
+  workExperiences          WorkExperience[]
+  educationRecords         Education[]
+  skills                   Skill[]
+  skillEvidence            CandidateSkillEvidence[]
+  projects                 Project[]
+  credentials              Credential[]
+  candidatePreferences     CandidatePreferences?
+  workAuthorizationProfile WorkAuthorizationProfile?
 
   @@unique([authProvider, externalAuthId])
   @@index([email])
+}
+
+enum VerificationState {
+  UNVERIFIED
+  VERIFIED
+  STALE
+  DISPUTED
+}
+
+enum FactSource {
+  USER_ENTERED
+  RESUME_EXTRACTED
+  IMPORT
+  SYSTEM_COMPUTED
+}
+
+model CandidateProfile {
+  id                String            @id @default(cuid())
+  userId            String            @unique
+  firstName         String
+  lastName          String
+  professionalTitle String?
+  summary           String?
+  phone             String?
+  location          String?
+  websiteUrl        String?
+  linkedInUrl       String?
+  verificationState VerificationState @default(UNVERIFIED)
+  source            FactSource        @default(USER_ENTERED)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model WorkExperience {
+  id                String            @id @default(cuid())
+  userId            String
+  employer          String
+  title             String
+  employmentType    String?
+  startDate         DateTime
+  endDate           DateTime?
+  isCurrent         Boolean           @default(false)
+  location          String?
+  description       String?
+  responsibilities  String[]          @default([])
+  achievements      String[]          @default([])
+  verificationState VerificationState @default(UNVERIFIED)
+  source            FactSource        @default(USER_ENTERED)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startDate])
+}
+
+model Education {
+  id                String            @id @default(cuid())
+  userId            String
+  institution       String
+  program           String?
+  credential        String?
+  startDate         DateTime?
+  endDate           DateTime?
+  status            String?
+  coursework        String[]          @default([])
+  verificationState VerificationState @default(UNVERIFIED)
+  source            FactSource        @default(USER_ENTERED)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Skill {
+  id                String                   @id @default(cuid())
+  userId            String
+  canonicalName     String
+  normalizedName    String
+  category          String?
+  aliases           String[]                 @default([])
+  proficiency       String?
+  experienceMonths  Int?
+  verificationState VerificationState        @default(UNVERIFIED)
+  source            FactSource               @default(USER_ENTERED)
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  user              User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  evidence          CandidateSkillEvidence[]
+
+  @@unique([userId, normalizedName])
+  @@index([userId])
+}
+
+model CandidateSkillEvidence {
+  id                String            @id @default(cuid())
+  userId            String
+  skillId           String
+  evidenceType      String
+  evidenceId        String
+  description       String?
+  verificationState VerificationState @default(UNVERIFIED)
+  source            FactSource        @default(USER_ENTERED)
+  createdAt         DateTime          @default(now())
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill             Skill             @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([skillId, evidenceType, evidenceId])
+  @@index([userId])
+}
+
+model Project {
+  id                String            @id @default(cuid())
+  userId            String
+  name              String
+  role              String?
+  description       String?
+  startDate         DateTime?
+  endDate           DateTime?
+  url               String?
+  skills            String[]          @default([])
+  outcomes          String[]          @default([])
+  verificationState VerificationState @default(UNVERIFIED)
+  source            FactSource        @default(USER_ENTERED)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Credential {
+  id                String            @id @default(cuid())
+  userId            String
+  name              String
+  issuer            String?
+  issuedAt          DateTime?
+  expiresAt         DateTime?
+  credentialId      String?
+  credentialUrl     String?
+  verificationState VerificationState @default(UNVERIFIED)
+  source            FactSource        @default(USER_ENTERED)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model CandidatePreferences {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  roleFamilies         String[] @default([])
+  industries           String[] @default([])
+  remotePreference     String?
+  locationPreferences  String[] @default([])
+  salaryMinimum        Int?
+  salaryCurrency       String?
+  employmentTypes      String[] @default([])
+  seniorities          String[] @default([])
+  maximumTravelPercent Int?
+  willingToRelocate    Boolean?
+  exclusions           String[] @default([])
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model WorkAuthorizationProfile {
+  id                  String            @id @default(cuid())
+  userId              String            @unique
+  countryCode         String
+  authorizationStatus String
+  requiresSponsorship Boolean
+  notes               String?
+  verificationState   VerificationState @default(UNVERIFIED)
+  source              FactSource        @default(USER_ENTERED)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  user                User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
