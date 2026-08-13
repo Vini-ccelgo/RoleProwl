@@ -19,6 +19,7 @@ export interface PreparedApplication {
     readonly storageKey: string;
   }[];
   readonly generatedText: Readonly<Record<string, string>>;
+  readonly idempotencyKey: string;
   readonly reference: JobReference;
   readonly resumeVersionId: string | null;
 }

@@ -18,6 +18,7 @@ import {
 } from "./prepare-and-submit-application";
 
 const applicationPackage: PreparedApplication = {
+  idempotencyKey: "application:user-1:decision-1",
   reference: { source: "GREENHOUSE", externalId: "job-1" },
   destinationUrl: "https://boards.greenhouse.io/example/jobs/1",
   resumeVersionId: "resume-1",

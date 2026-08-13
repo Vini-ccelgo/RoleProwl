@@ -5,6 +5,7 @@ import type {
 } from "@/core/contracts/application-adapter";
 import {
   assertAuthorizedAdapter,
+  normalizeSubmissionFailure,
   requireLegitimateDestination,
   type ApplicationSubmissionRecord,
   type ApplicationSubmissionRepository,
@@ -23,6 +24,12 @@ interface PreparationContext {
   readonly package: PreparedApplication;
   readonly policyResultSnapshot: Readonly<Record<string, unknown>>;
   readonly repository: ApplicationSubmissionRepository;
+  readonly revalidateAuthority?: () => Promise<{
+    readonly allowed: boolean;
+    readonly reason: string;
+    readonly requiresReview: boolean;
+  }>;
+  readonly resolveCurrentCapability?: () => Promise<ResolvedIntegrationCapability>;
   readonly userId: string;
   readonly workflowRunId: string | null;
 }
@@ -58,12 +65,30 @@ export async function prepareAndMaybeSubmitApplication(
 
   if (input.capability.mode !== "AUTHORIZED_API") return prepared;
 
+  if (prepared.state === "SUBMITTED") return prepared;
+
+  const authority = await input.revalidateAuthority?.();
+  if (authority && !authority.allowed)
+    throw new ValidationError(
+      authority.requiresReview
+        ? `Submission requires review: ${authority.reason}`
+        : `Submission authority was withdrawn: ${authority.reason}`,
+    );
+  const currentCapability = input.resolveCurrentCapability
+    ? await input.resolveCurrentCapability()
+    : input.capability;
+
   const adapter = assertAuthorizedAdapter({
     adapter: input.adapter,
-    capability: input.capability,
+    capability: currentCapability,
   });
   await input.repository.markSubmitting(prepared.applicationId, input.userId);
-  const receipt = await adapter.submit(applicationPackage);
+  let receipt: SubmissionReceipt;
+  try {
+    receipt = await adapter.submit(applicationPackage);
+  } catch (error) {
+    throw normalizeSubmissionFailure(error);
+  }
   if (!(await adapter.verifySubmission(receipt)))
     throw new IntegrationError(
       "The authorized adapter could not verify submission.",

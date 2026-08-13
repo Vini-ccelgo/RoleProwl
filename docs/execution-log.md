@@ -223,3 +223,19 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **External setup:** A real authorized adapter requires source/account-specific credentials and integration permission documented in `docs/setup-required.md`; none is inferred by default.
 - **Known limitations:** The alpha ships no live authorized ATS submission adapter. The persistence models are surfaced in the tracker in RP-024.
 - **Follow-up:** RP-024 implements owner-scoped list/detail tracking and state history.
+
+### RP-024 — Application tracker
+
+- **Status:** Pass
+- **Major implementation:** Owner-scoped application list and detail routes; complete state vocabulary and guarded transition graph; exact fit, policy, text, answer, document, résumé, mechanism, receipt, timestamp, and history rendering; explicit external-submission confirmation; and transactional optimistic history writes.
+- **Tests:** State vocabulary, valid and forbidden transitions, outcome uncertainty, owner-scoped state updates, and foreign/missing record concealment.
+- **Migration:** Uses the application/event tables introduced with RP-023.
+- **Known limitations:** External outcomes depend on candidate confirmation until an authorized status-reading integration exists. No absent response or outcome is inferred.
+- **Follow-up:** Phase E fake-adapter failure matrix, then RP-025 privacy and deletion controls.
+
+### Phase E automated gate
+
+- **Status:** Pass
+- **Evidence:** 47 Vitest files / 239 tests, strict typecheck, ESLint, formatting/diff checks, Prisma schema validation, production Next.js build, and 16 Playwright browser checks.
+- **Fake-adapter matrix:** Successful submission, timeout, retry, duplicate event, HTTP 429, HTTP 500, capability removed immediately before submit, user policy changed, review required, and permanent failure.
+- **Safety:** The gate uses only in-memory repositories and fake authorized adapters. It performs no real job application and makes no employer/ATS request.

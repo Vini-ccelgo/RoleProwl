@@ -107,3 +107,9 @@ RP-022 centralizes source permissions in one typed registry. Greenhouse and Leve
 RP-023 makes application adapters a discriminated union. Only an `AUTHORIZED_API` adapter exposes `submit` and `verifySubmission`; external/manual adapters can resolve a destination but cannot impersonate an API submission path. Execution rechecks the resolved registry capability, exact source identity, and advertised `SUBMIT_APPLICATION` capability before invoking an adapter.
 
 Every attempt first persists an immutable payload snapshot containing the exact résumé reference, private document references, generated text, and answers. External/manual paths stop at `READY` with a validated HTTPS employer/ATS destination. They reach `SUBMITTED` only through explicit candidate confirmation. Authorized adapters must return and verify a receipt. Application and event records retain the mechanism and state change so RP-024 can answer what was prepared and sent.
+
+## Application tracker
+
+RP-024 exposes owner-scoped `/applications` and `/applications/[applicationId]` views over the durable application record. The detail route shows job identity, fit/policy snapshots, exact generated text and answers, document metadata, exact résumé version, submission mechanism/receipt, timestamps, and ordered history. Private storage keys and credential-shaped fields are excluded from rendering even when retained server-side.
+
+Application state changes use a deterministic transition graph and an optimistic owner-and-prior-state update. Every successful transition appends an actor-attributed event in the same transaction. The UI offers only currently valid candidate outcome transitions. External-ready applications include the RP-023 explicit-confirmation flow; missing integration status is rendered as unknown instead of inferred.

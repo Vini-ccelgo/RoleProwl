@@ -41,6 +41,65 @@ export interface ApplicationSubmissionRepository {
   ): Promise<ApplicationSubmissionRecord>;
 }
 
+export type SubmissionFailureCode =
+  "TIMEOUT" | "RATE_LIMITED" | "UPSTREAM_RETRYABLE" | "PERMANENT_FAILURE";
+
+export class SubmissionAttemptError extends IntegrationError {
+  constructor(
+    message: string,
+    readonly failureCode: SubmissionFailureCode,
+    readonly retryable: boolean,
+    cause?: unknown,
+  ) {
+    super(message, cause);
+  }
+}
+
+function statusCode(error: unknown): number | null {
+  if (!error || typeof error !== "object") return null;
+  const status =
+    (error as { status?: unknown; statusCode?: unknown }).status ??
+    (error as { statusCode?: unknown }).statusCode;
+  return typeof status === "number" ? status : null;
+}
+
+export function normalizeSubmissionFailure(error: unknown) {
+  if (error instanceof SubmissionAttemptError) return error;
+  const status = statusCode(error);
+  const name =
+    error && typeof error === "object" && "name" in error
+      ? String(error.name)
+      : "";
+  const message = error instanceof Error ? error.message : "Submission failed.";
+  if (name === "AbortError" || /timed?\s*out/i.test(message))
+    return new SubmissionAttemptError(
+      "The submission adapter timed out.",
+      "TIMEOUT",
+      true,
+      error,
+    );
+  if (status === 429)
+    return new SubmissionAttemptError(
+      "The submission adapter was rate limited.",
+      "RATE_LIMITED",
+      true,
+      error,
+    );
+  if (status !== null && status >= 500)
+    return new SubmissionAttemptError(
+      "The submission provider is temporarily unavailable.",
+      "UPSTREAM_RETRYABLE",
+      true,
+      error,
+    );
+  return new SubmissionAttemptError(
+    "The submission adapter failed permanently.",
+    "PERMANENT_FAILURE",
+    false,
+    error,
+  );
+}
+
 export function requireLegitimateDestination(url: string | null): string {
   if (!url)
     throw new ValidationError("An application destination is required.");
