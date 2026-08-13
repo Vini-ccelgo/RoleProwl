@@ -267,3 +267,13 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** `20260814100000_add_audit_events` creates actor/action/entity/timestamp/safe-metadata records.
 - **Known limitations:** Audit records intentionally do not reproduce sensitive content. The application detail remains the owner-authorized source for exact sent materials.
 - **Follow-up:** RP-028 implements portable account export and controlled deletion with explicit external-data limits.
+
+### RP-028 — Data export and account deletion
+
+- **Status:** Pass
+- **Major implementation:** Versioned portable JSON export; private/no-store download endpoint; complete candidate/application/generated-material sections; exact typed deletion confirmation; private-object and identity cleanup; cascading RoleProwl-data deletion; and minimal retryable cleanup records.
+- **Tests:** Export envelope/scope, confirmation rejection, cleanup ordering, complete deletion, external-cleanup failure, and preservation of a retry marker.
+- **Migration:** `20260814110000_add_account_deletion_requests` adds minimal operational cleanup state outside the user-owned cascade.
+- **External setup:** Production private storage deletion and Clerk identity deletion permissions are documented in `docs/setup-required.md`.
+- **Known limitations:** RoleProwl cannot delete data previously transmitted to employers or ATS providers. The product says this explicitly in the export and deletion UI.
+- **Follow-up:** RP-029 performs engineering security hardening and regression coverage.

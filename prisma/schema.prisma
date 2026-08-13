@@ -678,6 +678,27 @@ model AuditEvent {
   @@index([entityType, entityId, createdAt])
 }
 
+enum AccountDeletionStatus {
+  PENDING
+  CLEANUP_REQUIRED
+  COMPLETE
+}
+
+model AccountDeletionRequest {
+  id             String                @id @default(cuid())
+  subjectHash    String
+  externalAuthId String?
+  storageKeys    Json
+  status         AccountDeletionStatus @default(PENDING)
+  lastErrorCode  String?
+  completedAt    DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@index([status, createdAt])
+  @@index([subjectHash, createdAt])
+}
+
 model ReviewQueueAuditEvent {
   id          String            @id @default(cuid())
   queueItemId String

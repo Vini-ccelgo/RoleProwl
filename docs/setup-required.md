@@ -92,3 +92,11 @@ INNGEST_SIGNING_KEY
 **Official references:** [Greenhouse Job Board API](https://developers.greenhouse.io/job-board.html) and [Lever Postings API](https://github.com/lever/postings-api).
 
 **Without setup:** Application packages remain complete and auditable in `READY`; the candidate follows the validated employer/ATS URL and explicitly confirms any external submission.
+
+## 7. Account-deletion storage cleanup
+
+**Why needed:** RP-028 deletes every RoleProwl-held private document referenced by an account before removing the account record.
+
+**Account/action:** The production object-storage adapter from section 3 must implement idempotent `delete(key)` for private candidate documents and rendered résumés. The Clerk secret key must retain permission to delete the authenticated Clerk identity.
+
+**Without setup:** Production already blocks the development filesystem storage adapter. Account deletion therefore cannot claim completion until a production private-storage adapter is configured; a failed cleanup remains explicitly `CLEANUP_REQUIRED` for operator retry.

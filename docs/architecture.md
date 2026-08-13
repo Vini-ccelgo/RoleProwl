@@ -125,3 +125,9 @@ RP-026 uses a provider-neutral `NotificationProvider` with PostgreSQL as the alp
 ## Consequential audit history
 
 RP-027 adds a separate append-only audit stream for candidate fact verification/change, policy changes, application generation and submission, blocked claims, answered questions, approvals, failures, state changes, and future export/deletion requests. A per-action metadata allowlist strips unknown keys and nested content before persistence; audit records contain actor, action, entity reference, timestamp, and only bounded scalar/array metadata. They never copy candidate answers, generated prose, résumé content, tokens, or credentials. User-attributed events are visible in Settings; deletion policy is defined in RP-028.
+
+## Account export and deletion
+
+RP-028 provides a no-store JSON export of RoleProwl-held profile, experience, education, skills, preferences, answer memory, policy, application history, generated material, notifications, and safe audit history. The envelope is versioned and explicitly excludes information independently retained by employers or ATS providers.
+
+Deletion requires the exact typed confirmation. A recovery/cleanup request first captures only a one-way subject hash, private storage keys, and the external identity needed for cleanup. Private objects and the Clerk identity are removed before the RoleProwl `User` row; its cascading relations remove candidate, generated, application, notification, and user-owned audit data. On full completion, the cleanup record discards the external identity and storage keys. Any cleanup error retains a minimal `CLEANUP_REQUIRED` record so failure is observable rather than falsely reported as deletion. RoleProwl does not claim authority to delete data already transmitted to an employer or ATS.
