@@ -115,3 +115,12 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** `20260814010000_add_resume_versions`
 - **Known limitations:** The alpha template prioritizes stable document structure over visual customization. Live generation and persistence require the OpenAI, PostgreSQL, and private-storage setup already recorded.
 - **Follow-up:** RP-014 generalizes the same evidence and claim guarantees for cover letters and application free text.
+
+### RP-014 — Application writing engine
+
+- **Status:** Pass
+- **Major implementation:** Evidence-grounded cover letters, motivation responses, role summaries, and employer free-text answers; distinct task routing; bounded structured prose; claim-to-content and claim-to-evidence validation; high-risk assertion checks; fabricated employer-attachment rejection; and persistent versioned writing/claim graph.
+- **Tests:** Free-text and cover-letter paths, task selection, provenance persistence, missing employer question, absent claim text, invented factual assertion, fabricated personal attachment, and bounded output schemas.
+- **Migration:** `20260814020000_add_application_writing`
+- **Known limitations:** Generation is an internal use case until the review queue and application workspace expose it. The attachment heuristic is deliberately narrow; factual safety is primarily enforced through structured claims and evidence.
+- **Follow-up:** RP-015 classifies employer questions before any writing or answer path is selected.

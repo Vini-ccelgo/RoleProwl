@@ -8,12 +8,12 @@ datasource db {
 }
 
 model User {
-  id                       String                    @id @default(cuid())
+  id                       String                       @id @default(cuid())
   authProvider             String
   externalAuthId           String
   email                    String?
-  createdAt                DateTime                  @default(now())
-  updatedAt                DateTime                  @updatedAt
+  createdAt                DateTime                     @default(now())
+  updatedAt                DateTime                     @updatedAt
   deletedAt                DateTime?
   candidateProfile         CandidateProfile?
   workExperiences          WorkExperience[]
@@ -33,6 +33,7 @@ model User {
   jobMatchAnalyses         JobMatchAnalysis[]
   matchFeedback            MatchFeedback[]
   resumeVersions           ResumeVersion[]
+  writingArtifacts         ApplicationWritingArtifact[]
 
   @@unique([authProvider, externalAuthId])
   @@index([email])
@@ -52,7 +53,7 @@ enum JobRemoteType {
 }
 
 model Job {
-  id                      String             @id @default(cuid())
+  id                      String                       @id @default(cuid())
   canonicalApplicationUrl String?
   company                 String
   normalizedCompany       String
@@ -77,15 +78,16 @@ model Job {
   postedAt                DateTime?
   expiresAt               DateTime?
   contentHash             String
-  firstSeenAt             DateTime           @default(now())
-  lastSeenAt              DateTime           @default(now())
+  firstSeenAt             DateTime                     @default(now())
+  lastSeenAt              DateTime                     @default(now())
   lastVerifiedAt          DateTime?
-  status                  JobStatus          @default(ACTIVE)
-  createdAt               DateTime           @default(now())
-  updatedAt               DateTime           @updatedAt
+  status                  JobStatus                    @default(ACTIVE)
+  createdAt               DateTime                     @default(now())
+  updatedAt               DateTime                     @updatedAt
   sourceRecords           JobSourceRecord[]
   matchAnalyses           JobMatchAnalysis[]
   resumeVersions          ResumeVersion[]
+  writingArtifacts        ApplicationWritingArtifact[]
 
   @@index([normalizedCompany, normalizedTitle])
   @@index([status, lastSeenAt])
@@ -295,19 +297,20 @@ model CandidateFact {
 }
 
 model GeneratedClaim {
-  id             String                       @id @default(cuid())
-  userId         String
-  text           String
-  classification GeneratedClaimClassification
-  generator      String
-  promptVersion  String
-  assertions     Json                         @default("[]")
-  verifiedAt     DateTime?
-  createdAt      DateTime                     @default(now())
-  updatedAt      DateTime                     @updatedAt
-  user           User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sourceEvidence GeneratedClaimEvidence[]
-  resumeVersions ResumeVersionClaim[]
+  id               String                       @id @default(cuid())
+  userId           String
+  text             String
+  classification   GeneratedClaimClassification
+  generator        String
+  promptVersion    String
+  assertions       Json                         @default("[]")
+  verifiedAt       DateTime?
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+  user             User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceEvidence   GeneratedClaimEvidence[]
+  resumeVersions   ResumeVersionClaim[]
+  writingArtifacts ApplicationWritingClaim[]
 
   @@index([userId, classification])
 }
@@ -339,6 +342,41 @@ model ResumeVersionClaim {
   claim           GeneratedClaim @relation(fields: [claimId], references: [id], onDelete: Restrict)
 
   @@id([resumeVersionId, claimId])
+  @@index([claimId])
+}
+
+enum ApplicationWritingType {
+  COVER_LETTER
+  MOTIVATION_RESPONSE
+  ROLE_SUMMARY
+  EMPLOYER_FREE_TEXT
+}
+
+model ApplicationWritingArtifact {
+  id            String                    @id @default(cuid())
+  userId        String
+  targetJobId   String
+  type          ApplicationWritingType
+  question      String?
+  content       String
+  generator     String
+  promptVersion String
+  generatedAt   DateTime                  @default(now())
+  user          User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetJob     Job                       @relation(fields: [targetJobId], references: [id], onDelete: Cascade)
+  claims        ApplicationWritingClaim[]
+
+  @@index([userId, generatedAt])
+  @@index([targetJobId, type])
+}
+
+model ApplicationWritingClaim {
+  artifactId String
+  claimId    String
+  artifact   ApplicationWritingArtifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  claim      GeneratedClaim             @relation(fields: [claimId], references: [id], onDelete: Restrict)
+
+  @@id([artifactId, claimId])
   @@index([claimId])
 }
 

@@ -113,7 +113,10 @@ export const aiTaskDefinitions = {
     schemaName: "application_free_text",
     system:
       "Write a concise answer using only the supplied job, preferences, and evidence. Do not invent employer attachment or candidate facts. Attach evidence to every candidate-specific claim.",
-    schema: z.object({ text: z.string(), claims: z.array(generatedClaim) }),
+    schema: z.object({
+      text: z.string().max(2500),
+      claims: z.array(generatedClaim),
+    }),
   },
   RESUME_TAILORING: {
     promptVersion: "resume-tailoring-v1",
@@ -136,7 +139,7 @@ export const aiTaskDefinitions = {
       "Write a concise role-specific cover letter from supplied evidence and preferences. Do not fabricate personal attachment to the employer. Attach evidence to candidate-specific claims.",
     schema: z.object({
       subject: z.string().nullable(),
-      body: z.string(),
+      body: z.string().max(5000),
       claims: z.array(generatedClaim),
     }),
   },
