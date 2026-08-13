@@ -45,3 +45,21 @@ DATABASE_URL
 **Development default:** No account is needed. Files are written with private permissions beneath `ROLEPROWL_LOCAL_STORAGE_PATH` (default: `.roleprowl-storage`) and the directory is ignored by Git.
 
 **Without setup:** Local development and automated tests work; production résumé upload is intentionally blocked by configuration.
+
+## 4. OpenAI structured AI
+
+**Why needed:** RP-012 and later résumé, writing, semantic-comparison, and application-assistance tasks use schema-constrained server-side generation.
+
+**Account/action:** Create an OpenAI API project and a restricted server-side API key. Keep the key out of browsers and source control. Set project spending and rate limits appropriate for a closed alpha.
+
+**Required environment variable:**
+
+```text
+OPENAI_API_KEY
+```
+
+**Optional controls:** `ROLEPROWL_AI_MODEL_DEFAULT`, task-specific `ROLEPROWL_AI_MODEL_*` overrides listed in `.env.example`, `ROLEPROWL_AI_TIMEOUT_MS`, and `ROLEPROWL_AI_MAX_RETRIES`. The source default is `gpt-5.6-luna`; model access and current pricing depend on the configured API project.
+
+**Official references:** [Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create) and [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
+
+**Without setup:** Unit, integration, build, and browser tests use deterministic test doubles. Live AI tasks fail closed with a typed configuration error.

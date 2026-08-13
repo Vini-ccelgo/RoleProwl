@@ -5,7 +5,9 @@ export type ApplicationErrorCode =
   | "INTEGRATION"
   | "CONFIGURATION"
   | "CONFLICT"
-  | "EXTRACTION_UNSUPPORTED";
+  | "EXTRACTION_UNSUPPORTED"
+  | "AI_REFUSAL"
+  | "AI_INVALID_OUTPUT";
 export class ApplicationError extends Error {
   constructor(
     message: string,
@@ -49,5 +51,15 @@ export class ExtractionUnsupportedError extends ApplicationError {
 export class ConflictError extends ApplicationError {
   constructor(message: string) {
     super(message, "CONFLICT");
+  }
+}
+export class AIRefusalError extends ApplicationError {
+  constructor(message = "The AI provider declined this request.") {
+    super(message, "AI_REFUSAL");
+  }
+}
+export class AIInvalidOutputError extends ApplicationError {
+  constructor(message: string, cause?: unknown) {
+    super(message, "AI_INVALID_OUTPUT", cause);
   }
 }

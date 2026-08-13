@@ -95,3 +95,14 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** `20260813230000_add_job_match_analysis`
 - **Known limitations:** Live analyses require ingested jobs and an authenticated PostgreSQL-backed candidate. Semantic requirement structuring begins in RP-012.
 - **Follow-up:** Phase C begins with the provider-neutral structured AI implementation.
+
+## Phase C — Application intelligence
+
+### RP-012 — Structured AI layer
+
+- **Status:** Pass
+- **Major implementation:** Provider-neutral structured-generation contract, official OpenAI server-side SDK with Responses API structured parsing, seven task-specific versioned prompt/schema definitions, model-per-task overrides, bounded timeout/retry controls, refusal and invalid-output errors, request correlation, token metadata, PII-safe structured logs, and deterministic test provider.
+- **Tests:** Complete task-definition coverage, schema rejection, test-double validation, Responses API request shape, usage/request metadata, explicit refusals, absent parsed output, model override precedence, bounded defaults, and log-content privacy.
+- **External setup:** Live tasks require `OPENAI_API_KEY`; model and operational overrides are consolidated in `docs/setup-required.md` and `.env.example`.
+- **Known limitations:** RP-012 establishes the governed boundary only. Ticket-specific evidence selection, claim persistence, document rendering, and application behavior are implemented in RP-013 onward.
+- **Follow-up:** RP-013 composes evidence-grounded résumé generation on this boundary.

@@ -12,7 +12,9 @@ UI / App Router → Features / Use Cases → Core Domain
 
 ## Provider and authority boundaries
 
-Provider-specific response objects stop at their adapter. The planned OpenAI adapter will implement `AIProvider` using the official SDK, but domain logic will receive validated RoleProwl types only.
+Provider-specific response objects stop at their adapter. The OpenAI adapter implements `AIProvider` using the official SDK, but domain logic receives validated RoleProwl types only.
+
+Each allowed AI task owns a distinct versioned instruction, Zod schema, and optional model override. The production adapter uses Responses API structured parsing, validates parsed values again at the boundary, detects refusals separately from malformed output, and returns correlation, provider-request, and token metadata. Only explicitly constructed task input is serialized. Logs contain operational metadata but exclude prompts, inputs, outputs, names, emails, and résumé content. Deterministic tests use a provider double and require no live API access.
 
 An LLM adapter cannot decide application authority. Models are probabilistic content-processing tools; candidate consent, factual constraints, review requirements, and permission to submit are deterministic business policy. Those rules belong in the core/policy feature boundary and are enforced before an application adapter is invoked.
 
