@@ -50,3 +50,12 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** `20260813200000_add_canonical_jobs`
 - **Known limitations:** Discovery adapters and cross-source deduplication are deliberately implemented by RP-007 through RP-009 rather than embedded in persistence models.
 - **Follow-up:** RP-007 adds capability-advertising, failure-isolated adapter orchestration.
+
+### RP-007 — Job source adapter framework
+
+- **Status:** Pass
+- **Major implementation:** Discover/fetch/normalize/refresh adapter lifecycle, explicit capability checks, paged raw source records, multi-source orchestration, typed source errors, durable source-health state, and sanitized failure reporting.
+- **Tests:** Healthy ingestion, capability exclusion, typed rate-limit failure, health events, and isolation of a broken source from successful feed results.
+- **Migration:** `20260813210000_add_job_source_health`
+- **Known limitations:** Retry scheduling fields are persisted but durable retry execution begins in the workflow phase.
+- **Follow-up:** RP-008 implements only source access currently justified by official documentation.

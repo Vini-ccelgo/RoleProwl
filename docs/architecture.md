@@ -36,6 +36,8 @@ Each future job/application source implements a narrow contract and advertises a
 
 Canonical jobs are separate from `JobSourceRecord`. A canonical opportunity may retain multiple source associations without discarding raw source payloads or pretending source-specific identifiers are global. Nullable scalar/JSON fields preserve the difference between “not specified” and explicit false, zero, or empty values. Content hashes track material revisions while first-seen, last-seen, last-verified, expiry, and status timestamps support refresh and staleness policy.
 
+The RP-007 adapter lifecycle is `discover → fetch/refresh → normalize`, with capabilities checked before use. Multi-source orchestration settles each source independently and reports sanitized health events to durable `JobSourceHealth`; one rejected source promise is returned as a scoped failure while healthy-source jobs continue through the feed.
+
 ## Résumé import boundary
 
 RP-004 accepts only signature-checked, size-limited PDF and DOCX uploads. The original bytes are stored behind `ObjectStorageProvider` under a randomized private key; the API exposes document metadata, never a public object URL. `unpdf` handles machine-readable PDF text and Mammoth handles DOCX raw text. Encrypted, malformed, scanned, or text-empty documents produce the explicit `EXTRACTION_UNSUPPORTED` state because OCR is outside the alpha scope.
