@@ -124,3 +124,12 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** `20260814020000_add_application_writing`
 - **Known limitations:** Generation is an internal use case until the review queue and application workspace expose it. The attachment heuristic is deliberately narrow; factual safety is primarily enforced through structured claims and evidence.
 - **Follow-up:** RP-015 classifies employer questions before any writing or answer path is selected.
+
+### RP-015 — Application question classifier
+
+- **Status:** Pass
+- **Major implementation:** Complete eight-category taxonomy, ordered deterministic rules, high-risk safety precedence, optional schema-constrained AI assistance for unmatched prompts only, confidence/source metadata, and explicit unknown behavior without credentials.
+- **Tests:** Work authorization, sponsorship, motivation, disability, demographics, legal attestation, salary, relocation, experience duration, profile field, unknown prompt, mixed attestation/profile wording, deterministic safety override, and AI-assisted fallback.
+- **Migration:** None.
+- **Known limitations:** Language coverage is English-first for the closed alpha. Unknown or novel phrasing deliberately remains unknown unless the configured AI classifier resolves it.
+- **Follow-up:** RP-016 maps varied question wording onto durable answer concepts with staleness controls.

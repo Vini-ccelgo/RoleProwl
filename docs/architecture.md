@@ -69,3 +69,7 @@ Accepted content and its immutable claim/evidence graph are stored in `ResumeVer
 ## Application writing
 
 RP-014 routes cover letters and shorter application responses through separate RP-012 tasks. Inputs are limited to target-job context, candidate preferences, and explicitly selected evidence. The output schema bounds prose length; deterministic policy then requires each declared candidate claim to occur in the content, resolve only to supplied evidence, and pass the same high-risk assertion validator used for résumés. A targeted rule also rejects fabricated statements of long-standing personal attachment to the employer. Accepted artifacts and their claim graph are persisted independently of application state.
+
+## Question classification
+
+RP-015 classifies application questions before selecting an answer path. Ordered deterministic rules own attestations, sensitive demographic/health data, work authorization and other consequential fields, candidate policies, computable facts, profile facts, and common role narratives. Safety categories are resolved without invoking AI and therefore cannot be downgraded by a model. Only unmatched questions may use the schema-constrained classifier task; without a provider they remain explicitly `UNKNOWN`.
