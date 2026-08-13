@@ -85,3 +85,7 @@ RP-017 is a pure deterministic boundary after classification. Sensitive question
 ## Candidate application policy
 
 RP-018 stores candidate-defined authority separately from preferences and evaluates it as a pure versioned function. Hard exclusions reject; unknown salary, location, role, work mode, or employment type require review rather than being treated as false. Sensitive questions, unsupported claims, daily limits, source submission capability, and explicit submission authorization are evaluated before autonomy. `ELIGIBLE_FOR_SUBMISSION` is only a policy result and does not execute an application.
+
+## Review queue and audit
+
+RP-019 persists an owner-scoped snapshot of every input a candidate needs to review: reason codes, job, fit, materials, unresolved questions, policy result, and source capability. Queue mutations are explicit state transitions. Approved/rejected items are terminal, defer dates must be future dates, and optimistic status matching prevents concurrent overwrite. Creation, edits, approval, rejection, and deferral produce audit events with actor, action, before/after snapshots, optional note, and timestamp.

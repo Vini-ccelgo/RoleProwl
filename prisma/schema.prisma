@@ -36,6 +36,8 @@ model User {
   writingArtifacts         ApplicationWritingArtifact[]
   answerMemories           AnswerMemory[]
   applicationPolicy        ApplicationPolicy?
+  reviewQueueItems         ReviewQueueItem[]
+  reviewQueueAuditEvents   ReviewQueueAuditEvent[]
 
   @@unique([authProvider, externalAuthId])
   @@index([email])
@@ -90,6 +92,7 @@ model Job {
   matchAnalyses           JobMatchAnalysis[]
   resumeVersions          ResumeVersion[]
   writingArtifacts        ApplicationWritingArtifact[]
+  reviewQueueItems        ReviewQueueItem[]
 
   @@index([normalizedCompany, normalizedTitle])
   @@index([status, lastSeenAt])
@@ -431,6 +434,61 @@ model ApplicationPolicy {
   createdAt                   DateTime                 @default(now())
   updatedAt                   DateTime                 @updatedAt
   user                        User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum ReviewQueueStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  DEFERRED
+}
+
+enum ReviewQueueAction {
+  CREATED
+  EDITED
+  APPROVED
+  REJECTED
+  DEFERRED
+}
+
+model ReviewQueueItem {
+  id                   String                  @id @default(cuid())
+  userId               String
+  jobId                String
+  status               ReviewQueueStatus       @default(PENDING)
+  reasonCodes          String[]                @default([])
+  fitSnapshot          Json
+  applicationMaterials Json
+  unresolvedQuestions  Json
+  policyResult         String
+  sourceCapability     Json
+  editableDraft        Json?
+  resolutionNote       String?
+  deferredUntil        DateTime?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  user                 User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job                  Job                     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  auditEvents          ReviewQueueAuditEvent[]
+
+  @@index([userId, status, createdAt])
+  @@index([jobId])
+}
+
+model ReviewQueueAuditEvent {
+  id          String            @id @default(cuid())
+  queueItemId String
+  actorUserId String
+  action      ReviewQueueAction
+  before      Json?
+  after       Json?
+  note        String?
+  createdAt   DateTime          @default(now())
+  queueItem   ReviewQueueItem   @relation(fields: [queueItemId], references: [id], onDelete: Cascade)
+  actor       User              @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([queueItemId, createdAt])
+  @@index([actorUserId, createdAt])
 }
 
 model GeneratedClaimEvidence {

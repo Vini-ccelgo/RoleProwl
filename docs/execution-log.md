@@ -168,3 +168,12 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** `20260814040000_add_application_policy`
 - **Known limitations:** The policy is persisted and enforced in the domain; the candidate-facing settings editor is completed with the real-settings page work in Phase F.
 - **Follow-up:** RP-019 creates the auditable human review queue for cases that policy cannot safely resolve.
+
+### RP-019 — Review queue
+
+- **Status:** Pass
+- **Major implementation:** Real authenticated `/queue` workspace, comprehensive decision snapshots, reason explanations, editable draft, approve/reject/defer controls, terminal resolution states, future-only deferral, owner-scoped atomic mutations, optimistic concurrency check, and immutable actor/before/after audit history including creation.
+- **Tests:** Approve/reject transitions, valid/invalid deferral, terminal-state protection, and before/after audit generation for every mutable action. Production compilation and protected-route browser coverage remain part of the phase gate.
+- **Migration:** `20260814050000_add_review_queue`
+- **Known limitations:** Queue creation is invoked by the RP-020 decision engine; live interaction requires authenticated PostgreSQL setup.
+- **Follow-up:** RP-020 combines fit, policy, claims, questions, capability, and submission authorization into reproducible persisted decisions.
