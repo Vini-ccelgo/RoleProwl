@@ -8,7 +8,7 @@ import type {
 } from "@/core/contracts/job-source-adapter";
 import { canonicalJobSchema } from "@/core/domain/jobs/job";
 import { SourceAdapterError } from "@/core/errors/source-adapter-error";
-import type { SourceCapability } from "@/core/types/capabilities";
+import { sourceCapabilities } from "@/core/integrations/capability-registry";
 
 const GREENHOUSE_BASE_URL = "https://boards-api.greenhouse.io/v1/boards";
 
@@ -86,10 +86,7 @@ export class GreenhouseJobSource implements JobSourceAdapter {
   }
 
   getCapabilities() {
-    return new Set<SourceCapability>([
-      "READ_JOBS",
-      "REQUIRES_USER_INTERACTION",
-    ]);
+    return sourceCapabilities("GREENHOUSE");
   }
 
   private async getJson(path: string): Promise<unknown> {

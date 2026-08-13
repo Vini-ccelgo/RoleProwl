@@ -97,3 +97,7 @@ RP-020 is the single combined decision boundary. It receives job, fit, policy, c
 ## Durable workflows
 
 RP-021 retains durable application state in PostgreSQL and uses `WorkflowProvider` as the feature boundary. A stable user/decision idempotency key protects database creation and is also sent as the Inngest event ID; the Inngest function adds consumer-side idempotency keyed to the workflow run. Named steps make start, decision validation, and outcome persistence independently retriable/observable. Terminal states are immutable, attempts and sanitized failures are durable, and exhausted retries become `FAILED_FINAL` instead of disappearing.
+
+## Integration capability registry
+
+RP-022 centralizes source permissions in one typed registry. Greenhouse and Lever public listings advertise read access and partner-auth requirements, but never submission without explicit legitimate authorization. LinkedIn and Indeed are permanently represented as prohibited automation/manual-external sources in the alpha, so a configuration flag cannot accidentally enable them. Business decisions receive their capability input through a registry resolver rather than provider-name conditionals.

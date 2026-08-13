@@ -204,3 +204,12 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **External setup:** Hosted execution requires Inngest event/signing keys and endpoint sync as consolidated in `docs/setup-required.md`.
 - **Known limitations:** RP-021 stops at `SUBMITTING`; RP-022 and RP-023 determine legitimate source capability and execute only authorized adapters.
 - **Follow-up:** RP-022 centralizes all integration capabilities and prohibited automation modes.
+
+### RP-022 — Integration capability registry
+
+- **Status:** Pass
+- **Major implementation:** Typed central registry for Greenhouse, Lever, LinkedIn, Indeed, and generic external destinations; read/schema/submission capabilities; explicit partner-authorization dependency; authorized/external/manual/unsupported submission modes; prohibited-automation flag; and decision-engine capability projection.
+- **Tests:** Complete registry, public Greenhouse read without submission, authorized Lever submission, claimed authorization unable to enable LinkedIn/Indeed, decision projection, and Greenhouse adapter consumption of the registry.
+- **Migration:** None.
+- **Known limitations:** Registry authorization is an input from deployed credentials/configuration. RP-023 verifies that a matching authorized adapter actually exists before invocation.
+- **Follow-up:** RP-023 provides honest authorized and external/manual adapter behavior without bypass automation.
