@@ -239,3 +239,12 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Evidence:** 47 Vitest files / 239 tests, strict typecheck, ESLint, formatting/diff checks, Prisma schema validation, production Next.js build, and 16 Playwright browser checks.
 - **Fake-adapter matrix:** Successful submission, timeout, retry, duplicate event, HTTP 429, HTTP 500, capability removed immediately before submit, user policy changed, review required, and permanent failure.
 - **Safety:** The gate uses only in-memory repositories and fake authorized adapters. It performs no real job application and makes no employer/ATS request.
+
+### RP-025 — Dashboard and real user activity
+
+- **Status:** Pass
+- **Major implementation:** Authenticated live dashboard for relevant/high-fit jobs, prepared applications, review work, submissions, responses, and interviews; candidate-policy fit threshold; top-match list; recent application history; and useful zero-data states.
+- **Tests:** Strict query typing, production route compilation, and existing route-protection browser coverage. All displayed values originate from owner-scoped database queries.
+- **Migration:** None.
+- **Known limitations:** Counts reflect only data ingested or recorded inside RoleProwl. A missing external response remains absent rather than being inferred.
+- **Follow-up:** RP-026 creates first-party internal notifications from consequential domain events.

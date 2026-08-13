@@ -113,3 +113,7 @@ Every attempt first persists an immutable payload snapshot containing the exact 
 RP-024 exposes owner-scoped `/applications` and `/applications/[applicationId]` views over the durable application record. The detail route shows job identity, fit/policy snapshots, exact generated text and answers, document metadata, exact résumé version, submission mechanism/receipt, timestamps, and ordered history. Private storage keys and credential-shaped fields are excluded from rendering even when retained server-side.
 
 Application state changes use a deterministic transition graph and an optimistic owner-and-prior-state update. Every successful transition appends an actor-attributed event in the same transaction. The UI offers only currently valid candidate outcome transitions. External-ready applications include the RP-023 explicit-confirmation flow; missing integration status is rendered as unknown instead of inferred.
+
+## Operational dashboard
+
+RP-025 replaces the authenticated dashboard placeholder with owner-scoped database queries. Counts are computed from active match analyses, the candidate's configured high-fit threshold, prepared/application states, unresolved review items, and recorded outcomes. Top matches and recent application events are likewise live records. Empty states direct the candidate to the next relevant product surface; the dashboard has no fixture counts, fabricated activity, or unsupported conversion claims.
