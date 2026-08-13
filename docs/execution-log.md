@@ -133,3 +133,12 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** None.
 - **Known limitations:** Language coverage is English-first for the closed alpha. Unknown or novel phrasing deliberately remains unknown unless the configured AI classifier resolves it.
 - **Follow-up:** RP-016 maps varied question wording onto durable answer concepts with staleness controls.
+
+### RP-016 — Answer memory
+
+- **Status:** Pass
+- **Major implementation:** User-owned canonical answer memories, semantic deterministic concept mapping across varied wording, structured answers and sources, explicit auto-answer permission, remembered example wording, last-use support, and concept-specific re-verification windows.
+- **Tests:** Multiple sponsorship phrasings, work authorization, salary, relocation, remote preference, availability, location, travel, unknown concepts, fresh/stale boundary, explicit permission denial, owned upsert shape, and empty/unmapped answer rejection.
+- **Migration:** `20260814030000_add_answer_memory`
+- **Known limitations:** The initial concept catalog is intentionally bounded and English-first. New concepts require an explicit domain addition instead of silently creating labels from model output.
+- **Follow-up:** RP-017 applies hard answer-authority rules to sensitive, consequential, attestation, and stale-memory cases.

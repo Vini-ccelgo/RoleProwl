@@ -73,3 +73,7 @@ RP-014 routes cover letters and shorter application responses through separate R
 ## Question classification
 
 RP-015 classifies application questions before selecting an answer path. Ordered deterministic rules own attestations, sensitive demographic/health data, work authorization and other consequential fields, candidate policies, computable facts, profile facts, and common role narratives. Safety categories are resolved without invoking AI and therefore cannot be downgraded by a model. Only unmatched questions may use the schema-constrained classifier task; without a provider they remain explicitly `UNKNOWN`.
+
+## Answer memory
+
+RP-016 maps semantically equivalent application wording to a bounded set of canonical concepts; it does not use exact-question equality as identity. Each user-owned memory retains structured answer data, its source, verification timestamp, explicit auto-answer permission, example wording, and a concept-specific re-verification interval. Freshness is deterministic. An expired or permission-disabled memory remains available for review but cannot auto-answer.

@@ -34,6 +34,7 @@ model User {
   matchFeedback            MatchFeedback[]
   resumeVersions           ResumeVersion[]
   writingArtifacts         ApplicationWritingArtifact[]
+  answerMemories           AnswerMemory[]
 
   @@unique([authProvider, externalAuthId])
   @@index([email])
@@ -378,6 +379,32 @@ model ApplicationWritingClaim {
 
   @@id([artifactId, claimId])
   @@index([claimId])
+}
+
+enum AnswerMemorySource {
+  PROFILE_FACT
+  COMPUTED_FACT
+  USER_POLICY
+  EXPLICIT_CONSEQUENTIAL
+}
+
+model AnswerMemory {
+  id                         String             @id @default(cuid())
+  userId                     String
+  concept                    String
+  answer                     Json
+  source                     AnswerMemorySource
+  verifiedAt                 DateTime
+  reverifyAfterDays          Int?
+  autoAnswerAllowed          Boolean            @default(false)
+  normalizedQuestionExamples String[]           @default([])
+  lastUsedAt                 DateTime?
+  createdAt                  DateTime           @default(now())
+  updatedAt                  DateTime           @updatedAt
+  user                       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, concept])
+  @@index([userId, verifiedAt])
 }
 
 model GeneratedClaimEvidence {
