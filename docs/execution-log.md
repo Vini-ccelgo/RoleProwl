@@ -68,3 +68,12 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **External setup:** Operator-selected Greenhouse board-token/company mappings use `GREENHOUSE_BOARDS_JSON`; these are public identifiers, not credentials.
 - **Known limitations:** No global Greenhouse search exists in the documented API. Submission and application schemas are not advertised because RoleProwl has no employer Job Board API key. LinkedIn/Indeed automation is not implemented.
 - **Follow-up:** RP-009 persists normalized source records and deduplicates without merging distinct openings.
+
+### RP-009 — Job normalization and deduplication
+
+- **Status:** Pass
+- **Major implementation:** Deterministic company/title/location/employment/URL/skill normalization, conservative multi-signal deduplication, material-change hashing, repost protection, source-association persistence, and observed stale/expiry policy.
+- **Tests:** Same source, same opportunity across sources, different locations, different seniority, later repost, changed description, stale/expired observations, URL tracking removal, and technical skill distinctions.
+- **Migration:** None; RP-006 source-association tables support this workflow.
+- **Known limitations:** Description similarity is a conservative token-overlap signal, not an embedding model; ambiguous openings remain separate.
+- **Follow-up:** RP-010 evaluates candidate qualification and preference with evidence-bearing deterministic layers.
