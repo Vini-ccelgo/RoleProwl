@@ -39,6 +39,7 @@ model User {
   reviewQueueItems         ReviewQueueItem[]
   reviewQueueAuditEvents   ReviewQueueAuditEvent[]
   applicationDecisions     ApplicationDecision[]
+  applicationWorkflowRuns  ApplicationWorkflowRun[]
 
   @@unique([authProvider, externalAuthId])
   @@index([email])
@@ -95,6 +96,7 @@ model Job {
   writingArtifacts        ApplicationWritingArtifact[]
   reviewQueueItems        ReviewQueueItem[]
   applicationDecisions    ApplicationDecision[]
+  applicationWorkflowRuns ApplicationWorkflowRun[]
 
   @@index([normalizedCompany, normalizedTitle])
   @@index([status, lastSeenAt])
@@ -480,23 +482,56 @@ model ReviewQueueItem {
 }
 
 model ApplicationDecision {
-  id              String           @id @default(cuid())
+  id              String                   @id @default(cuid())
   userId          String
   jobId           String
   result          String
-  reasonCodes     String[]         @default([])
+  reasonCodes     String[]                 @default([])
   inputSnapshot   Json
   inputHash       String
   policyVersion   String
   decisionVersion String
-  createdAt       DateTime         @default(now())
-  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  job             Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  createdAt       DateTime                 @default(now())
+  user            User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job             Job                      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   reviewQueueItem ReviewQueueItem?
+  workflowRuns    ApplicationWorkflowRun[]
 
   @@unique([userId, jobId, inputHash, decisionVersion])
   @@index([userId, createdAt])
   @@index([jobId])
+}
+
+enum ApplicationWorkflowStatus {
+  PENDING
+  PROCESSING
+  WAITING_REVIEW
+  SUBMITTING
+  SUBMITTED
+  FAILED_RETRYABLE
+  FAILED_FINAL
+}
+
+model ApplicationWorkflowRun {
+  id             String                    @id @default(cuid())
+  userId         String
+  jobId          String
+  decisionId     String
+  idempotencyKey String                    @unique
+  status         ApplicationWorkflowStatus @default(PENDING)
+  attemptCount   Int                       @default(0)
+  lastErrorCode  String?
+  lastErrorAt    DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  user           User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job            Job                       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  decision       ApplicationDecision       @relation(fields: [decisionId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status, createdAt])
+  @@index([decisionId])
 }
 
 model ReviewQueueAuditEvent {

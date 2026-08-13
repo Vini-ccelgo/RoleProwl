@@ -63,3 +63,20 @@ OPENAI_API_KEY
 **Official references:** [Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create) and [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
 
 **Without setup:** Unit, integration, build, and browser tests use deterministic test doubles. Live AI tasks fail closed with a typed configuration error.
+
+## 5. Inngest durable workflows
+
+**Why needed:** RP-021 uses event-driven durable functions for retriable application workflow execution and run observability.
+
+**Account/action:** Create an Inngest application, sync the deployed `/api/inngest` endpoint, and configure event/signing keys. For local development, run the Inngest Dev Server against the Next.js endpoint; cloud credentials are not needed for the deterministic workflow tests.
+
+**Environment variables:**
+
+```text
+INNGEST_EVENT_KEY
+INNGEST_SIGNING_KEY
+```
+
+**Official references:** [Next.js quick start](https://www.inngest.com/docs/getting-started/nextjs-quick-start) and [idempotency guide](https://www.inngest.com/docs/guides/handling-idempotency).
+
+**Without setup:** Application workflow requests remain durably represented in PostgreSQL but cannot be delivered to the hosted workflow executor. Unit tests use the provider-neutral contract.

@@ -93,3 +93,7 @@ RP-019 persists an owner-scoped snapshot of every input a candidate needs to rev
 ## Application decisions
 
 RP-020 is the single combined decision boundary. It receives job, fit, policy, claim counts, question dispositions, source capability, materials, and explicit submission authorization. Inputs are canonicalized and SHA-256 hashed; the complete snapshot, policy/decision versions, result, and reason codes are persisted under an idempotent uniqueness key. Hard rejection retains priority. Any non-answered question becomes review work, while unsupported claims, missing source capability, or missing authorization can never produce eligibility. A review decision and its initial audit event are created in the same database transaction.
+
+## Durable workflows
+
+RP-021 retains durable application state in PostgreSQL and uses `WorkflowProvider` as the feature boundary. A stable user/decision idempotency key protects database creation and is also sent as the Inngest event ID; the Inngest function adds consumer-side idempotency keyed to the workflow run. Named steps make start, decision validation, and outcome persistence independently retriable/observable. Terminal states are immutable, attempts and sanitized failures are durable, and exhausted retries become `FAILED_FINAL` instead of disappearing.

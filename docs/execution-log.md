@@ -192,3 +192,15 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Status:** Pass
 - **Matrix:** 36 combinations spanning unsupported claim counts, resolved/consequential/attestation questions, source capability, and explicit submission authorization; replayed outputs and hashes are identical.
 - **Invariant:** No application with an unsupported claim, unresolved consequential question, attestation, missing source submission capability, or missing submission authorization becomes `ELIGIBLE_FOR_SUBMISSION`.
+
+## Phase E — Workflows and application lifecycle
+
+### RP-021 — Application workflow engine
+
+- **Status:** Pass
+- **Major implementation:** Durable workflow-run model and complete state vocabulary, guarded state transitions, stable application idempotency keys, idempotent create-or-get repository, provider-neutral event publication, official Inngest v4 adapter/Next.js handler, producer and consumer deduplication, named durable steps, attempt/error timestamps, terminal-state short circuit, retries, and exhausted-retry finalization.
+- **Tests:** Valid/invalid state transitions, terminal protection, decision-to-state mapping, stable key derivation, identical persistence/event keys, and duplicate request reuse. No test sends a real external application.
+- **Migration:** `20260814070000_add_application_workflows`
+- **External setup:** Hosted execution requires Inngest event/signing keys and endpoint sync as consolidated in `docs/setup-required.md`.
+- **Known limitations:** RP-021 stops at `SUBMITTING`; RP-022 and RP-023 determine legitimate source capability and execute only authorized adapters.
+- **Follow-up:** RP-022 centralizes all integration capabilities and prohibited automation modes.
