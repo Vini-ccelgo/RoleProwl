@@ -22,6 +22,7 @@ describe("authentication configuration", () => {
   it("recognizes protected routes and their nested resources", () => {
     expect(isProtectedApplicationPath("/jobs")).toBe(true);
     expect(isProtectedApplicationPath("/jobs/job-1")).toBe(true);
+    expect(isProtectedApplicationPath("/notifications")).toBe(true);
     expect(isProtectedApplicationPath("/privacy")).toBe(false);
   });
 

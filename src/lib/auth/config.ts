@@ -19,6 +19,7 @@ export const protectedApplicationPaths = [
   "/jobs",
   "/queue",
   "/applications",
+  "/notifications",
   "/settings",
 ] as const;
 
