@@ -2,6 +2,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { AuthorizationError } from "@/core/errors/application-errors";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
+import { databaseClient } from "@/lib/db/client";
 import { redirect } from "next/navigation";
 
 export default async function ApplicationLayout({
@@ -16,6 +17,13 @@ export default async function ApplicationLayout({
     },
   );
   if (!actor) redirect("/sign-in?redirect_url=/dashboard");
+  const unreadNotifications = await databaseClient().notification.count({
+    where: { userId: actor.id, readAt: null },
+  });
 
-  return <AppShell actor={actor}>{children}</AppShell>;
+  return (
+    <AppShell actor={actor} unreadNotifications={unreadNotifications}>
+      {children}
+    </AppShell>
+  );
 }

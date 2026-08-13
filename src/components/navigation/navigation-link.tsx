@@ -6,10 +6,12 @@ import { cn } from "@/lib/cn";
 export function NavigationLink({
   href,
   compact = false,
+  count,
   onClick,
 }: {
   href: string;
   compact?: boolean;
+  count?: number;
   onClick?: () => void;
 }) {
   const pathname = usePathname();
@@ -26,6 +28,11 @@ export function NavigationLink({
     >
       <Icon size={18} aria-hidden="true" />
       <span>{route.label}</span>
+      {count !== undefined && count > 0 && (
+        <span aria-label={`${count} unread`} className="badge ml-auto">
+          {count > 99 ? "99+" : count}
+        </span>
+      )}
     </Link>
   );
 }

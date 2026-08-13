@@ -42,6 +42,7 @@ model User {
   applicationWorkflowRuns  ApplicationWorkflowRun[]
   applications             Application[]
   applicationEvents        ApplicationEvent[]
+  notifications            Notification[]
 
   @@unique([authProvider, externalAuthId])
   @@index([email])
@@ -620,6 +621,31 @@ model ApplicationEvent {
 
   @@index([applicationId, createdAt])
   @@index([actorUserId, createdAt])
+}
+
+enum NotificationType {
+  APPLICATION_NEEDS_REVIEW
+  WORKFLOW_FAILED
+  JOB_UNAVAILABLE
+  QUESTION_NEEDS_ANSWER
+  APPLICATION_SUBMITTED
+}
+
+model Notification {
+  id         String           @id @default(cuid())
+  userId     String
+  type       NotificationType
+  title      String
+  body       String
+  entityType String?
+  entityId   String?
+  dedupeKey  String
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, readAt, createdAt])
 }
 
 model ReviewQueueAuditEvent {

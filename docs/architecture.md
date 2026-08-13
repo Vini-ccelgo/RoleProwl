@@ -117,3 +117,7 @@ Application state changes use a deterministic transition graph and an optimistic
 ## Operational dashboard
 
 RP-025 replaces the authenticated dashboard placeholder with owner-scoped database queries. Counts are computed from active match analyses, the candidate's configured high-fit threshold, prepared/application states, unresolved review items, and recorded outcomes. Top matches and recent application events are likewise live records. Empty states direct the candidate to the next relevant product surface; the dashboard has no fixture counts, fabricated activity, or unsupported conversion claims.
+
+## Internal notifications
+
+RP-026 uses a provider-neutral `NotificationProvider` with PostgreSQL as the alpha delivery channel. Notifications are owner-scoped, bounded, deduplicated by user and causal event, and support read/unread state. Review creation, unresolved questions, exhausted workflow retries, confirmed submissions, and explicit job-unavailable transitions generate durable notifications at their existing transaction or use-case boundary. The authenticated shell displays an unread count and `/notifications` is the inbox. No email address, phone number, external messaging vendor, or behavioral tracking is required.

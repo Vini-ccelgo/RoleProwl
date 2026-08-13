@@ -9,9 +9,11 @@ import { isClerkConfigured } from "@/lib/auth/config";
 export function AppShell({
   actor,
   children,
+  unreadNotifications,
 }: {
   actor: AuthenticatedActor;
   children: React.ReactNode;
+  unreadNotifications: number;
 }) {
   return (
     <div className="app-frame">
@@ -20,7 +22,15 @@ export function AppShell({
         <nav aria-label="Application navigation">
           <NavigationLink href={HOME_ROUTE.href} />
           {APP_ROUTES.map((route) => (
-            <NavigationLink key={route.href} href={route.href} />
+            <NavigationLink
+              count={
+                route.href === "/notifications"
+                  ? unreadNotifications
+                  : undefined
+              }
+              key={route.href}
+              href={route.href}
+            />
           ))}
         </nav>
         <div className="sidebar-account">

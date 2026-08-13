@@ -131,6 +131,24 @@ export class PrismaApplicationSubmissionRepository implements ApplicationSubmiss
           detail: json({ confirmation, externalId: receipt.externalId }),
         },
       });
+      await transaction.notification.upsert({
+        where: {
+          userId_dedupeKey: {
+            userId: current.userId,
+            dedupeKey: `application-submitted:${applicationId}`,
+          },
+        },
+        create: {
+          userId: current.userId,
+          type: "APPLICATION_SUBMITTED",
+          title: "Application submitted",
+          body: "A tracked application now has a confirmed submission record.",
+          entityType: "application",
+          entityId: applicationId,
+          dedupeKey: `application-submitted:${applicationId}`,
+        },
+        update: {},
+      });
       return recordFrom(application);
     });
   }

@@ -45,6 +45,17 @@ export async function createReviewQueueItem(input: {
         after: json({ status: item.status, reasonCodes: item.reasonCodes }),
       },
     });
+    await transaction.notification.create({
+      data: {
+        userId: input.userId,
+        type: "APPLICATION_NEEDS_REVIEW",
+        title: "Application needs review",
+        body: "An application has unresolved questions or policy decisions.",
+        entityType: "reviewQueueItem",
+        entityId: item.id,
+        dedupeKey: `review:${item.id}`,
+      },
+    });
     return item;
   });
 }

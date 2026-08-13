@@ -60,6 +60,46 @@ export class PrismaApplicationDecisionRepository implements ApplicationDecisionR
           note: "Created by application-decision-v1",
         },
       });
+      await transaction.notification.upsert({
+        where: {
+          userId_dedupeKey: {
+            userId: input.input.userId,
+            dedupeKey: `review:${queue.id}`,
+          },
+        },
+        create: {
+          userId: input.input.userId,
+          type: "APPLICATION_NEEDS_REVIEW",
+          title: "Application needs review",
+          body: "An application decision needs your attention before it can continue.",
+          entityType: "reviewQueueItem",
+          entityId: queue.id,
+          dedupeKey: `review:${queue.id}`,
+        },
+        update: {},
+      });
+      if (
+        Array.isArray(input.queueSnapshot.unresolvedQuestions) &&
+        input.queueSnapshot.unresolvedQuestions.length > 0
+      )
+        await transaction.notification.upsert({
+          where: {
+            userId_dedupeKey: {
+              userId: input.input.userId,
+              dedupeKey: `questions:${queue.id}`,
+            },
+          },
+          create: {
+            userId: input.input.userId,
+            type: "QUESTION_NEEDS_ANSWER",
+            title: "Application question needs an answer",
+            body: "One or more application questions require your direct answer or confirmation.",
+            entityType: "reviewQueueItem",
+            entityId: queue.id,
+            dedupeKey: `questions:${queue.id}`,
+          },
+          update: {},
+        });
       return { id: decision.id, reviewQueueItemId: queue.id };
     });
   }

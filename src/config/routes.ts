@@ -4,6 +4,7 @@ import {
   FileText,
   House,
   LayoutDashboard,
+  Bell,
   Settings,
   UserRound,
   type LucideIcon,
@@ -23,6 +24,7 @@ export const APP_ROUTES = [
   { href: "/jobs", label: "Jobs", icon: BriefcaseBusiness },
   { href: "/queue", label: "Queue", icon: ClipboardList },
   { href: "/applications", label: "Applications", icon: FileText },
+  { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const satisfies readonly AppRoute[];
 

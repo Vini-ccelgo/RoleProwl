@@ -13,16 +13,40 @@ export const applicationWorkflowFunction = inngest.createFunction(
     onFailure: async ({ event }) => {
       const workflowRunId = String(event.data.event.data.workflowRunId ?? "");
       if (!workflowRunId) return;
-      await databaseClient().applicationWorkflowRun.updateMany({
-        where: {
-          id: workflowRunId,
-          status: { notIn: ["SUBMITTED", "FAILED_FINAL"] },
-        },
-        data: {
-          status: "FAILED_FINAL",
-          lastErrorCode: "RETRIES_EXHAUSTED",
-          lastErrorAt: new Date(),
-        },
+      const database = databaseClient();
+      await database.$transaction(async (transaction) => {
+        const run = await transaction.applicationWorkflowRun.findUnique({
+          where: { id: workflowRunId },
+          select: { userId: true, status: true },
+        });
+        if (!run || run.status === "SUBMITTED" || run.status === "FAILED_FINAL")
+          return;
+        await transaction.applicationWorkflowRun.update({
+          where: { id: workflowRunId },
+          data: {
+            status: "FAILED_FINAL",
+            lastErrorCode: "RETRIES_EXHAUSTED",
+            lastErrorAt: new Date(),
+          },
+        });
+        await transaction.notification.upsert({
+          where: {
+            userId_dedupeKey: {
+              userId: run.userId,
+              dedupeKey: `workflow-failed:${workflowRunId}`,
+            },
+          },
+          create: {
+            userId: run.userId,
+            type: "WORKFLOW_FAILED",
+            title: "Application workflow failed",
+            body: "A workflow stopped after its safe retries were exhausted. Review the application before continuing.",
+            entityType: "applicationWorkflowRun",
+            entityId: workflowRunId,
+            dedupeKey: `workflow-failed:${workflowRunId}`,
+          },
+          update: {},
+        });
       });
     },
   },

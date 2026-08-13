@@ -248,3 +248,13 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** None.
 - **Known limitations:** Counts reflect only data ingested or recorded inside RoleProwl. A missing external response remains absent rather than being inferred.
 - **Follow-up:** RP-026 creates first-party internal notifications from consequential domain events.
+
+### RP-026 — Internal notifications
+
+- **Status:** Pass
+- **Major implementation:** Provider-neutral notification contract; durable deduplicated inbox; read/all-read actions; unread navigation count; and notifications for application review, direct questions, workflow failure, job unavailability, and confirmed submission.
+- **Tests:** Content bounds, provider invocation, interested-user targeting, unknown-job handling, owner-scoped mutations through implementation review, strict typing, and route compilation.
+- **Migration:** `20260814090000_add_notifications` adds typed first-party notification storage and read state.
+- **External setup:** None. Email and SMS delivery are intentionally outside the alpha.
+- **Known limitations:** Notifications are in-product only and are retained with the account until RP-028 deletion.
+- **Follow-up:** RP-027 unifies consequential behavior in a safe audit-event model.
