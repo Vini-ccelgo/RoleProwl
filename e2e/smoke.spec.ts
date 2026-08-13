@@ -19,15 +19,42 @@ test("homepage exposes its brand, CTA, and desktop navigation", async ({
 });
 
 for (const route of APP_ROUTES)
-  test(`${route.href} renders in the application shell`, async ({ page }) => {
+  test(`${route.href} rejects an unauthenticated browser`, async ({ page }) => {
     await page.goto(route.href);
-    await expect(
-      page.getByRole("heading", { name: route.label, level: 1 }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("navigation", { name: "Application navigation" }),
-    ).toBeVisible();
+    await expect(page).toHaveURL(/\/sign-in\?redirect_url=/);
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   });
+
+test("public sign-in entry point loads without credentials", async ({
+  page,
+}) => {
+  await page.goto("/sign-in", { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+});
+
+test("public sign-up entry point loads without credentials", async ({
+  page,
+}) => {
+  await page.goto("/sign-up", { waitUntil: "networkidle" });
+  await expect(
+    page.getByRole("heading", { name: "Create your account" }),
+  ).toBeVisible();
+});
+
+test("an invalid session cookie does not unlock application routes", async ({
+  context,
+  page,
+}) => {
+  await context.addCookies([
+    {
+      name: "__session",
+      value: "invalid-session-fixture",
+      url: "http://127.0.0.1:3100",
+    },
+  ]);
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/sign-in\?redirect_url=/);
+});
 for (const route of LEGAL_ROUTES)
   test(`${route.href} identifies placeholder content`, async ({ page }) => {
     await page.goto(route.href);
@@ -50,7 +77,7 @@ test("mobile homepage has no horizontal overflow and exposes menu", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "networkidle" });
   const dimensions = await page.evaluate(() => ({
     scroll: document.documentElement.scrollWidth,
     client: document.documentElement.clientWidth,

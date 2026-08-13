@@ -2,7 +2,7 @@
 
 RoleProwl is a truth-first, candidate-controlled workspace for discovering opportunities, evaluating fit, preparing applications, and tracking outcomes. This repository currently contains the RP-001 project foundation and public homepage; product workflows are intentionally not implemented yet.
 
-> **TEMPORARY:** Application routes are unprotected until RP-002. Do not treat them as production-ready authenticated surfaces.
+Application routes are protected by the RP-002 authentication boundary. Clerk and PostgreSQL credentials are required to enter the authenticated workspace; without them, the routes remain closed and the public authentication pages report the missing setup.
 
 ## Prerequisites
 

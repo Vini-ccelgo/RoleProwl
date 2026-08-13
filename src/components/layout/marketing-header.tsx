@@ -1,4 +1,5 @@
 import { RoleProwlLogo } from "@/components/brand/roleprowl-logo";
+import { AuthNavigation } from "@/components/navigation/auth-navigation";
 import { Button } from "@/components/ui/button";
 import { ALL_NAV_ROUTES } from "@/config/routes";
 import { NavigationLink } from "@/components/navigation/navigation-link";
@@ -14,12 +15,7 @@ export function MarketingHeader() {
             <NavigationLink key={route.href} href={route.href} compact />
           ))}
         </nav>
-        <div className="header-actions">
-          <Button href="/dashboard" variant="secondary">
-            Sign In
-          </Button>
-          <Button href="/onboarding">Get Started</Button>
-        </div>
+        <AuthNavigation />
         <div className="mobile-actions">
           <Button href="/onboarding">Get Started</Button>
           <MobileMenu />

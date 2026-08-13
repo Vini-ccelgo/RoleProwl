@@ -20,7 +20,9 @@ An LLM adapter cannot decide application authority. Models are probabilistic con
 
 The marketing shell owns `/`, `/privacy`, `/terms`, and `/security`. Legal routes visibly contain development placeholders. The application shell owns `/dashboard`, `/onboarding`, `/profile`, `/jobs`, `/queue`, `/applications`, and `/settings`. All navigation derives from `src/config/routes.ts`.
 
-> **TEMPORARY:** Application routes are unprotected until RP-002 adds Clerk. RP-001 introduces no replacement session logic.
+Application routes are protected in RP-002 at the server layout/resource boundary. Clerk is the initial adapter, while `User` records retain a RoleProwl-owned ID keyed to the provider identity. When Clerk is not configured, protected routes remain closed; no replacement development session is invented.
+
+Identity webhooks are signature-verified and provide eventual synchronization. Authenticated requests also resolve the active external identity to an internal account, preventing the domain from treating the Clerk user object as its user model.
 
 ## Source adapter strategy
 

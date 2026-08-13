@@ -4,3 +4,4 @@ export * from "./auth-provider";
 export * from "./job-source-adapter";
 export * from "./object-storage-provider";
 export * from "./workflow-provider";
+export * from "./user-account-repository";
