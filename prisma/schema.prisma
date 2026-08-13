@@ -24,9 +24,99 @@ model User {
   credentials              Credential[]
   candidatePreferences     CandidatePreferences?
   workAuthorizationProfile WorkAuthorizationProfile?
+  candidateDocuments       CandidateDocument[]
+  documentExtractions      DocumentExtraction[]
+  candidateFactProposals   CandidateFactProposal[]
 
   @@unique([authProvider, externalAuthId])
   @@index([email])
+}
+
+enum CandidateDocumentFormat {
+  PDF
+  DOCX
+}
+
+enum CandidateDocumentStatus {
+  PROCESSING
+  EXTRACTED
+  EXTRACTION_UNSUPPORTED
+  FAILED
+}
+
+enum DocumentExtractionStatus {
+  PENDING
+  SUCCEEDED
+  EXTRACTION_UNSUPPORTED
+  FAILED
+}
+
+enum CandidateFactProposalStatus {
+  PENDING
+  ACCEPTED
+  EDITED_AND_ACCEPTED
+  REJECTED
+}
+
+model CandidateDocument {
+  id               String                  @id @default(cuid())
+  userId           String
+  format           CandidateDocumentFormat
+  status           CandidateDocumentStatus @default(PROCESSING)
+  originalFileName String
+  mimeType         String
+  sizeBytes        Int
+  contentHash      String
+  storageKey       String                  @unique
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  user             User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  extraction       DocumentExtraction?
+  proposals        CandidateFactProposal[]
+
+  @@unique([userId, contentHash])
+  @@index([userId, createdAt])
+}
+
+model DocumentExtraction {
+  id             String                   @id @default(cuid())
+  userId         String
+  documentId     String                   @unique
+  status         DocumentExtractionStatus @default(PENDING)
+  extractedText  String?
+  characterCount Int?
+  pageCount      Int?
+  errorCode      String?
+  errorMessage   String?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  user           User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document       CandidateDocument        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  proposals      CandidateFactProposal[]
+
+  @@index([userId])
+}
+
+model CandidateFactProposal {
+  id            String                      @id @default(cuid())
+  userId        String
+  documentId    String
+  extractionId  String
+  factType      String
+  targetPath    String
+  proposedValue Json
+  sourceRegion  Json
+  confidence    Float?
+  status        CandidateFactProposalStatus @default(PENDING)
+  reviewedAt    DateTime?
+  createdAt     DateTime                    @default(now())
+  updatedAt     DateTime                    @updatedAt
+  user          User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document      CandidateDocument           @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  extraction    DocumentExtraction          @relation(fields: [extractionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([documentId])
 }
 
 enum VerificationState {

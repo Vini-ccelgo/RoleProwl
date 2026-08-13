@@ -34,6 +34,12 @@ Skills use a canonical normalized name per user while preserving display spellin
 
 Each future job/application source implements a narrow contract and advertises a `SourceCapabilitySet`. Use cases check capabilities rather than provider names. This lets RoleProwl distinguish read-only sources, schema-aware sources, supported submission paths, partner authentication, and required user interaction without placing ATS-specific branches throughout the app.
 
+## Résumé import boundary
+
+RP-004 accepts only signature-checked, size-limited PDF and DOCX uploads. The original bytes are stored behind `ObjectStorageProvider` under a randomized private key; the API exposes document metadata, never a public object URL. `unpdf` handles machine-readable PDF text and Mammoth handles DOCX raw text. Encrypted, malformed, scanned, or text-empty documents produce the explicit `EXTRACTION_UNSUPPORTED` state because OCR is outside the alpha scope.
+
+Extracted text and source-line locations live in `DocumentExtraction` and `CandidateFactProposal`. Import is deliberately one-way into pending proposals: it cannot mutate `CandidateProfile`, `WorkExperience`, `Education`, `Skill`, or other canonical Truth Vault models. RP-005 owns the separate accept/edit/reject transition. The filesystem storage adapter uses owner-only file permissions and is development-only; production must provide durable private object storage.
+
 ## Database
 
 Prisma 7 targets PostgreSQL via `prisma.config.ts`. The generated client has an explicit output directory, and `src/lib/db/client.ts` creates a server-only, lazy singleton using the PostgreSQL driver adapter. No candidate, job, or application schema is created in RP-001.

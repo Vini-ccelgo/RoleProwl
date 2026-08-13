@@ -10,3 +10,4 @@ test-results/
 .DS_Store
 pnpm-debug.log*
 src/generated/prisma/
+.roleprowl-storage/

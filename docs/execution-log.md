@@ -21,3 +21,12 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** `20260813120000_add_candidate_truth_vault`
 - **Known limitations:** Database-backed browser interaction requires the PostgreSQL and Clerk setup already recorded in `docs/setup-required.md`.
 - **Follow-up:** RP-004 résumé document ingestion creates unverified fact proposals instead of canonical facts.
+
+### RP-004 — Resume importer and extraction
+
+- **Status:** Pass
+- **Major implementation:** Private PDF/DOCX upload API, signature/MIME/extension/size validation, randomized internal storage keys, development filesystem storage adapter, format-specific text extraction, persistent extraction provenance, and pending candidate-fact proposals.
+- **Tests:** Valid synthetic PDF and DOCX extraction, malformed and text-empty extraction failures, oversized and empty files, incorrect MIME/extension/signature, duplicate rejection, proposal source regions, and foreign-document concealment.
+- **Migration:** `20260813150000_add_resume_import`
+- **Known limitations:** OCR is intentionally unsupported. The local filesystem adapter is not production-ready and live authenticated uploads require the Clerk/PostgreSQL setup already recorded.
+- **Follow-up:** RP-005 will provide the explicit candidate review and canonicalization workflow for pending proposals.

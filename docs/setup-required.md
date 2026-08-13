@@ -35,3 +35,13 @@ DATABASE_URL
 ```
 
 **Without setup:** Static/public compilation works; authenticated data access cannot persist RoleProwl records.
+
+## 3. Production object storage
+
+**Why needed:** RP-004 stores original résumé documents privately. The included filesystem adapter is deliberately restricted to non-production environments.
+
+**Account/action:** Before deployment, select a private object-storage provider, create a non-public bucket, and implement/configure its `ObjectStorageProvider` adapter. Public object URLs must remain disabled.
+
+**Development default:** No account is needed. Files are written with private permissions beneath `ROLEPROWL_LOCAL_STORAGE_PATH` (default: `.roleprowl-storage`) and the directory is ignored by Git.
+
+**Without setup:** Local development and automated tests work; production résumé upload is intentionally blocked by configuration.

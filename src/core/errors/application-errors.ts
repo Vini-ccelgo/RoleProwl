@@ -3,7 +3,9 @@ export type ApplicationErrorCode =
   | "AUTHORIZATION"
   | "NOT_FOUND"
   | "INTEGRATION"
-  | "CONFIGURATION";
+  | "CONFIGURATION"
+  | "CONFLICT"
+  | "EXTRACTION_UNSUPPORTED";
 export class ApplicationError extends Error {
   constructor(
     message: string,
@@ -37,5 +39,15 @@ export class IntegrationError extends ApplicationError {
 export class ConfigurationError extends ApplicationError {
   constructor(message: string) {
     super(message, "CONFIGURATION");
+  }
+}
+export class ExtractionUnsupportedError extends ApplicationError {
+  constructor(message: string, cause?: unknown) {
+    super(message, "EXTRACTION_UNSUPPORTED", cause);
+  }
+}
+export class ConflictError extends ApplicationError {
+  constructor(message: string) {
+    super(message, "CONFLICT");
   }
 }
