@@ -357,9 +357,13 @@ export function matchCandidateToJob(
     ? preferredEarned / preferredPoints
     : 1;
   const otherScore = otherPoints ? otherEarned / otherPoints : 1;
-  const qualificationScore = Math.round(
-    (requiredScore * 0.6 + preferredScore * 0.15 + otherScore * 0.25) * 100,
-  );
+  const qualificationScore =
+    requiredPoints + preferredPoints + otherPoints === 0
+      ? 50
+      : Math.round(
+          (requiredScore * 0.6 + preferredScore * 0.15 + otherScore * 0.25) *
+            100,
+        );
 
   const preferences: boolean[] = [];
   if (job.roleFamily && candidate.preferredRoleFamilies)

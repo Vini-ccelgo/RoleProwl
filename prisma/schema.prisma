@@ -30,6 +30,8 @@ model User {
   candidateFacts           CandidateFact[]
   generatedClaims          GeneratedClaim[]
   claimEvidence            GeneratedClaimEvidence[]
+  jobMatchAnalyses         JobMatchAnalysis[]
+  matchFeedback            MatchFeedback[]
 
   @@unique([authProvider, externalAuthId])
   @@index([email])
@@ -49,7 +51,7 @@ enum JobRemoteType {
 }
 
 model Job {
-  id                      String            @id @default(cuid())
+  id                      String             @id @default(cuid())
   canonicalApplicationUrl String?
   company                 String
   normalizedCompany       String
@@ -74,17 +76,64 @@ model Job {
   postedAt                DateTime?
   expiresAt               DateTime?
   contentHash             String
-  firstSeenAt             DateTime          @default(now())
-  lastSeenAt              DateTime          @default(now())
+  firstSeenAt             DateTime           @default(now())
+  lastSeenAt              DateTime           @default(now())
   lastVerifiedAt          DateTime?
-  status                  JobStatus         @default(ACTIVE)
-  createdAt               DateTime          @default(now())
-  updatedAt               DateTime          @updatedAt
+  status                  JobStatus          @default(ACTIVE)
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
   sourceRecords           JobSourceRecord[]
+  matchAnalyses           JobMatchAnalysis[]
 
   @@index([normalizedCompany, normalizedTitle])
   @@index([status, lastSeenAt])
   @@index([contentHash])
+}
+
+model JobMatchAnalysis {
+  id                 String          @id @default(cuid())
+  userId             String
+  jobId              String
+  qualificationScore Int
+  preferenceScore    Int
+  overallFit         Int
+  confidence         Float
+  hardConflicts      Json
+  strengths          Json
+  partialMatches     Json
+  gaps               Json
+  unknowns           Json
+  scoringVersion     String
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job                Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  feedback           MatchFeedback[]
+
+  @@unique([userId, jobId, scoringVersion])
+  @@index([userId, overallFit])
+}
+
+enum MatchFeedbackRating {
+  ACCURATE
+  INACCURATE
+  NOT_RELEVANT
+}
+
+model MatchFeedback {
+  id         String              @id @default(cuid())
+  userId     String
+  analysisId String
+  signalCode String
+  rating     MatchFeedbackRating
+  note       String?
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analysis   JobMatchAnalysis    @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, analysisId, signalCode])
+  @@index([analysisId])
 }
 
 model JobSourceRecord {

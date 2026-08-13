@@ -86,3 +86,12 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** None; RP-011 persists candidate-facing analyses.
 - **Known limitations:** V1 intentionally uses explicit normalized facts and requirements; semantic comparison remains a separately governed AI task.
 - **Follow-up:** RP-011 stores and displays the evidence behind every score.
+
+### RP-011 — Explainable fit analysis
+
+- **Status:** Pass
+- **Major implementation:** Persistent versioned match analyses, candidate-facing Jobs workspace, evidence sections for strong/partial/gap/conflict/unknown signals, score suppression when decision evidence is absent, and owned accurate/inaccurate/not-relevant feedback.
+- **Tests:** Preference/qualification separation, explicit authorization interpretation, unclassified-skill non-escalation, evidence-bearing scoring, sparse-job confidence, and the complete RP-010 adversarial fixture set.
+- **Migration:** `20260813230000_add_job_match_analysis`
+- **Known limitations:** Live analyses require ingested jobs and an authenticated PostgreSQL-backed candidate. Semantic requirement structuring begins in RP-012.
+- **Follow-up:** Phase C begins with the provider-neutral structured AI implementation.
