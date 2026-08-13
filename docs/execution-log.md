@@ -177,3 +177,18 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** `20260814050000_add_review_queue`
 - **Known limitations:** Queue creation is invoked by the RP-020 decision engine; live interaction requires authenticated PostgreSQL setup.
 - **Follow-up:** RP-020 combines fit, policy, claims, questions, capability, and submission authorization into reproducible persisted decisions.
+
+### RP-020 — Application decision engine
+
+- **Status:** Pass
+- **Major implementation:** Versioned deterministic composition of job, fit, candidate policy, claim validity, question resolution, source capability, materials, and submission authorization; canonical input hashing; complete input snapshots; specific reason codes; idempotent persistence; and atomic queue/audit creation for review decisions.
+- **Tests:** Clean eligibility, stale sponsorship, attestation normalization, narrative-draft review, hard-reject precedence, hash replay/change behavior, queue/no-queue persistence contracts, and a 36-combination safety/determinism matrix.
+- **Migration:** `20260814060000_add_application_decisions`
+- **Known limitations:** Eligibility remains an inert decision state. RP-021 introduces durable workflow state, and RP-023 is the first ticket allowed to invoke a legitimate adapter.
+- **Follow-up:** Phase E begins with idempotent durable application workflow state.
+
+### Phase D automated gate
+
+- **Status:** Pass
+- **Matrix:** 36 combinations spanning unsupported claim counts, resolved/consequential/attestation questions, source capability, and explicit submission authorization; replayed outputs and hashes are identical.
+- **Invariant:** No application with an unsupported claim, unresolved consequential question, attestation, missing source submission capability, or missing submission authorization becomes `ELIGIBLE_FOR_SUBMISSION`.

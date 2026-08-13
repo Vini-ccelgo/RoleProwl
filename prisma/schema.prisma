@@ -38,6 +38,7 @@ model User {
   applicationPolicy        ApplicationPolicy?
   reviewQueueItems         ReviewQueueItem[]
   reviewQueueAuditEvents   ReviewQueueAuditEvent[]
+  applicationDecisions     ApplicationDecision[]
 
   @@unique([authProvider, externalAuthId])
   @@index([email])
@@ -93,6 +94,7 @@ model Job {
   resumeVersions          ResumeVersion[]
   writingArtifacts        ApplicationWritingArtifact[]
   reviewQueueItems        ReviewQueueItem[]
+  applicationDecisions    ApplicationDecision[]
 
   @@index([normalizedCompany, normalizedTitle])
   @@index([status, lastSeenAt])
@@ -452,26 +454,48 @@ enum ReviewQueueAction {
 }
 
 model ReviewQueueItem {
-  id                   String                  @id @default(cuid())
-  userId               String
-  jobId                String
-  status               ReviewQueueStatus       @default(PENDING)
-  reasonCodes          String[]                @default([])
-  fitSnapshot          Json
-  applicationMaterials Json
-  unresolvedQuestions  Json
-  policyResult         String
-  sourceCapability     Json
-  editableDraft        Json?
-  resolutionNote       String?
-  deferredUntil        DateTime?
-  createdAt            DateTime                @default(now())
-  updatedAt            DateTime                @updatedAt
-  user                 User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  job                  Job                     @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  auditEvents          ReviewQueueAuditEvent[]
+  id                    String                  @id @default(cuid())
+  userId                String
+  jobId                 String
+  status                ReviewQueueStatus       @default(PENDING)
+  reasonCodes           String[]                @default([])
+  fitSnapshot           Json
+  applicationMaterials  Json
+  unresolvedQuestions   Json
+  policyResult          String
+  sourceCapability      Json
+  editableDraft         Json?
+  resolutionNote        String?
+  deferredUntil         DateTime?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  user                  User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job                   Job                     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  applicationDecisionId String?                 @unique
+  applicationDecision   ApplicationDecision?    @relation(fields: [applicationDecisionId], references: [id], onDelete: Cascade)
+  auditEvents           ReviewQueueAuditEvent[]
 
   @@index([userId, status, createdAt])
+  @@index([jobId])
+}
+
+model ApplicationDecision {
+  id              String           @id @default(cuid())
+  userId          String
+  jobId           String
+  result          String
+  reasonCodes     String[]         @default([])
+  inputSnapshot   Json
+  inputHash       String
+  policyVersion   String
+  decisionVersion String
+  createdAt       DateTime         @default(now())
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job             Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  reviewQueueItem ReviewQueueItem?
+
+  @@unique([userId, jobId, inputHash, decisionVersion])
+  @@index([userId, createdAt])
   @@index([jobId])
 }
 

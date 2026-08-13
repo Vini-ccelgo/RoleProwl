@@ -89,3 +89,7 @@ RP-018 stores candidate-defined authority separately from preferences and evalua
 ## Review queue and audit
 
 RP-019 persists an owner-scoped snapshot of every input a candidate needs to review: reason codes, job, fit, materials, unresolved questions, policy result, and source capability. Queue mutations are explicit state transitions. Approved/rejected items are terminal, defer dates must be future dates, and optimistic status matching prevents concurrent overwrite. Creation, edits, approval, rejection, and deferral produce audit events with actor, action, before/after snapshots, optional note, and timestamp.
+
+## Application decisions
+
+RP-020 is the single combined decision boundary. It receives job, fit, policy, claim counts, question dispositions, source capability, materials, and explicit submission authorization. Inputs are canonicalized and SHA-256 hashed; the complete snapshot, policy/decision versions, result, and reason codes are persisted under an idempotent uniqueness key. Hard rejection retains priority. Any non-answered question becomes review work, while unsupported claims, missing source capability, or missing authorization can never produce eligibility. A review decision and its initial audit event are created in the same database transaction.
