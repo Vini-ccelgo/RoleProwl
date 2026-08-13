@@ -59,3 +59,12 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** `20260813210000_add_job_source_health`
 - **Known limitations:** Retry scheduling fields are persisted but durable retry execution begins in the workflow phase.
 - **Follow-up:** RP-008 implements only source access currently justified by official documentation.
+
+### RP-008 — Initial job source integration
+
+- **Status:** Pass
+- **Major implementation:** Greenhouse public Job Board discovery/fetch/refresh/normalization adapter, bounded requests, timeout and typed error handling, public hosted application links, and a source-specific access/terms/capability dossier.
+- **Tests:** Public fixture discovery, query/location filtering, HTML-to-text normalization, unknown-field preservation, capability truthfulness, rate limiting, and malformed upstream responses.
+- **External setup:** Operator-selected Greenhouse board-token/company mappings use `GREENHOUSE_BOARDS_JSON`; these are public identifiers, not credentials.
+- **Known limitations:** No global Greenhouse search exists in the documented API. Submission and application schemas are not advertised because RoleProwl has no employer Job Board API key. LinkedIn/Indeed automation is not implemented.
+- **Follow-up:** RP-009 persists normalized source records and deduplicates without merging distinct openings.
