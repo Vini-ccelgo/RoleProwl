@@ -297,3 +297,21 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **External setup:** None. Internal PostgreSQL events are the alpha analytics provider; no third-party analytics account, cookie, fingerprint, or client-side tracking library is used.
 - **Known limitations:** Events measure RoleProwl-recorded lifecycle changes only. They do not infer external views, employer responses, interviews, or offers that the candidate/integration has not explicitly recorded.
 - **Follow-up:** RP-031 runs the complete synthetic candidate journey and automated pre-alpha qualification gate.
+
+## Phase G — Automated pre-alpha qualification
+
+### RP-031 — Automated end-to-end test suite
+
+- **Status:** Pass
+- **Major implementation:** Ten synthetic candidate journeys spanning account/onboarding truth, résumé proposals and verification, Greenhouse discovery/normalization/deduplication/matching, evidence-bound résumé and writing generation, policy and review recomputation, controlled authorized fake submission, retry/final failure, cross-user ownership attacks, unsupported-claim blocking, policy edges, and export/deletion. The job list now links to a real owner-aware `/jobs/[jobId]` detail, and Settings exposes search, application authority, answer-memory metadata, integration capability, privacy, and account areas.
+- **Safety:** All employers, jobs, candidate facts, AI responses, repositories, storage objects, and authorized submission receipts in the journey suite are synthetic. No employer, ATS, job platform, identity provider, AI provider, or hosted workflow service is contacted.
+- **Automated evidence (2026-08-13):** `pnpm test:pre-alpha` passed 37/37 focused evals; `pnpm test` and `pnpm check` passed 283/283 tests across 61 files; `pnpm test:e2e` passed 19/19 Chromium checks; strict TypeScript, ESLint, Prettier, Prisma validation, empty-to-schema SQL generation, and the Next.js production build passed; production and complete dependency audits reported no known vulnerabilities.
+- **Migrations:** No RP-031 migration. The complete alpha schema is reproducible from 20 additive migrations and Prisma generated valid PostgreSQL SQL from an empty database.
+- **Known limitations:** Live authenticated workflows remain unverified until the external setup in `docs/setup-required.md` exists. Legal pages remain clearly labeled development placeholders. No production storage adapter or live authorized ATS submission adapter ships in the alpha. These are external/deferred boundaries, not silently simulated capabilities.
+- **Stop gate:** RP-002 through RP-031 automated implementation is complete. RP-032 and user-led manual alpha testing have not begun.
+
+### Phase G automated gate
+
+- **Status:** Pass
+- **Qualification:** Ready for the user-led manual alpha testing phase after required development services are configured.
+- **Security statement:** Engineering controls and static/regression checks passed; no claim of penetration-test completion, deployment-specific CSP verification, or final security approval is made.

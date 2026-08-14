@@ -25,6 +25,14 @@ for (const route of APP_ROUTES)
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   });
 
+test("a dynamic job detail rejects an unauthenticated browser", async ({
+  page,
+}) => {
+  await page.goto("/jobs/synthetic-job");
+  await expect(page).toHaveURL(/\/sign-in\?redirect_url=/);
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+});
+
 test("public sign-in entry point loads without credentials", async ({
   page,
 }) => {

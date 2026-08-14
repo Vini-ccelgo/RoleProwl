@@ -1,4 +1,5 @@
 import { connection } from "next/server";
+import Link from "next/link";
 import type { MatchEvidence } from "@/core/domain/matching/match-job";
 import { PageHeader } from "@/components/ui/page-header";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
@@ -103,7 +104,9 @@ export default async function JobsPage() {
               <article className="card grid gap-4 p-5" key={job.id}>
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
-                    <h2 className="text-lg font-semibold">{job.title}</h2>
+                    <h2 className="text-lg font-semibold">
+                      <Link href={`/jobs/${job.id}`}>{job.title}</Link>
+                    </h2>
                     <p className="m-0 text-sm">
                       {job.company}
                       {job.locations && Array.isArray(job.locations)
