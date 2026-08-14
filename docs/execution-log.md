@@ -287,3 +287,13 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Dependency audit:** Prisma upgraded from 7.0.0 to 7.9.1. Patched Hono 4.13.2 and Lodash 4.18.1 are selected for compatible upstream ranges. `pnpm audit --prod --audit-level high` reports no known vulnerabilities as of 2026-08-13.
 - **Known limitations:** This is an engineering gate, not a penetration test or final security assessment. CSP and Clerk redirects still require live deployment verification with the configured Clerk instance. No intrusive third-party scan was run.
 - **Follow-up:** RP-030 adds privacy-minimized first-party product analytics behind a provider boundary.
+
+### RP-030 — Product analytics
+
+- **Status:** Pass
+- **Major implementation:** Provider-neutral closed event vocabulary; internal PostgreSQL provider; per-event property allowlists and bounds; idempotent dedupe keys; explicit job view/shortlist/reject actions; lifecycle instrumentation for discovery, preparation, review, submission, response, interview, and offer; aggregate Settings transparency; and export/deletion integration.
+- **Tests:** Property minimization and bounds, malformed-event rejection, provider invocation/failure isolation, discovery emission, review emission, prepared/submitted sequence, response-state mapping, and the complete existing privacy/ownership suite.
+- **Migration:** `20260814130000_add_product_events` adds typed product events and owner-scoped job dispositions.
+- **External setup:** None. Internal PostgreSQL events are the alpha analytics provider; no third-party analytics account, cookie, fingerprint, or client-side tracking library is used.
+- **Known limitations:** Events measure RoleProwl-recorded lifecycle changes only. They do not infer external views, employer responses, interviews, or offers that the candidate/integration has not explicitly recorded.
+- **Follow-up:** RP-031 runs the complete synthetic candidate journey and automated pre-alpha qualification gate.

@@ -15,6 +15,7 @@ export async function exportAccountData(userId: string) {
     applications,
     generatedMaterials,
     notifications,
+    productEvents,
     auditHistory,
   ] = await Promise.all([
     database.user.findUniqueOrThrow({
@@ -39,6 +40,14 @@ export async function exportAccountData(userId: string) {
         candidatePreferences: true,
         workAuthorizationProfile: true,
         candidateFacts: true,
+        jobDispositions: {
+          select: {
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+            job: { select: { company: true, title: true } },
+          },
+        },
       },
     }),
     database.applicationPolicy.findUnique({ where: { userId } }),
@@ -87,6 +96,17 @@ export async function exportAccountData(userId: string) {
       where: { userId },
       orderBy: { createdAt: "asc" },
     }),
+    database.productEvent.findMany({
+      where: { userId },
+      select: {
+        eventType: true,
+        entityType: true,
+        entityId: true,
+        properties: true,
+        occurredAt: true,
+      },
+      orderBy: { occurredAt: "asc" },
+    }),
     database.auditEvent.findMany({
       where: { actorUserId: userId },
       orderBy: { createdAt: "asc" },
@@ -115,6 +135,7 @@ export async function exportAccountData(userId: string) {
       applications,
       generatedMaterials,
       notifications,
+      productEvents,
       auditHistory,
     },
   });

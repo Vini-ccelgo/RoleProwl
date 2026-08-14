@@ -3,6 +3,7 @@ import type {
   PreparedApplication,
   SubmissionReceipt,
 } from "@/core/contracts/application-adapter";
+import type { AnalyticsProvider } from "@/core/contracts/analytics-provider";
 import {
   assertAuthorizedAdapter,
   normalizeSubmissionFailure,
@@ -15,8 +16,10 @@ import {
   ValidationError,
 } from "@/core/errors/application-errors";
 import type { ResolvedIntegrationCapability } from "@/core/integrations/capability-registry";
+import { trackProductEvent } from "@/features/analytics/track-product-event";
 
 interface PreparationContext {
+  readonly analytics?: AnalyticsProvider;
   readonly capability: ResolvedIntegrationCapability;
   readonly decisionId: string | null;
   readonly fitSnapshot: Readonly<Record<string, unknown>>;
@@ -62,6 +65,15 @@ export async function prepareAndMaybeSubmitApplication(
     userId: input.userId,
     workflowRunId: input.workflowRunId,
   });
+  await trackProductEvent(input.analytics, {
+    dedupeKey: `application-prepared:${prepared.applicationId}`,
+    entityId: prepared.applicationId,
+    entityType: "application",
+    eventType: "APPLICATION_PREPARED",
+    occurredAt: new Date(),
+    properties: { mechanism: input.capability.mode },
+    userId: input.userId,
+  });
 
   if (input.capability.mode !== "AUTHORIZED_API") return prepared;
 
@@ -93,15 +105,26 @@ export async function prepareAndMaybeSubmitApplication(
     throw new IntegrationError(
       "The authorized adapter could not verify submission.",
     );
-  return input.repository.markSubmitted(
+  const submitted = await input.repository.markSubmitted(
     prepared.applicationId,
     input.userId,
     receipt,
     "AUTHORIZED_ADAPTER",
   );
+  await trackProductEvent(input.analytics, {
+    dedupeKey: `application-submitted:${submitted.applicationId}`,
+    entityId: submitted.applicationId,
+    entityType: "application",
+    eventType: "APPLICATION_SUBMITTED",
+    occurredAt: receipt.submittedAt,
+    properties: { mechanism: "AUTHORIZED_API" },
+    userId: input.userId,
+  });
+  return submitted;
 }
 
 export async function confirmExternalSubmission(input: {
+  readonly analytics?: AnalyticsProvider;
   readonly application: ApplicationSubmissionRecord;
   readonly confirmed: boolean;
   readonly confirmedAt: Date;
@@ -129,10 +152,20 @@ export async function confirmExternalSubmission(input: {
       input.externalId ?? `external:${input.application.applicationId}`,
     submittedAt: input.confirmedAt,
   };
-  return input.repository.markSubmitted(
+  const submitted = await input.repository.markSubmitted(
     input.application.applicationId,
     input.userId,
     receipt,
     "USER_CONFIRMED_EXTERNAL",
   );
+  await trackProductEvent(input.analytics, {
+    dedupeKey: `application-submitted:${submitted.applicationId}`,
+    entityId: submitted.applicationId,
+    entityType: "application",
+    eventType: "APPLICATION_SUBMITTED",
+    occurredAt: receipt.submittedAt,
+    properties: { mechanism: input.application.mechanism },
+    userId: input.userId,
+  });
+  return submitted;
 }

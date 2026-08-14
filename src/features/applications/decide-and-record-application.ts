@@ -2,6 +2,8 @@ import {
   decideApplication,
   type ApplicationDecisionInput,
 } from "@/core/domain/applications/application-decision";
+import type { AnalyticsProvider } from "@/core/contracts/analytics-provider";
+import { trackProductEvent } from "@/features/analytics/track-product-event";
 
 export interface ApplicationDecisionRepository {
   save(input: {
@@ -22,6 +24,7 @@ export interface ApplicationDecisionRepository {
 }
 
 export async function decideAndRecordApplication(input: {
+  readonly analytics?: AnalyticsProvider;
   readonly decisionInput: ApplicationDecisionInput;
   readonly repository: ApplicationDecisionRepository;
 }) {
@@ -43,5 +46,16 @@ export async function decideAndRecordApplication(input: {
           }
         : null,
   });
+  if (decision.result === "NEEDS_REVIEW") {
+    await trackProductEvent(input.analytics, {
+      dedupeKey: `review-requested:${saved.id}`,
+      entityId: saved.id,
+      entityType: "applicationDecision",
+      eventType: "REVIEW_REQUESTED",
+      occurredAt: new Date(),
+      properties: { reasonCodes: decision.reasons },
+      userId: input.decisionInput.userId,
+    });
+  }
   return { ...decision, ...saved };
 }

@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import type { Prisma } from "@/generated/prisma/client";
+import { requireLegitimateDestination } from "@/core/domain/applications/submission";
 import { matchCandidateToJob } from "@/core/domain/matching/match-job";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import {
@@ -9,6 +11,8 @@ import {
   buildJobMatchSnapshot,
 } from "@/features/jobs/build-match-snapshots";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
+import { PrismaProductAnalyticsProvider } from "@/integrations/analytics/prisma-product-analytics-provider";
+import { trackProductEvent } from "@/features/analytics/track-product-event";
 import { databaseClient } from "@/lib/db/client";
 
 function asJson(value: unknown): Prisma.InputJsonValue {
@@ -125,4 +129,65 @@ export async function recordMatchFeedbackAction(formData: FormData) {
     update: { rating },
   });
   revalidatePath("/jobs");
+}
+
+export async function setJobDispositionAction(formData: FormData) {
+  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const jobId = String(formData.get("jobId") ?? "");
+  const status = String(formData.get("status") ?? "");
+  if (!jobId || (status !== "SHORTLISTED" && status !== "REJECTED")) return;
+  const job = await databaseClient().job.findUnique({
+    where: { id: jobId, status: "ACTIVE" },
+    select: { id: true },
+  });
+  if (!job) return;
+  await databaseClient().candidateJobDisposition.upsert({
+    where: { userId_jobId: { userId: actor.id, jobId } },
+    create: { userId: actor.id, jobId, status },
+    update: { status },
+  });
+  const eventType =
+    status === "SHORTLISTED" ? "JOB_SHORTLISTED" : "JOB_REJECTED";
+  await trackProductEvent(new PrismaProductAnalyticsProvider(), {
+    dedupeKey: `${eventType.toLowerCase().replaceAll("_", "-")}:${actor.id}:${jobId}`,
+    entityId: jobId,
+    entityType: "job",
+    eventType,
+    occurredAt: new Date(),
+    properties: { surface: "jobs" },
+    userId: actor.id,
+  });
+  revalidatePath("/jobs");
+}
+
+export async function openEmployerPostingAction(formData: FormData) {
+  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const jobId = String(formData.get("jobId") ?? "");
+  if (!jobId) return;
+  const job = await databaseClient().job.findUnique({
+    where: { id: jobId, status: "ACTIVE" },
+    select: {
+      id: true,
+      sourceRecords: {
+        orderBy: { lastSeenAt: "desc" },
+        take: 1,
+        select: { applicationUrl: true },
+      },
+    },
+  });
+  if (!job?.sourceRecords[0]?.applicationUrl) return;
+  const destination = requireLegitimateDestination(
+    job.sourceRecords[0].applicationUrl,
+  );
+  const day = new Date().toISOString().slice(0, 10);
+  await trackProductEvent(new PrismaProductAnalyticsProvider(), {
+    dedupeKey: `job-viewed:${actor.id}:${jobId}:${day}`,
+    entityId: jobId,
+    entityType: "job",
+    eventType: "JOB_VIEWED",
+    occurredAt: new Date(),
+    properties: { surface: "jobs" },
+    userId: actor.id,
+  });
+  redirect(destination);
 }

@@ -3,6 +3,19 @@ import {
   type ApplicationState,
 } from "@/core/domain/applications/application-tracker";
 import { NotFoundError } from "@/core/errors/application-errors";
+import type {
+  AnalyticsProvider,
+  ProductEventType,
+} from "@/core/contracts/analytics-provider";
+import { trackProductEvent } from "@/features/analytics/track-product-event";
+
+const ANALYTICS_EVENT_FOR_STATE: Partial<
+  Record<ApplicationState, ProductEventType>
+> = {
+  RESPONSE: "RESPONSE_RECEIVED",
+  INTERVIEW: "INTERVIEW",
+  OFFER: "OFFER",
+};
 
 export interface ApplicationTrackerRepository {
   findState(input: {
@@ -19,6 +32,7 @@ export interface ApplicationTrackerRepository {
 }
 
 export async function updateApplicationState(input: {
+  readonly analytics?: AnalyticsProvider;
   readonly applicationId: string;
   readonly detail?: Readonly<Record<string, unknown>>;
   readonly next: ApplicationState;
@@ -38,4 +52,16 @@ export async function updateApplicationState(input: {
     to: input.next,
     userId: input.userId,
   });
+  const eventType = ANALYTICS_EVENT_FOR_STATE[input.next];
+  if (eventType) {
+    await trackProductEvent(input.analytics, {
+      dedupeKey: `${eventType.toLowerCase().replaceAll("_", "-")}:${input.applicationId}`,
+      entityId: input.applicationId,
+      entityType: "application",
+      eventType,
+      occurredAt: new Date(),
+      properties: { source: "USER_REPORTED" },
+      userId: input.userId,
+    });
+  }
 }

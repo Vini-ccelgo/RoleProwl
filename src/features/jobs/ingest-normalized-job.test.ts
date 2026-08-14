@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { NormalizedSourceJob } from "@/core/contracts/job-source-adapter";
+import type { AnalyticsProvider } from "@/core/contracts/analytics-provider";
 import {
   ingestNormalizedJob,
   type JobIngestionRepository,
@@ -81,10 +82,20 @@ describe("new canonical ingestion", () => {
       mergeSourceAssociation: vi.fn(async () => undefined),
       createCanonicalWithSource,
     };
-    expect(await ingestNormalizedJob(incoming, repository)).toMatchObject({
+    const analytics: AnalyticsProvider = { track: vi.fn() };
+    expect(
+      await ingestNormalizedJob(incoming, repository, new Date(), analytics),
+    ).toMatchObject({
       canonicalJobId: "canonical-new",
       created: true,
     });
     expect(createCanonicalWithSource).toHaveBeenCalledOnce();
+    expect(analytics.track).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "JOB_DISCOVERED",
+        entityId: "canonical-new",
+        userId: null,
+      }),
+    );
   });
 });

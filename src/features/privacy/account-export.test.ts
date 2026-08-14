@@ -13,6 +13,7 @@ describe("portable account export", () => {
         candidate: {},
         generatedMaterials: [],
         notifications: [],
+        productEvents: [],
         policy: null,
       },
     });

@@ -4,7 +4,12 @@ import { PageHeader } from "@/components/ui/page-header";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
-import { analyzeJobAction, recordMatchFeedbackAction } from "./actions";
+import {
+  analyzeJobAction,
+  openEmployerPostingAction,
+  recordMatchFeedbackAction,
+  setJobDispositionAction,
+} from "./actions";
 
 function evidence(value: unknown): MatchEvidence[] {
   return Array.isArray(value)
@@ -56,6 +61,7 @@ export default async function JobsPage() {
         include: { feedback: { where: { userId: actor.id } } },
         take: 1,
       },
+      candidateDispositions: { where: { userId: actor.id }, take: 1 },
     },
   });
 
@@ -89,6 +95,7 @@ export default async function JobsPage() {
                 groups.gaps.length
               : 0;
             const source = job.sourceRecords[0];
+            const disposition = job.candidateDispositions[0]?.status;
             const feedback = analysis?.feedback.find(
               (item) => item.signalCode === "OVERALL",
             );
@@ -184,15 +191,35 @@ export default async function JobsPage() {
                   </form>
                 )}
                 {source?.applicationUrl && (
-                  <a
-                    className="text-sm font-semibold text-brand"
-                    href={source.applicationUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    View employer posting →
-                  </a>
+                  <form action={openEmployerPostingAction}>
+                    <input name="jobId" type="hidden" value={job.id} />
+                    <button
+                      className="text-sm font-semibold text-brand"
+                      type="submit"
+                    >
+                      Open employer posting →
+                    </button>
+                  </form>
                 )}
+                <div className="flex flex-wrap gap-2">
+                  {(["SHORTLISTED", "REJECTED"] as const).map((status) => (
+                    <form action={setJobDispositionAction} key={status}>
+                      <input name="jobId" type="hidden" value={job.id} />
+                      <button
+                        className={
+                          disposition === status
+                            ? "badge"
+                            : "button button-secondary"
+                        }
+                        name="status"
+                        type="submit"
+                        value={status}
+                      >
+                        {status === "SHORTLISTED" ? "Shortlist" : "Reject"}
+                      </button>
+                    </form>
+                  ))}
+                </div>
               </article>
             );
           })}

@@ -110,3 +110,9 @@ INNGEST_SIGNING_KEY
 **No new secret is required.** The PostgreSQL database in section 2 stores rate-limit buckets. Apply `20260814120000_add_rate_limit_buckets` with the other committed migrations.
 
 **Without verification:** Automated builds and synthetic tests pass, but RoleProwl does not claim a completed security assessment or deployment-specific CSP compatibility.
+
+## 9. Product analytics
+
+**No external setup is required.** RP-030 stores its fixed, minimized product-event vocabulary in the same PostgreSQL database as the application. No third-party analytics vendor, tracking cookie, IP enrichment, device fingerprint, or client-side tracking script is configured for alpha.
+
+Apply `20260814130000_add_product_events` with the committed migrations. Candidate-attributed events are exported and deleted with their account.

@@ -8,6 +8,7 @@ export interface AccountExportSections {
   readonly candidate: unknown;
   readonly generatedMaterials: unknown;
   readonly notifications: unknown;
+  readonly productEvents: unknown;
   readonly policy: unknown;
 }
 

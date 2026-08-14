@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ApplicationDecisionInput } from "@/core/domain/applications/application-decision";
+import type { AnalyticsProvider } from "@/core/contracts/analytics-provider";
 import { decideAndRecordApplication } from "./decide-and-record-application";
 
 function decisionInput(needsReview: boolean): ApplicationDecisionInput {
@@ -53,7 +54,9 @@ describe("decideAndRecordApplication", () => {
     const save = vi
       .fn()
       .mockResolvedValue({ id: "decision-1", reviewQueueItemId: "queue-1" });
+    const analytics: AnalyticsProvider = { track: vi.fn() };
     const result = await decideAndRecordApplication({
+      analytics,
       decisionInput: decisionInput(true),
       repository: { save },
     });
@@ -64,6 +67,13 @@ describe("decideAndRecordApplication", () => {
           reasonCodes: ["ATTESTATION_REQUIRED"],
           unresolvedQuestions: expect.any(Array),
         }),
+      }),
+    );
+    expect(analytics.track).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "REVIEW_REQUESTED",
+        entityId: "decision-1",
+        properties: { reasonCodes: ["ATTESTATION_REQUIRED"] },
       }),
     );
   });

@@ -2,6 +2,7 @@ import type {
   AuthorizedApplicationAdapter,
   PreparedApplication,
 } from "@/core/contracts/application-adapter";
+import type { AnalyticsProvider } from "@/core/contracts/analytics-provider";
 import type {
   ApplicationSubmissionRecord,
   ApplicationSubmissionRepository,
@@ -127,7 +128,9 @@ describe("honest application submission", () => {
   it("submits and verifies only through a matching authorized adapter", async () => {
     const repository = new MemoryRepository();
     const adapter = authorizedAdapter();
+    const analytics: AnalyticsProvider = { track: vi.fn() };
     const result = await prepareAndMaybeSubmitApplication({
+      analytics,
       ...context(
         repository,
         resolveIntegrationCapability({
@@ -144,6 +147,15 @@ describe("honest application submission", () => {
     expect(result.state).toBe("SUBMITTED");
     expect(adapter.submit).toHaveBeenCalledOnce();
     expect(adapter.verifySubmission).toHaveBeenCalledOnce();
+    expect(analytics.track).toHaveBeenCalledTimes(2);
+    expect(analytics.track).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ eventType: "APPLICATION_PREPARED" }),
+    );
+    expect(analytics.track).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ eventType: "APPLICATION_SUBMITTED" }),
+    );
   });
 
   it("fails closed when authorization exists but its adapter does not", async () => {

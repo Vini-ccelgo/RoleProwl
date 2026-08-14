@@ -13,6 +13,7 @@ import { updateApplicationState } from "@/features/applications/update-applicati
 import { PrismaApplicationSubmissionRepository } from "@/integrations/applications/prisma-application-submission-repository";
 import { PrismaApplicationTrackerRepository } from "@/integrations/applications/prisma-application-tracker-repository";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
+import { PrismaProductAnalyticsProvider } from "@/integrations/analytics/prisma-product-analytics-provider";
 import { databaseClient } from "@/lib/db/client";
 
 const USER_OUTCOME_STATES = new Set<ApplicationState>([
@@ -35,6 +36,7 @@ export async function updateApplicationStateAction(formData: FormData) {
   )
     return;
   await updateApplicationState({
+    analytics: new PrismaProductAnalyticsProvider(),
     applicationId,
     userId: actor.id,
     next: nextText,
@@ -71,6 +73,7 @@ export async function confirmExternalApplicationAction(formData: FormData) {
       application.submissionPayloadSnapshot as unknown as PreparedApplication,
   };
   await confirmExternalSubmission({
+    analytics: new PrismaProductAnalyticsProvider(),
     application: record,
     userId: actor.id,
     repository: new PrismaApplicationSubmissionRepository(),
