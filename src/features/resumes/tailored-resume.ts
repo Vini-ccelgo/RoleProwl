@@ -190,6 +190,7 @@ export async function generateTailoredResume(input: {
     throw new AIInvalidOutputError("Verified candidate evidence is required.");
   const generated = await input.ai.generateStructured({
     correlationId: input.correlationId,
+    rateLimitSubject: input.userId,
     input: {
       targetJob: input.job,
       evidence: evidence.map(

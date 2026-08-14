@@ -7,6 +7,7 @@ const request = {
   correlationId: "corr-test-1",
   input: { privateValue: "candidate data" },
   promptVersion: "test-v1",
+  rateLimitSubject: "user-1",
   schema: z.object({ answer: z.string() }),
   schemaName: "test_answer",
   system: "Return a test answer.",

@@ -50,4 +50,13 @@ describe("job normalization", () => {
       }),
     );
   });
+
+  it("refuses unsafe application destinations during normalization", () => {
+    expect(() => canonicalizeApplicationUrl("javascript:alert(1)")).toThrow(
+      "HTTPS",
+    );
+    expect(() =>
+      canonicalizeApplicationUrl("https://user:secret@example.test/apply"),
+    ).toThrow("credentials");
+  });
 });

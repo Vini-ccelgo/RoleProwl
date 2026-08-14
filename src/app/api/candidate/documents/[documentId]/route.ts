@@ -1,17 +1,22 @@
 import { NextResponse } from "next/server";
-import { AuthorizationError } from "@/core/errors/application-errors";
+import {
+  ApplicationError,
+  AuthorizationError,
+} from "@/core/errors/application-errors";
 import { requireOwnedCandidateDocument } from "@/core/domain/candidate/resume-import";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { documentStorage } from "@/integrations/storage/development-filesystem-storage";
 import { databaseClient } from "@/lib/db/client";
+import { assertMutationRequestIsSameOrigin } from "@/lib/security/request-security";
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ documentId: string }> },
 ) {
   try {
     const actor = await requireAuthenticatedActor(currentAuthProvider());
+    assertMutationRequestIsSameOrigin(request);
     const { documentId } = await context.params;
     const db = databaseClient();
     const document = await db.candidateDocument.findFirst({
@@ -33,6 +38,12 @@ export async function DELETE(
   } catch (error) {
     if (error instanceof AuthorizationError) {
       return NextResponse.json({ error: error.message }, { status: 401 });
+    }
+    if (error instanceof ApplicationError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: 400 },
+      );
     }
     return NextResponse.json(
       { error: "The document could not be deleted." },

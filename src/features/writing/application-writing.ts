@@ -157,6 +157,7 @@ export async function generateApplicationWriting(input: {
           const definition = aiTaskDefinitions.COVER_LETTER_GENERATION;
           const result = await input.ai.generateStructured({
             correlationId: input.correlationId,
+            rateLimitSubject: input.userId,
             input: taskInput,
             ...definition,
             task: "COVER_LETTER_GENERATION",
@@ -172,6 +173,7 @@ export async function generateApplicationWriting(input: {
           const definition = aiTaskDefinitions.FREE_TEXT_APPLICATION_GENERATION;
           const result = await input.ai.generateStructured({
             correlationId: input.correlationId,
+            rateLimitSubject: input.userId,
             input: taskInput,
             ...definition,
             task: "FREE_TEXT_APPLICATION_GENERATION",

@@ -60,6 +60,11 @@ export function normalizeJobSkills(skills: readonly string[] | null) {
 export function canonicalizeApplicationUrl(value: string | null) {
   if (!value) return null;
   const url = new URL(value);
+  if (url.protocol !== "https:" || url.username || url.password) {
+    throw new TypeError(
+      "Application URLs must use HTTPS and cannot contain credentials.",
+    );
+  }
   url.hash = "";
   for (const key of [...url.searchParams.keys()]) {
     if (/^(?:utm_.+|source|ref|referrer|gh_src)$/iu.test(key))

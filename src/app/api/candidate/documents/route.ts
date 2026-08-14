@@ -3,8 +3,10 @@ import {
   ApplicationError,
   AuthorizationError,
   ExtractionUnsupportedError,
+  RateLimitExceededError,
 } from "@/core/errors/application-errors";
 import {
+  MAX_RESUME_BYTES,
   assertResumeIsNotDuplicate,
   proposeFactsFromResumeText,
   validateResumeUpload,
@@ -13,8 +15,17 @@ import { requireAuthenticatedActor } from "@/features/accounts/require-authentic
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { extractResumeText } from "@/integrations/documents/extract-resume-text";
 import { documentStorage } from "@/integrations/storage/development-filesystem-storage";
+import { PrismaRateLimiter } from "@/integrations/security/prisma-rate-limiter";
 import { databaseClient } from "@/lib/db/client";
 import { logger } from "@/lib/logging/logger";
+import {
+  assertContentLength,
+  assertContentType,
+  assertMutationRequestIsSameOrigin,
+} from "@/lib/security/request-security";
+
+const rateLimiter = new PrismaRateLimiter();
+const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
 
 function errorResponse(error: unknown) {
   if (error instanceof AuthorizationError) {
@@ -24,6 +35,15 @@ function errorResponse(error: unknown) {
     return NextResponse.json(
       { error: error.message, code: error.code },
       { status: 422 },
+    );
+  }
+  if (error instanceof RateLimitExceededError) {
+    return NextResponse.json(
+      { error: error.message, code: error.code },
+      {
+        status: 429,
+        headers: { "Retry-After": String(error.retryAfterSeconds) },
+      },
     );
   }
   if (error instanceof ApplicationError) {
@@ -74,6 +94,16 @@ export async function POST(request: Request) {
   let storedKey: string | undefined;
   try {
     const actor = await requireAuthenticatedActor(currentAuthProvider());
+    assertMutationRequestIsSameOrigin(request);
+    assertContentType(request, "multipart/form-data");
+    assertContentLength(request, MAX_RESUME_BYTES + MULTIPART_OVERHEAD_BYTES);
+    const rateLimit = await rateLimiter.consume(
+      "candidate-document-upload",
+      actor.id,
+      { limit: 10, windowMs: 60 * 60 * 1_000 },
+    );
+    if (!rateLimit.allowed)
+      throw new RateLimitExceededError(rateLimit.retryAfterSeconds);
     const formData = await request.formData();
     const file = formData.get("resume");
     if (!(file instanceof File)) {

@@ -7,7 +7,8 @@ export type ApplicationErrorCode =
   | "CONFLICT"
   | "EXTRACTION_UNSUPPORTED"
   | "AI_REFUSAL"
-  | "AI_INVALID_OUTPUT";
+  | "AI_INVALID_OUTPUT"
+  | "RATE_LIMITED";
 export class ApplicationError extends Error {
   constructor(
     message: string,
@@ -61,5 +62,10 @@ export class AIRefusalError extends ApplicationError {
 export class AIInvalidOutputError extends ApplicationError {
   constructor(message: string, cause?: unknown) {
     super(message, "AI_INVALID_OUTPUT", cause);
+  }
+}
+export class RateLimitExceededError extends ApplicationError {
+  constructor(readonly retryAfterSeconds: number) {
+    super("Too many requests. Try again later.", "RATE_LIMITED");
   }
 }

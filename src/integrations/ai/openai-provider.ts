@@ -6,14 +6,25 @@ import type {
   StructuredAIRequest,
   StructuredAIResult,
 } from "@/core/contracts/ai-provider";
+import type { RateLimiter } from "@/core/contracts/rate-limiter";
 import {
   AIInvalidOutputError,
   AIRefusalError,
   ConfigurationError,
   IntegrationError,
+  RateLimitExceededError,
 } from "@/core/errors/application-errors";
+import {
+  AllowAllRateLimiter,
+  PrismaRateLimiter,
+} from "@/integrations/security/prisma-rate-limiter";
 import type { Logger } from "@/lib/logging/logger";
 import { logger } from "@/lib/logging/logger";
+import { aiEnv } from "@/lib/env/server";
+import {
+  serializeBoundedAIInput,
+  validateAIRequestMetadata,
+} from "@/lib/security/ai-input";
 import { modelForTask, openAIRequestOptions } from "./openai-model-config";
 
 function refusalText(response: { output?: readonly unknown[] }) {
@@ -38,6 +49,7 @@ export class OpenAIProvider implements AIProvider {
   constructor(
     private readonly client: OpenAI,
     private readonly log: Logger = logger,
+    private readonly rateLimiter: RateLimiter = new AllowAllRateLimiter(),
   ) {}
 
   async generateStructured<T>(
@@ -45,12 +57,21 @@ export class OpenAIProvider implements AIProvider {
   ): Promise<StructuredAIResult<T>> {
     const model = modelForTask(request.task);
     const startedAt = Date.now();
+    validateAIRequestMetadata(request);
+    const serializedInput = serializeBoundedAIInput(request.input);
+    const rateLimit = await this.rateLimiter.consume(
+      "openai-structured-task",
+      request.rateLimitSubject,
+      { limit: 30, windowMs: 60_000 },
+    );
+    if (!rateLimit.allowed)
+      throw new RateLimitExceededError(rateLimit.retryAfterSeconds);
     try {
       const response = await this.client.responses.parse({
         model,
         input: [
           { role: "system", content: request.system },
-          { role: "user", content: JSON.stringify(request.input) },
+          { role: "user", content: serializedInput },
         ],
         text: { format: zodTextFormat(request.schema, request.schemaName) },
         metadata: {
@@ -111,11 +132,17 @@ export class OpenAIProvider implements AIProvider {
 }
 
 export function currentAIProvider() {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) {
+  let apiKey: string;
+  try {
+    apiKey = aiEnv().OPENAI_API_KEY;
+  } catch {
     throw new ConfigurationError(
       "OPENAI_API_KEY is required for live AI tasks.",
     );
   }
-  return new OpenAIProvider(new OpenAI({ apiKey, ...openAIRequestOptions() }));
+  return new OpenAIProvider(
+    new OpenAI({ apiKey, ...openAIRequestOptions() }),
+    logger,
+    new PrismaRateLimiter(),
+  );
 }

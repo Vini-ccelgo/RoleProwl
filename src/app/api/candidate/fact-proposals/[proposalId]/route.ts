@@ -13,6 +13,11 @@ import { requireAuthenticatedActor } from "@/features/accounts/require-authentic
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 import type { Prisma } from "@/generated/prisma/client";
+import {
+  assertContentLength,
+  assertContentType,
+  assertMutationRequestIsSameOrigin,
+} from "@/lib/security/request-security";
 
 const reviewRequest = z.object({
   decision: z.enum(["ACCEPT", "EDIT_AND_ACCEPT", "REJECT"]),
@@ -25,6 +30,9 @@ export async function PATCH(
 ) {
   try {
     const actor = await requireAuthenticatedActor(currentAuthProvider());
+    assertMutationRequestIsSameOrigin(request);
+    assertContentType(request, "application/json");
+    assertContentLength(request, 16 * 1024);
     const { proposalId } = await context.params;
     const body = reviewRequest.parse(await request.json());
     const db = databaseClient();

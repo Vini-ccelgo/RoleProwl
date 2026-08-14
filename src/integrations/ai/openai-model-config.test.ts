@@ -20,4 +20,12 @@ describe("OpenAI model configuration", () => {
     delete process.env.ROLEPROWL_AI_MAX_RETRIES;
     expect(openAIRequestOptions()).toEqual({ timeout: 30_000, maxRetries: 2 });
   });
+
+  it("rejects invalid live request controls before creating the SDK client", () => {
+    process.env.ROLEPROWL_AI_TIMEOUT_MS = "999999";
+    expect(() => openAIRequestOptions()).toThrow();
+    process.env.ROLEPROWL_AI_TIMEOUT_MS = "30000";
+    process.env.ROLEPROWL_AI_MAX_RETRIES = "99";
+    expect(() => openAIRequestOptions()).toThrow();
+  });
 });

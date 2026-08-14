@@ -20,6 +20,7 @@ export interface StructuredAIRequest<T> {
   readonly schemaName: string;
   readonly system: string;
   readonly task: AITask;
+  readonly rateLimitSubject: string;
 }
 
 export interface AIUsageMetadata {

@@ -4,7 +4,9 @@ import { z } from "zod";
 import {
   AIInvalidOutputError,
   AIRefusalError,
+  ValidationError,
 } from "@/core/errors/application-errors";
+import type { RateLimiter } from "@/core/contracts/rate-limiter";
 import type { Logger } from "@/lib/logging/logger";
 import { OpenAIProvider } from "./openai-provider";
 
@@ -12,6 +14,7 @@ const request = {
   correlationId: "corr-42",
   input: { candidateName: "Private Person", evidence: ["private evidence"] },
   promptVersion: "test-v1",
+  rateLimitSubject: "user-1",
   schema: z.object({ answer: z.string() }),
   schemaName: "test_answer",
   system: "Return only a supported answer.",
@@ -71,5 +74,41 @@ describe("OpenAIProvider", () => {
     await expect(
       new OpenAIProvider(client, { log: vi.fn() }).generateStructured(request),
     ).rejects.toBeInstanceOf(AIInvalidOutputError);
+  });
+
+  it("rejects oversized input before invoking the provider", async () => {
+    const { client, parse } = clientReturning({});
+    await expect(
+      new OpenAIProvider(client, { log: vi.fn() }).generateStructured({
+        ...request,
+        input: { content: "x".repeat(110_000) },
+      }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  it("enforces the actor-scoped AI rate limit before invoking the provider", async () => {
+    const { client, parse } = clientReturning({});
+    const limiter: RateLimiter = {
+      consume: vi.fn().mockResolvedValue({
+        allowed: false,
+        remaining: 0,
+        retryAfterSeconds: 37,
+      }),
+    };
+    await expect(
+      new OpenAIProvider(client, { log: vi.fn() }, limiter).generateStructured(
+        request,
+      ),
+    ).rejects.toMatchObject({
+      code: "RATE_LIMITED",
+      retryAfterSeconds: 37,
+    });
+    expect(limiter.consume).toHaveBeenCalledWith(
+      "openai-structured-task",
+      "user-1",
+      { limit: 30, windowMs: 60_000 },
+    );
+    expect(parse).not.toHaveBeenCalled();
   });
 });

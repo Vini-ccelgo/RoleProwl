@@ -2,32 +2,34 @@ import { z } from "zod";
 import type { AITask } from "@/core/contracts/ai-provider";
 
 const evidenceReference = z.object({
-  evidenceType: z.string(),
-  evidenceId: z.string(),
-  evidenceField: z.string(),
+  evidenceType: z.string().max(128),
+  evidenceId: z.string().max(128),
+  evidenceField: z.string().max(128),
 });
 
 const generatedClaim = z.object({
-  text: z.string(),
+  text: z.string().max(5_000),
   classification: z.enum([
     "DIRECT_FACT",
     "SUPPORTED_REWRITE",
     "SUPPORTED_INFERENCE",
     "UNSUPPORTED",
   ]),
-  assertions: z.array(
-    z.object({
-      kind: z.enum([
-        "EMPLOYER_NAME",
-        "CREDENTIAL_NAME",
-        "DURATION_MONTHS",
-        "MANAGEMENT_SCOPE",
-        "NUMERIC_ACHIEVEMENT",
-      ]),
-      value: z.string(),
-    }),
-  ),
-  sourceEvidence: z.array(evidenceReference),
+  assertions: z
+    .array(
+      z.object({
+        kind: z.enum([
+          "EMPLOYER_NAME",
+          "CREDENTIAL_NAME",
+          "DURATION_MONTHS",
+          "MANAGEMENT_SCOPE",
+          "NUMERIC_ACHIEVEMENT",
+        ]),
+        value: z.string().max(1_000),
+      }),
+    )
+    .max(50),
+  sourceEvidence: z.array(evidenceReference).max(50),
 });
 
 export const aiTaskDefinitions = {
@@ -37,14 +39,16 @@ export const aiTaskDefinitions = {
     system:
       "Extract only candidate facts explicitly supported by the supplied resume text. Preserve source text and uncertainty. Do not resolve conflicts or invent missing values.",
     schema: z.object({
-      proposals: z.array(
-        z.object({
-          factType: z.string(),
-          proposedValue: z.record(z.string(), z.unknown()),
-          sourceText: z.string(),
-          confidence: z.number().min(0).max(1),
-        }),
-      ),
+      proposals: z
+        .array(
+          z.object({
+            factType: z.string().max(128),
+            proposedValue: z.record(z.string(), z.unknown()),
+            sourceText: z.string().max(5_000),
+            confidence: z.number().min(0).max(1),
+          }),
+        )
+        .max(200),
     }),
   },
   JOB_REQUIREMENT_NORMALIZATION: {
@@ -53,22 +57,26 @@ export const aiTaskDefinitions = {
     system:
       "Normalize only requirements stated by the supplied job. Separate required, preferred, contradictory, and unknown information. Do not infer unstated requirements.",
     schema: z.object({
-      required: z.array(
-        z.object({
-          type: z.string(),
-          value: z.string(),
-          sourceText: z.string(),
-        }),
-      ),
-      preferred: z.array(
-        z.object({
-          type: z.string(),
-          value: z.string(),
-          sourceText: z.string(),
-        }),
-      ),
-      contradictions: z.array(z.string()),
-      unknowns: z.array(z.string()),
+      required: z
+        .array(
+          z.object({
+            type: z.string().max(128),
+            value: z.string().max(1_000),
+            sourceText: z.string().max(5_000),
+          }),
+        )
+        .max(200),
+      preferred: z
+        .array(
+          z.object({
+            type: z.string().max(128),
+            value: z.string().max(1_000),
+            sourceText: z.string().max(5_000),
+          }),
+        )
+        .max(200),
+      contradictions: z.array(z.string().max(1_000)).max(100),
+      unknowns: z.array(z.string().max(1_000)).max(100),
     }),
   },
   SEMANTIC_EVIDENCE_COMPARISON: {
@@ -84,8 +92,8 @@ export const aiTaskDefinitions = {
         "SUPPORTED_INFERENCE",
         "UNSUPPORTED",
       ]),
-      evidenceIds: z.array(z.string()),
-      explanation: z.string(),
+      evidenceIds: z.array(z.string().max(128)).max(100),
+      explanation: z.string().max(2_500),
     }),
   },
   APPLICATION_QUESTION_CLASSIFICATION: {
@@ -105,7 +113,7 @@ export const aiTaskDefinitions = {
         "UNKNOWN",
       ]),
       confidence: z.number().min(0).max(1),
-      rationale: z.string(),
+      rationale: z.string().max(2_000),
     }),
   },
   FREE_TEXT_APPLICATION_GENERATION: {
@@ -115,7 +123,7 @@ export const aiTaskDefinitions = {
       "Write a concise answer using only the supplied job, preferences, and evidence. Do not invent employer attachment or candidate facts. Attach evidence to every candidate-specific claim.",
     schema: z.object({
       text: z.string().max(2500),
-      claims: z.array(generatedClaim),
+      claims: z.array(generatedClaim).max(100),
     }),
   },
   RESUME_TAILORING: {
@@ -124,12 +132,17 @@ export const aiTaskDefinitions = {
     system:
       "Select and safely rewrite only supplied candidate evidence for the target job. Preserve employers, dates, credentials, skills, durations, and numbers exactly unless the supplied evidence supports the change.",
     schema: z.object({
-      headline: z.string(),
-      summary: z.string(),
-      sections: z.array(
-        z.object({ heading: z.string(), bullets: z.array(z.string()) }),
-      ),
-      claims: z.array(generatedClaim),
+      headline: z.string().max(300),
+      summary: z.string().max(2_500),
+      sections: z
+        .array(
+          z.object({
+            heading: z.string().max(200),
+            bullets: z.array(z.string().max(1_500)).max(50),
+          }),
+        )
+        .max(20),
+      claims: z.array(generatedClaim).max(200),
     }),
   },
   COVER_LETTER_GENERATION: {
@@ -138,9 +151,9 @@ export const aiTaskDefinitions = {
     system:
       "Write a concise role-specific cover letter from supplied evidence and preferences. Do not fabricate personal attachment to the employer. Attach evidence to candidate-specific claims.",
     schema: z.object({
-      subject: z.string().nullable(),
+      subject: z.string().max(300).nullable(),
       body: z.string().max(5000),
-      claims: z.array(generatedClaim),
+      claims: z.array(generatedClaim).max(100),
     }),
   },
 } as const satisfies Record<

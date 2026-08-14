@@ -100,3 +100,13 @@ INNGEST_SIGNING_KEY
 **Account/action:** The production object-storage adapter from section 3 must implement idempotent `delete(key)` for private candidate documents and rendered résumés. The Clerk secret key must retain permission to delete the authenticated Clerk identity.
 
 **Without setup:** Production already blocks the development filesystem storage adapter. Account deletion therefore cannot claim completion until a production private-storage adapter is configured; a failed cleanup remains explicitly `CLEANUP_REQUIRED` for operator retry.
+
+## 8. Security deployment verification
+
+**Why needed:** RP-029 installs application controls, but proxy/CDN behavior and the exact Clerk frontend origins exist only in the deployed environment.
+
+**Account/action:** After deployment, verify CSP reports/browser console output across sign-up, sign-in, sign-out, OAuth if enabled, résumé upload, application export, and external-application handoff. Confirm the deployment terminates HTTPS before enabling production traffic and preserves the original request origin used by the same-origin mutation check.
+
+**No new secret is required.** The PostgreSQL database in section 2 stores rate-limit buckets. Apply `20260814120000_add_rate_limit_buckets` with the other committed migrations.
+
+**Without verification:** Automated builds and synthetic tests pass, but RoleProwl does not claim a completed security assessment or deployment-specific CSP compatibility.

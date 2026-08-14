@@ -277,3 +277,13 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **External setup:** Production private storage deletion and Clerk identity deletion permissions are documented in `docs/setup-required.md`.
 - **Known limitations:** RoleProwl cannot delete data previously transmitted to employers or ATS providers. The product says this explicitly in the export and deletion UI.
 - **Follow-up:** RP-029 performs engineering security hardening and regression coverage.
+
+### RP-029 — Security hardening
+
+- **Status:** Pass
+- **Major implementation:** Owner-keyed PostgreSQL rate limits for résumé uploads and live AI; bounded AI serialization and schemas; same-origin, media-type, and request-size checks; signature-verified/bounded webhooks; sanitized error responses; structured-log redaction; HTTPS-only external destinations; secure browser headers; environment/provider-pair validation; and static server/client/XSS checks.
+- **Tests:** Fixed-window deny/reset behavior, oversized/cyclic AI input, AI rate-limit denial before provider invocation, cross-origin mutation rejection, request type/size validation, log redaction/envelope protection, unsafe external links, environment pairs/bounds, client secret separation, raw-HTML absence, and header configuration. Existing ownership, IDOR, upload, workflow-idempotency, safe-redirect, claim, and route-protection suites remain part of the gate.
+- **Migration:** `20260814120000_add_rate_limit_buckets` adds shared hashed fixed-window counters.
+- **Dependency audit:** Prisma upgraded from 7.0.0 to 7.9.1. Patched Hono 4.13.2 and Lodash 4.18.1 are selected for compatible upstream ranges. `pnpm audit --prod --audit-level high` reports no known vulnerabilities as of 2026-08-13.
+- **Known limitations:** This is an engineering gate, not a penetration test or final security assessment. CSP and Clerk redirects still require live deployment verification with the configured Clerk instance. No intrusive third-party scan was run.
+- **Follow-up:** RP-030 adds privacy-minimized first-party product analytics behind a provider boundary.

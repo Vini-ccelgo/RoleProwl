@@ -1,5 +1,6 @@
 import "server-only";
 import type { AITask } from "@/core/contracts/ai-provider";
+import { validateServerEnvironment } from "@/lib/env/server";
 
 const ENV_BY_TASK: Record<AITask, string> = {
   RESUME_FACT_EXTRACTION: "ROLEPROWL_AI_MODEL_RESUME_FACT_EXTRACTION",
@@ -24,8 +25,9 @@ export function modelForTask(task: AITask) {
 }
 
 export function openAIRequestOptions() {
+  const environment = validateServerEnvironment();
   return {
-    timeout: Number(process.env.ROLEPROWL_AI_TIMEOUT_MS || 30_000),
-    maxRetries: Number(process.env.ROLEPROWL_AI_MAX_RETRIES || 2),
+    timeout: environment.ROLEPROWL_AI_TIMEOUT_MS ?? 30_000,
+    maxRetries: environment.ROLEPROWL_AI_MAX_RETRIES ?? 2,
   };
 }

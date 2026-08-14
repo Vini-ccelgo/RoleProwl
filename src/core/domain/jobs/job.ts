@@ -4,12 +4,17 @@ import { z } from "zod";
 const optionalArray = <T extends z.ZodType>(item: T) =>
   z.array(item).nullable();
 
+const safeApplicationUrl = z.url().refine((value) => {
+  const parsed = new URL(value);
+  return parsed.protocol === "https:" && !parsed.username && !parsed.password;
+}, "Application URLs must use HTTPS and cannot contain credentials");
+
 export const canonicalJobSchema = z
   .object({
     company: z.string().trim().min(1),
     title: z.string().trim().min(1),
     description: z.string().trim().min(1).nullable(),
-    canonicalApplicationUrl: z.url().nullable(),
+    canonicalApplicationUrl: safeApplicationUrl.nullable(),
     locations: optionalArray(z.string().trim().min(1)),
     remoteType: z.enum(["ONSITE", "HYBRID", "REMOTE"]).nullable(),
     employmentType: z.string().nullable(),

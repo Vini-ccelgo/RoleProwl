@@ -6,5 +6,6 @@ export * from "./job-source-adapter";
 export * from "./identity-manager";
 export * from "./notification-provider";
 export * from "./object-storage-provider";
+export * from "./rate-limiter";
 export * from "./workflow-provider";
 export * from "./user-account-repository";

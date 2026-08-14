@@ -13,6 +13,7 @@ describe("hybrid application question classifier", () => {
       ai: new DeterministicAIProvider(resolver),
       correlationId: "corr-classify-1",
       question: "Do you have a disability?",
+      userId: "user-1",
     });
     expect(result.classification).toBe("SENSITIVE_PERSONAL_DATA");
     expect(result.source).toBe("DETERMINISTIC");
@@ -31,6 +32,7 @@ describe("hybrid application question classifier", () => {
       }),
       correlationId: "corr-classify-2",
       question: "Share the perspective you would bring to our design practice.",
+      userId: "user-1",
     });
     expect(result).toMatchObject({
       classification: "JOB_SPECIFIC_FREE_TEXT",
@@ -44,6 +46,7 @@ describe("hybrid application question classifier", () => {
       classifyApplicationQuestion({
         correlationId: "corr-classify-3",
         question: "Unrecognized prompt form",
+        userId: "user-1",
       }),
     ).resolves.toMatchObject({ classification: "UNKNOWN" });
   });

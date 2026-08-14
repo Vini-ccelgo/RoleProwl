@@ -4,6 +4,10 @@ import { resolveUserAccount } from "@/features/accounts/resolve-user-account";
 import { identityFromClerkUser } from "@/integrations/auth/clerk-webhook";
 import { PrismaUserAccountRepository } from "@/integrations/auth/prisma-user-account-repository";
 import { logger } from "@/lib/logging/logger";
+import {
+  assertContentLength,
+  assertContentType,
+} from "@/lib/security/request-security";
 
 export async function POST(request: NextRequest) {
   if (!process.env.CLERK_WEBHOOK_SIGNING_SECRET) {
@@ -14,6 +18,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    assertContentType(request, "application/json");
+    assertContentLength(request, 512 * 1024);
     const event = await verifyWebhook(request);
     const repository = new PrismaUserAccountRepository();
 

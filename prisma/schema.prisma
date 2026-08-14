@@ -49,6 +49,16 @@ model User {
   @@index([email])
 }
 
+model RateLimitBucket {
+  key             String   @id
+  windowStartedAt DateTime
+  requestCount    Int
+  expiresAt       DateTime
+  updatedAt       DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
 enum JobStatus {
   ACTIVE
   STALE

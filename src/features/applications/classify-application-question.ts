@@ -10,6 +10,7 @@ export async function classifyApplicationQuestion(input: {
   readonly ai?: AIProvider;
   readonly correlationId: string;
   readonly question: string;
+  readonly userId: string;
 }): Promise<QuestionClassificationResult> {
   const deterministic = classifyQuestionDeterministically(input.question);
   if (
@@ -23,6 +24,7 @@ export async function classifyApplicationQuestion(input: {
   const definition = aiTaskDefinitions.APPLICATION_QUESTION_CLASSIFICATION;
   const generated = await input.ai.generateStructured({
     correlationId: input.correlationId,
+    rateLimitSubject: input.userId,
     input: { question: input.question },
     ...definition,
     task: "APPLICATION_QUESTION_CLASSIFICATION",

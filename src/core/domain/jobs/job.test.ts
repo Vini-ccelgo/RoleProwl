@@ -53,4 +53,19 @@ describe("canonical jobs", () => {
       }),
     ).toThrow("Maximum salary");
   });
+
+  it("rejects unsafe external application links", () => {
+    for (const canonicalApplicationUrl of [
+      "javascript:alert(1)",
+      "http://example.test/apply",
+      "https://user:password@example.test/apply",
+    ]) {
+      expect(
+        canonicalJobSchema.safeParse({
+          ...sparseJob,
+          canonicalApplicationUrl,
+        }).success,
+      ).toBe(false);
+    }
+  });
 });
