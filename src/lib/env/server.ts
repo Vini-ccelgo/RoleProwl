@@ -7,6 +7,20 @@ const optionalSecret = z.preprocess(
   z.string().trim().min(1).optional(),
 );
 
+const optionalBoolean = z.preprocess((value) => {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (value === "") return undefined;
+  return value;
+}, z.boolean().optional());
+
+const optionalPositiveInteger = z.coerce
+  .number()
+  .int()
+  .min(1)
+  .max(1_000_000)
+  .optional();
+
 export const serverEnvironmentSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).optional(),
@@ -14,6 +28,8 @@ export const serverEnvironmentSchema = z
     CLERK_SECRET_KEY: optionalSecret,
     CLERK_WEBHOOK_SIGNING_SECRET: optionalSecret,
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: optionalSecret,
+    AI_PROVIDER: z.enum(["gemini", "openai", "deterministic"]).optional(),
+    GEMINI_API_KEY: optionalSecret,
     OPENAI_API_KEY: optionalSecret,
     INNGEST_EVENT_KEY: optionalSecret,
     INNGEST_SIGNING_KEY: optionalSecret,
@@ -24,6 +40,19 @@ export const serverEnvironmentSchema = z
       .max(120_000)
       .optional(),
     ROLEPROWL_AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).optional(),
+    ROLEPROWL_GEMINI_MODEL_LITE: z.string().trim().min(1).optional(),
+    ROLEPROWL_GEMINI_MODEL_FLASH: z.string().trim().min(1).optional(),
+    ROLEPROWL_GEMINI_LITE_RPM_LIMIT: optionalPositiveInteger,
+    ROLEPROWL_GEMINI_LITE_RPD_LIMIT: optionalPositiveInteger,
+    ROLEPROWL_GEMINI_FLASH_RPM_LIMIT: optionalPositiveInteger,
+    ROLEPROWL_GEMINI_FLASH_RPD_LIMIT: optionalPositiveInteger,
+    ROLEPROWL_GEMINI_SYNTHETIC_ONLY: optionalBoolean,
+    ROLEPROWL_ALLOW_SYNTHETIC_AI_PREVIEW: optionalBoolean,
+    ROLEPROWL_ALLOW_SYNTHETIC_AI_PRODUCTION: optionalBoolean,
+    ROLEPROWL_DEPLOYMENT_ENVIRONMENT: z
+      .enum(["local", "preview", "production"])
+      .optional(),
+    VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
     ROLEPROWL_LOCAL_STORAGE_PATH: z.string().trim().min(1).optional(),
   })
   .superRefine((environment, context) => {
@@ -55,6 +84,20 @@ export const serverEnvironmentSchema = z
         path: ["INNGEST_SIGNING_KEY"],
       });
     }
+    if (environment.AI_PROVIDER === "gemini" && !environment.GEMINI_API_KEY) {
+      context.addIssue({
+        code: "custom",
+        message: "GEMINI_API_KEY is required when AI_PROVIDER=gemini.",
+        path: ["GEMINI_API_KEY"],
+      });
+    }
+    if (environment.AI_PROVIDER === "openai" && !environment.OPENAI_API_KEY) {
+      context.addIssue({
+        code: "custom",
+        message: "OPENAI_API_KEY is required when AI_PROVIDER=openai.",
+        path: ["OPENAI_API_KEY"],
+      });
+    }
   });
 
 export function validateServerEnvironment(
@@ -71,4 +114,115 @@ export function databaseEnv() {
 const aiEnvironment = z.object({ OPENAI_API_KEY: z.string().trim().min(1) });
 export function aiEnv() {
   return aiEnvironment.parse(process.env);
+}
+
+const selectedAIProviderEnvironment = z.object({
+  AI_PROVIDER: z.enum(["gemini", "openai", "deterministic"]).default("gemini"),
+});
+
+export function selectedAIProviderEnv(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+) {
+  return selectedAIProviderEnvironment.parse(environment).AI_PROVIDER;
+}
+
+const geminiEnvironment = z.object({
+  GEMINI_API_KEY: z.string().trim().min(1),
+  ROLEPROWL_AI_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(120_000)
+    .default(30_000),
+  ROLEPROWL_AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(1),
+  ROLEPROWL_GEMINI_MODEL_LITE: z
+    .string()
+    .trim()
+    .min(1)
+    .default("gemini-3.5-flash-lite"),
+  ROLEPROWL_GEMINI_MODEL_FLASH: z
+    .string()
+    .trim()
+    .min(1)
+    .default("gemini-3.5-flash"),
+  ROLEPROWL_GEMINI_LITE_RPM_LIMIT: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1_000_000)
+    .default(12),
+  ROLEPROWL_GEMINI_LITE_RPD_LIMIT: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1_000_000)
+    .default(450),
+  ROLEPROWL_GEMINI_FLASH_RPM_LIMIT: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1_000_000)
+    .default(4),
+  ROLEPROWL_GEMINI_FLASH_RPD_LIMIT: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1_000_000)
+    .default(15),
+  ROLEPROWL_GEMINI_SYNTHETIC_ONLY: z.preprocess((value) => {
+    if (value === "true" || value === undefined) return true;
+    if (value === "false") return false;
+    return value;
+  }, z.boolean()),
+  ROLEPROWL_ALLOW_SYNTHETIC_AI_PREVIEW: z.preprocess(
+    (value) => value === "true",
+    z.boolean(),
+  ),
+  ROLEPROWL_ALLOW_SYNTHETIC_AI_PRODUCTION: z.preprocess(
+    (value) => value === "true",
+    z.boolean(),
+  ),
+  ROLEPROWL_DEPLOYMENT_ENVIRONMENT: z
+    .enum(["local", "preview", "production"])
+    .optional(),
+  VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
+});
+
+export function geminiEnv(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+) {
+  const parsed = geminiEnvironment.parse(environment);
+  const deployment =
+    parsed.ROLEPROWL_DEPLOYMENT_ENVIRONMENT ??
+    (parsed.VERCEL_ENV === "production"
+      ? "production"
+      : parsed.VERCEL_ENV === "preview"
+        ? "preview"
+        : "local");
+  if (
+    parsed.ROLEPROWL_GEMINI_SYNTHETIC_ONLY &&
+    deployment === "preview" &&
+    !parsed.ROLEPROWL_ALLOW_SYNTHETIC_AI_PREVIEW
+  )
+    throw new Error(
+      "Synthetic-only Gemini requires an explicit preview deployment override.",
+    );
+  if (
+    parsed.ROLEPROWL_GEMINI_SYNTHETIC_ONLY &&
+    deployment === "production" &&
+    !parsed.ROLEPROWL_ALLOW_SYNTHETIC_AI_PRODUCTION
+  )
+    throw new Error(
+      "Synthetic-only Gemini is blocked in production without an explicit override.",
+    );
+  return { ...parsed, deployment };
+}
+
+export function syntheticGeminiTestingEnabled(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+) {
+  return (
+    environment.AI_PROVIDER === "gemini" &&
+    environment.ROLEPROWL_GEMINI_SYNTHETIC_ONLY === "true"
+  );
 }

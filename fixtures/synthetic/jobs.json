@@ -1,0 +1,130 @@
+{
+  "fixtureSet": "fictional-rp-031a-jobs-v1",
+  "fictional": true,
+  "notice": "Synthetic jobs and questions only. No employer or application destination is real.",
+  "jobs": [
+    {
+      "id": "synthetic-strong-fit",
+      "company": "Verdant Relay Systems (fictional)",
+      "title": "Senior Platform Engineer",
+      "location": "United States — remote",
+      "remoteType": "REMOTE",
+      "salaryMinimum": 140000,
+      "salaryMaximum": 175000,
+      "salaryCurrency": "USD",
+      "seniority": "SENIOR",
+      "requiredSkills": ["TypeScript", "Node.js", "PostgreSQL", "AWS"],
+      "preferredSkills": ["Terraform", "React"],
+      "sponsorshipAvailable": true,
+      "questions": [
+        {
+          "text": "Why does this fictional platform role interest you?",
+          "expectedClass": "JOB_SPECIFIC_FREE_TEXT"
+        },
+        {
+          "text": "Will you now or later require sponsorship?",
+          "expectedClass": "LEGAL_OR_CONSEQUENTIAL"
+        },
+        {
+          "text": "I certify that every statement is accurate.",
+          "expectedClass": "ATTESTATION"
+        }
+      ]
+    },
+    {
+      "id": "synthetic-weak-fit",
+      "company": "Orchid Pocketware (fictional)",
+      "title": "Senior iOS Graphics Engineer",
+      "location": "United States — remote",
+      "remoteType": "REMOTE",
+      "salaryMinimum": 130000,
+      "salaryMaximum": 165000,
+      "salaryCurrency": "USD",
+      "seniority": "SENIOR",
+      "requiredSkills": ["Swift", "Metal", "iOS"],
+      "preferredSkills": ["Objective-C"],
+      "sponsorshipAvailable": true,
+      "questions": []
+    },
+    {
+      "id": "synthetic-ambiguous-skill",
+      "company": "Marble Current (fictional)",
+      "title": "JavaScript Ecosystem Engineer",
+      "location": "United States — remote",
+      "remoteType": "REMOTE",
+      "salaryMinimum": 128000,
+      "salaryMaximum": 155000,
+      "salaryCurrency": "USD",
+      "seniority": "SENIOR",
+      "requiredSkills": ["Modern JS ecosystem", "SQL-family databases"],
+      "preferredSkills": ["React Native"],
+      "sponsorshipAvailable": true,
+      "questions": [
+        {
+          "text": "Do you have a disability?",
+          "expectedClass": "SENSITIVE_PERSONAL_DATA"
+        }
+      ]
+    },
+    {
+      "id": "synthetic-missing-mandatory-skill",
+      "company": "Kite Harbor Compute (fictional)",
+      "title": "Kubernetes Reliability Engineer",
+      "location": "United States — remote",
+      "remoteType": "REMOTE",
+      "salaryMinimum": 135000,
+      "salaryMaximum": 170000,
+      "salaryCurrency": "USD",
+      "seniority": "SENIOR",
+      "requiredSkills": ["Kubernetes — 4 years minimum", "Go"],
+      "preferredSkills": ["Terraform"],
+      "sponsorshipAvailable": true,
+      "questions": []
+    },
+    {
+      "id": "synthetic-salary-conflict",
+      "company": "Tinwood Metrics (fictional)",
+      "title": "Platform Software Engineer",
+      "location": "United States — remote",
+      "remoteType": "REMOTE",
+      "salaryMinimum": 90000,
+      "salaryMaximum": 110000,
+      "salaryCurrency": "USD",
+      "seniority": "SENIOR",
+      "requiredSkills": ["TypeScript", "PostgreSQL"],
+      "preferredSkills": ["AWS"],
+      "sponsorshipAvailable": true,
+      "questions": []
+    },
+    {
+      "id": "synthetic-location-conflict",
+      "company": "Copper Meridian (fictional)",
+      "title": "Senior Backend Engineer",
+      "location": "Boston, Massachusetts",
+      "remoteType": "ONSITE",
+      "salaryMinimum": 145000,
+      "salaryMaximum": 180000,
+      "salaryCurrency": "USD",
+      "seniority": "SENIOR",
+      "requiredSkills": ["TypeScript", "Node.js", "PostgreSQL"],
+      "preferredSkills": [],
+      "sponsorshipAvailable": true,
+      "questions": []
+    },
+    {
+      "id": "synthetic-sponsorship-conflict",
+      "company": "Juniper Loom (fictional)",
+      "title": "Senior Platform Engineer",
+      "location": "United States — remote",
+      "remoteType": "REMOTE",
+      "salaryMinimum": 150000,
+      "salaryMaximum": 185000,
+      "salaryCurrency": "USD",
+      "seniority": "SENIOR",
+      "requiredSkills": ["TypeScript", "AWS", "Terraform"],
+      "preferredSkills": ["PostgreSQL"],
+      "sponsorshipAvailable": false,
+      "questions": []
+    }
+  ]
+}

@@ -23,14 +23,18 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:pre-alpha": "vitest run src/evals/pre-alpha-candidate-journeys.test.ts src/evals/phase-c-safety-eval.test.ts src/evals/phase-e-submission-eval.test.ts src/evals/security-hardening.test.ts",
+    "test:ai:gemini": "vitest run src/integrations/ai/gemini-model-config.test.ts src/integrations/ai/gemini-provider.test.ts src/integrations/ai/gemini-task-compatibility.test.ts src/integrations/ai/provider-factory.test.ts src/evals/synthetic-manual-alpha-fixtures.test.ts",
+    "test:ai:gemini:live": "node scripts/gemini-live-smoke.mjs",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "security:check": "pnpm audit --prod --audit-level high",
+    "fixtures:generate": "node scripts/generate-synthetic-resume.mjs",
     "check": "pnpm lint && pnpm typecheck && pnpm format:check && pnpm test"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.7.4",
+    "@google/genai": "^2.17.1",
     "@prisma/adapter-pg": "7.9.1",
     "@prisma/client": "7.9.1",
     "docx": "^9.7.1",

@@ -15,6 +15,7 @@ export class DeterministicAIProvider implements AIProvider {
   async generateStructured<T>(
     request: StructuredAIRequest<T>,
   ): Promise<StructuredAIResult<T>> {
+    const startedAt = Date.now();
     const parsed = request.schema.safeParse(this.resolve(request));
     if (!parsed.success) {
       throw new AIInvalidOutputError(
@@ -25,11 +26,17 @@ export class DeterministicAIProvider implements AIProvider {
     return {
       data: parsed.data,
       metadata: {
+        capacityState: "AVAILABLE",
         correlationId: request.correlationId,
+        latencyMs: Date.now() - startedAt,
         task: request.task,
         promptVersion: request.promptVersion,
         model: "deterministic-test-provider",
+        provider: "deterministic",
         providerRequestId: null,
+        retryCount: 0,
+        schemaVersion: request.schemaName,
+        status: "SUCCEEDED",
         usage: { inputTokens: null, outputTokens: null, totalTokens: null },
       },
     };

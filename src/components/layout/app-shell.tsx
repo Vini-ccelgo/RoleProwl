@@ -9,10 +9,12 @@ import { isClerkConfigured } from "@/lib/auth/config";
 export function AppShell({
   actor,
   children,
+  syntheticAITesting,
   unreadNotifications,
 }: {
   actor: AuthenticatedActor;
   children: React.ReactNode;
+  syntheticAITesting: boolean;
   unreadNotifications: number;
 }) {
   return (
@@ -48,7 +50,19 @@ export function AppShell({
           <MobileMenu />
         </div>
       </header>
-      <main className="app-main">{children}</main>
+      <main className="app-main">
+        {syntheticAITesting && (
+          <aside className="synthetic-ai-notice" role="status">
+            <strong>Synthetic AI Testing Mode</strong>
+            <span>
+              Gemini free-tier AI testing is enabled. Use fictional test
+              candidate information only—never real personal or confidential
+              data.
+            </span>
+          </aside>
+        )}
+        {children}
+      </main>
     </div>
   );
 }

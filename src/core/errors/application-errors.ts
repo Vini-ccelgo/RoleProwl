@@ -8,6 +8,7 @@ export type ApplicationErrorCode =
   | "EXTRACTION_UNSUPPORTED"
   | "AI_REFUSAL"
   | "AI_INVALID_OUTPUT"
+  | "AI_CAPACITY"
   | "RATE_LIMITED";
 export class ApplicationError extends Error {
   constructor(
@@ -62,6 +63,18 @@ export class AIRefusalError extends ApplicationError {
 export class AIInvalidOutputError extends ApplicationError {
   constructor(message: string, cause?: unknown) {
     super(message, "AI_INVALID_OUTPUT", cause);
+  }
+}
+export class AIProviderCapacityError extends ApplicationError {
+  constructor(
+    readonly state: "LIMIT_REACHED" | "RATE_LIMITED" | "PROVIDER_UNAVAILABLE",
+    readonly retryAfterSeconds: number | null,
+    readonly model: string,
+  ) {
+    super(
+      "AI capacity is temporarily unavailable. The task can be retried later.",
+      "AI_CAPACITY",
+    );
   }
 }
 export class RateLimitExceededError extends ApplicationError {

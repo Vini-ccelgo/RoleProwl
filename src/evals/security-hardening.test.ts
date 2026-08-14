@@ -34,7 +34,7 @@ describe("RP-029 static security boundaries", () => {
     const violations = sources.flatMap((path) => {
       const source = readFileSync(path, "utf8");
       if (!/^\s*["']use client["'];/u.test(source)) return [];
-      return /process\.env|CLERK_SECRET_KEY|OPENAI_API_KEY|DATABASE_URL/u.test(
+      return /process\.env|CLERK_SECRET_KEY|GEMINI_API_KEY|OPENAI_API_KEY|DATABASE_URL/u.test(
         source,
       )
         ? [relative(projectRoot, path)]

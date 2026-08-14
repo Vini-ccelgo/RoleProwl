@@ -46,23 +46,40 @@ DATABASE_URL
 
 **Without setup:** Local development and automated tests work; production résumé upload is intentionally blocked by configuration.
 
-## 4. OpenAI structured AI
+## 4. Temporary Gemini synthetic-only structured AI
 
-**Why needed:** RP-012 and later résumé, writing, semantic-comparison, and application-assistance tasks use schema-constrained server-side generation.
+**Why needed:** RP-031A temporarily uses the Gemini Developer API free tier for synthetic-data proof-of-concept testing. RP-012 and later résumé, writing, semantic-comparison, and application-assistance tasks remain schema-constrained behind the provider-neutral `AIProvider` contract.
 
-**Account/action:** Create an OpenAI API project and a restricted server-side API key. Keep the key out of browsers and source control. Set project spending and rate limits appropriate for a closed alpha.
+**Account/action:** Create a Gemini Developer API key in Google AI Studio. No Vertex AI or paid Google Cloud service is required for this proof of concept. Keep the key server-side and out of source control.
 
-**Required environment variable:**
+**Required temporary configuration:**
 
 ```text
-OPENAI_API_KEY
+AI_PROVIDER=gemini
+GEMINI_API_KEY=<secret>
+ROLEPROWL_GEMINI_MODEL_LITE=gemini-3.5-flash-lite
+ROLEPROWL_GEMINI_MODEL_FLASH=gemini-3.5-flash
+ROLEPROWL_GEMINI_LITE_RPM_LIMIT=12
+ROLEPROWL_GEMINI_LITE_RPD_LIMIT=450
+ROLEPROWL_GEMINI_FLASH_RPM_LIMIT=4
+ROLEPROWL_GEMINI_FLASH_RPD_LIMIT=15
+ROLEPROWL_GEMINI_SYNTHETIC_ONLY=true
+ROLEPROWL_DEPLOYMENT_ENVIRONMENT=local
 ```
 
-**Optional controls:** `ROLEPROWL_AI_MODEL_DEFAULT`, task-specific `ROLEPROWL_AI_MODEL_*` overrides listed in `.env.example`, `ROLEPROWL_AI_TIMEOUT_MS`, and `ROLEPROWL_AI_MAX_RETRIES`. The source default is `gpt-5.6-luna`; model access and current pricing depend on the configured API project.
+The RoleProwl defaults leave headroom beneath the project limits reported in AI Studio: Lite 12 RPM/450 RPD beneath 15/500, and Flash 4 RPM/15 RPD beneath 5/20. These are deployment configuration, not permanent product constants. Google states that limits are project-level, can change with account/tier status, and daily limits reset on Pacific time.
 
-**Official references:** [Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create) and [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
+**Data restriction:** While the unpaid Developer API is selected, use only `fixtures/synthetic`. Do not use real names, addresses, phone numbers, personal email addresses, résumés, work authorization, health or demographic information, sensitive answers, or other confidential candidate information. Authenticated areas display a synthetic-mode warning when this mode is active.
 
-**Without setup:** Unit, integration, build, and browser tests use deterministic test doubles. Live AI tasks fail closed with a typed configuration error.
+**Deployment safeguard:** Local synthetic testing is allowed. A preview requires `ROLEPROWL_ALLOW_SYNTHETIC_AI_PREVIEW=true`. Production initialization is blocked unless `ROLEPROWL_ALLOW_SYNTHETIC_AI_PRODUCTION=true`; do not enable that override for the free-tier proof of concept.
+
+**OpenAI preservation:** `OPENAI_API_KEY`, `ROLEPROWL_AI_MODEL_DEFAULT`, and task-specific OpenAI model overrides remain supported. To switch back, set `AI_PROVIDER=openai` and provide the OpenAI key. A Gemini key is then unnecessary. Gemini failures and quota exhaustion never fall back to OpenAI automatically.
+
+**Official references:** [Google Gen AI JavaScript SDK](https://googleapis.github.io/js-genai/), [Gemini structured outputs](https://ai.google.dev/gemini-api/docs/structured-output), [Gemini 3.5 Flash-Lite](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite), [Gemini rate limits](https://ai.google.dev/gemini-api/docs/rate-limits), [OpenAI Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create), and [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
+
+**Optional live smoke:** `pnpm test:ai:gemini:live` makes exactly one Lite request with a fictional fixture identifier. It is never run by CI or the ordinary test commands.
+
+**Without setup:** Unit, integration, build, and browser tests use mocked or deterministic providers and consume zero Gemini requests. Live AI tasks fail closed with a typed configuration error.
 
 ## 5. Inngest durable workflows
 

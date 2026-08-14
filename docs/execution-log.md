@@ -315,3 +315,16 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Status:** Pass
 - **Qualification:** Ready for the user-led manual alpha testing phase after required development services are configured.
 - **Security statement:** Engineering controls and static/regression checks passed; no claim of penetration-test completion, deployment-specific CSP verification, or final security approval is made.
+
+## Temporary alpha provider migration
+
+### RP-031A — Gemini free-tier AI provider
+
+- **Status:** Pass
+- **Major implementation:** First-class `GeminiAIProvider` using the current `@google/genai` SDK; centralized provider selection through `AI_PROVIDER`; preserved deterministic and OpenAI adapters; explicit Lite/Flash task routing with bounded eligible escalation; Zod-derived structured-output schemas; provider/model/status/capacity/usage metadata; shared PostgreSQL-backed per-model minute and daily application ceilings; bounded timeout and retry handling for schema failures, HTTP 429, provider 5xx responses, and timeouts; no automatic OpenAI fallback; and deployment guards for synthetic-only preview and production use.
+- **Models and application ceilings:** Defaults use `gemini-3.5-flash-lite` at 12 requests/minute and 450 requests/day, and `gemini-3.5-flash` at 4 requests/minute and 15 requests/day. Every value is environment-configurable. Provider-enforced project quotas remain authoritative and may differ by account, project, model, tier, region, or provider policy.
+- **Synthetic-data controls:** Authenticated application pages display a persistent Synthetic AI Testing Mode notice while the Gemini synthetic alpha is enabled. Repository fixtures contain only fictional candidate, employer, school, credential, job, contact, and résumé data. Preview activation requires an explicit opt-in, and production activation is blocked unless a separate explicit production override is set.
+- **Automated evidence (2026-08-13):** `pnpm test:ai:gemini` passed 31/31 focused tests across 5 files; `pnpm check` passed 317/317 tests across 66 files plus strict TypeScript, ESLint, and Prettier; `pnpm test:e2e` passed 19/19 Chromium checks; Prisma schema validation and empty-to-schema PostgreSQL SQL generation passed; the Next.js production build passed; and `pnpm audit --prod --audit-level high` reported no known vulnerabilities.
+- **Failure behavior:** Application ceilings reject before an SDK request; provider HTTP 429 responses produce an explicit rate-limited capacity error; exhausted provider 5xx/timeout retries produce provider-unavailable capacity errors; malformed, missing, refused, or schema-invalid output is rejected; and no error path silently invokes OpenAI.
+- **Live verification boundary:** No live Gemini request was made because no `GEMINI_API_KEY` was available. `pnpm test:ai:gemini:live` is an explicit, single-request, synthetic Lite-model smoke test and is never part of automated gates. Shared application ceilings require the configured PostgreSQL database. Local daily accounting is a conservative fixed 24-hour window and does not claim to mirror Google quota-reset timing exactly.
+- **Stop gate:** RP-032 has not begun. RP-031A is qualified for user-led synthetic-data manual alpha testing once Gemini credentials and the required development services are configured.

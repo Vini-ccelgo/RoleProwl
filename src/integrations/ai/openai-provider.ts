@@ -1,5 +1,5 @@
 import "server-only";
-import OpenAI from "openai";
+import type OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import type {
   AIProvider,
@@ -10,22 +10,17 @@ import type { RateLimiter } from "@/core/contracts/rate-limiter";
 import {
   AIInvalidOutputError,
   AIRefusalError,
-  ConfigurationError,
   IntegrationError,
   RateLimitExceededError,
 } from "@/core/errors/application-errors";
-import {
-  AllowAllRateLimiter,
-  PrismaRateLimiter,
-} from "@/integrations/security/prisma-rate-limiter";
+import { AllowAllRateLimiter } from "@/integrations/security/prisma-rate-limiter";
 import type { Logger } from "@/lib/logging/logger";
 import { logger } from "@/lib/logging/logger";
-import { aiEnv } from "@/lib/env/server";
 import {
   serializeBoundedAIInput,
   validateAIRequestMetadata,
 } from "@/lib/security/ai-input";
-import { modelForTask, openAIRequestOptions } from "./openai-model-config";
+import { modelForTask } from "./openai-model-config";
 
 function refusalText(response: { output?: readonly unknown[] }) {
   for (const output of response.output ?? []) {
@@ -104,11 +99,17 @@ export class OpenAIProvider implements AIProvider {
       return {
         data,
         metadata: {
+          capacityState: "AVAILABLE",
           correlationId: request.correlationId,
+          latencyMs: Date.now() - startedAt,
           task: request.task,
           promptVersion: request.promptVersion,
           model,
+          provider: "openai",
           providerRequestId: response._request_id ?? null,
+          retryCount: 0,
+          schemaVersion: request.schemaName,
+          status: "SUCCEEDED",
           usage,
         },
       };
@@ -129,20 +130,4 @@ export class OpenAIProvider implements AIProvider {
       throw new IntegrationError("The AI provider request failed.", error);
     }
   }
-}
-
-export function currentAIProvider() {
-  let apiKey: string;
-  try {
-    apiKey = aiEnv().OPENAI_API_KEY;
-  } catch {
-    throw new ConfigurationError(
-      "OPENAI_API_KEY is required for live AI tasks.",
-    );
-  }
-  return new OpenAIProvider(
-    new OpenAI({ apiKey, ...openAIRequestOptions() }),
-    logger,
-    new PrismaRateLimiter(),
-  );
 }

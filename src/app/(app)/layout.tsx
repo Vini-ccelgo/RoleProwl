@@ -3,6 +3,7 @@ import { AuthorizationError } from "@/core/errors/application-errors";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
+import { syntheticGeminiTestingEnabled } from "@/lib/env/server";
 import { redirect } from "next/navigation";
 
 export default async function ApplicationLayout({
@@ -22,7 +23,11 @@ export default async function ApplicationLayout({
   });
 
   return (
-    <AppShell actor={actor} unreadNotifications={unreadNotifications}>
+    <AppShell
+      actor={actor}
+      syntheticAITesting={syntheticGeminiTestingEnabled()}
+      unreadNotifications={unreadNotifications}
+    >
       {children}
     </AppShell>
   );

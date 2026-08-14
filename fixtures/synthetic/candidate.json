@@ -1,0 +1,127 @@
+{
+  "fixtureId": "fictional-candidate-avery-quill-v1",
+  "fictional": true,
+  "notice": "Entirely synthetic RoleProwl manual-alpha data. It does not describe a real person.",
+  "profile": {
+    "firstName": "Avery",
+    "lastName": "Quill",
+    "professionalTitle": "Platform Software Engineer",
+    "email": "avery.quill@example.test",
+    "phone": "+1 202-555-0147",
+    "location": "Portland, Oregon, United States",
+    "summary": "Fictional platform engineer specializing in TypeScript services, PostgreSQL reliability, cloud infrastructure, and developer tooling."
+  },
+  "employment": [
+    {
+      "employer": "Nimbus Forge Labs (fictional)",
+      "title": "Senior Platform Engineer",
+      "employmentType": "FULL_TIME",
+      "startDate": "2022-03-01",
+      "endDate": null,
+      "isCurrent": true,
+      "location": "Remote — United States",
+      "responsibilities": [
+        "Built TypeScript and Node.js services backed by PostgreSQL.",
+        "Maintained Terraform modules and AWS deployment workflows.",
+        "Reviewed service observability and incident-response practices."
+      ],
+      "achievements": [
+        "Reduced a synthetic fixture pipeline's median deployment time from 28 to 16 minutes after profiling its bottlenecks.",
+        "Created onboarding documentation for a fictional eight-person engineering group."
+      ]
+    },
+    {
+      "employer": "Cedar Circuit Cooperative (fictional)",
+      "title": "Software Engineer",
+      "employmentType": "FULL_TIME",
+      "startDate": "2019-06-01",
+      "endDate": "2022-02-28",
+      "isCurrent": false,
+      "location": "Portland, Oregon, United States",
+      "responsibilities": [
+        "Developed React interfaces and Node.js APIs.",
+        "Added PostgreSQL migration and integration-test coverage."
+      ],
+      "achievements": [
+        "Implemented a fictional audit-event export used in internal acceptance testing."
+      ]
+    }
+  ],
+  "education": [
+    {
+      "institution": "North Cascadia Institute of Technology (fictional)",
+      "credential": "Bachelor of Science",
+      "program": "Computer Science",
+      "startDate": "2015-09-01",
+      "endDate": "2019-05-31",
+      "status": "COMPLETED",
+      "coursework": ["Distributed Systems", "Databases", "Software Security"]
+    }
+  ],
+  "skills": [
+    { "name": "TypeScript", "experienceMonths": 72, "proficiency": "ADVANCED" },
+    { "name": "Node.js", "experienceMonths": 72, "proficiency": "ADVANCED" },
+    { "name": "PostgreSQL", "experienceMonths": 60, "proficiency": "ADVANCED" },
+    { "name": "React", "experienceMonths": 48, "proficiency": "INTERMEDIATE" },
+    { "name": "AWS", "experienceMonths": 48, "proficiency": "INTERMEDIATE" },
+    {
+      "name": "Terraform",
+      "experienceMonths": 36,
+      "proficiency": "INTERMEDIATE"
+    },
+    { "name": "Python", "experienceMonths": 24, "proficiency": "INTERMEDIATE" }
+  ],
+  "projects": [
+    {
+      "name": "Lantern Queue Simulator (fictional)",
+      "role": "Maintainer",
+      "description": "Synthetic workload simulator for testing idempotency, retry, and queue-observability behavior.",
+      "skills": ["TypeScript", "Node.js", "PostgreSQL"],
+      "outcomes": [
+        "Added deterministic retry fixtures",
+        "Documented failure-state recovery"
+      ]
+    }
+  ],
+  "credentials": [
+    {
+      "name": "Cloud Architecture Practice Certificate (fictional)",
+      "issuer": "Synthetic Systems Guild (fictional)",
+      "issuedAt": "2024-02-15",
+      "expiresAt": "2027-02-15",
+      "credentialId": "SYNTH-CLOUD-2048"
+    }
+  ],
+  "preferences": {
+    "roleFamilies": ["Platform Engineering", "Backend Engineering"],
+    "industries": ["Developer Tools", "Infrastructure Software"],
+    "remotePreference": "REMOTE",
+    "locationPreferences": ["United States — remote", "Portland, Oregon"],
+    "salaryMinimum": 125000,
+    "salaryCurrency": "USD",
+    "employmentTypes": ["FULL_TIME"],
+    "seniorities": ["SENIOR", "STAFF"],
+    "maximumTravelPercent": 10,
+    "willingToRelocate": false,
+    "exclusions": ["Unpaid roles", "Commission-only roles"]
+  },
+  "workAuthorization": {
+    "countryCode": "US",
+    "authorizationStatus": "TEMPORARY_AUTHORIZATION",
+    "requiresSponsorship": true,
+    "notes": "Synthetic answer: future sponsorship is required. Reverify before each consequential use."
+  },
+  "applicationPolicy": {
+    "allowedRoleFamilies": ["Platform Engineering", "Backend Engineering"],
+    "minimumOverallFit": 72,
+    "excludedSeniorities": ["INTERN", "ENTRY"],
+    "salaryMinimum": 125000,
+    "allowedLocations": ["United States — remote", "Portland, Oregon"],
+    "requireRemote": true,
+    "allowedEmploymentTypes": ["FULL_TIME"],
+    "rejectAuthorizationConflict": true,
+    "companyBlacklist": ["Opaque Holdings (fictional)"],
+    "dailyApplicationLimit": 3,
+    "autonomyLevel": "RECOMMEND_ONLY"
+  }
+}

@@ -20,10 +20,16 @@ describe("DeterministicAIProvider", () => {
     await expect(provider.generateStructured(request)).resolves.toEqual({
       data: { answer: "fixture" },
       metadata: {
+        capacityState: "AVAILABLE",
         correlationId: "corr-test-1",
+        latencyMs: expect.any(Number),
         model: "deterministic-test-provider",
+        provider: "deterministic",
         promptVersion: "test-v1",
         providerRequestId: null,
+        retryCount: 0,
+        schemaVersion: "test_answer",
+        status: "SUCCEEDED",
         task: "FREE_TEXT_APPLICATION_GENERATION",
         usage: { inputTokens: null, outputTokens: null, totalTokens: null },
       },

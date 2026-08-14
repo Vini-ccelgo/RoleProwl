@@ -24,8 +24,10 @@ export function modelForTask(task: AITask) {
   );
 }
 
-export function openAIRequestOptions() {
-  const environment = validateServerEnvironment();
+export function openAIRequestOptions(
+  values: Readonly<Record<string, string | undefined>> = process.env,
+) {
+  const environment = validateServerEnvironment(values);
   return {
     timeout: environment.ROLEPROWL_AI_TIMEOUT_MS ?? 30_000,
     maxRetries: environment.ROLEPROWL_AI_MAX_RETRIES ?? 2,
