@@ -11,3 +11,8 @@ test-results/
 pnpm-debug.log*
 src/generated/prisma/
 .roleprowl-storage/
+
+# Local personal-mode inputs and generated results. Keep examples/documentation.
+personal/*
+!personal/README.md
+!personal/*.example.*

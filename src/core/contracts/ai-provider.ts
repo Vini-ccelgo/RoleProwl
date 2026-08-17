@@ -12,7 +12,7 @@ export const AI_TASKS = [
 
 export type AITask = (typeof AI_TASKS)[number];
 export type AIModelPreference = "LITE" | "FLASH";
-export type AIProviderName = "deterministic" | "gemini" | "openai";
+export type AIProviderName = "deterministic" | "gemini" | "local" | "openai";
 export type AICapacityState =
   | "AVAILABLE"
   | "NEAR_LIMIT"

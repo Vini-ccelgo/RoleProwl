@@ -1,0 +1,13 @@
+{
+  "targetRoles": ["Security Analyst", "SOC Analyst"],
+  "searchTerms": ["cybersecurity", "information security"],
+  "locations": ["Brazil", "São Paulo", "Remote", "LATAM"],
+  "remotePreferred": true,
+  "minimumSalary": null,
+  "excludedSeniorities": ["LEAD"],
+  "excludedCompanies": [],
+  "employmentTypes": ["FULL_TIME", "INTERNSHIP"],
+  "maximumJobAgeDays": 30,
+  "adzunaCountry": null,
+  "semanticLimit": 25
+}

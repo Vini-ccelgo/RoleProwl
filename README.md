@@ -29,6 +29,18 @@ Apply all committed migrations to a configured development database before authe
 pnpm exec prisma migrate deploy
 ```
 
+## Local personal mode
+
+`pnpm personal:prowl` is a separate local-only, single-user job-triage command.
+It reads a plaintext résumé and optional preferences from the Git-ignored
+`personal/` boundary; discovers jobs through public Jobicy and Remotive APIs,
+optional Adzuna credentials, and optional employer Greenhouse/Lever/Ashby
+boards; then normalizes, deduplicates, filters, ranks, and tracks them locally.
+It can prepare evidence-based application files and open an official application
+URL, but it never fills or submits a form. Clerk, PostgreSQL, Inngest, and an AI
+key are not required. Optional semantic analysis uses only a configured
+localhost AI server. See [personal-mode setup](personal/README.md).
+
 ## Quality commands
 
 ```bash
@@ -42,6 +54,7 @@ pnpm test:e2e
 pnpm build
 pnpm check
 pnpm fixtures:generate
+pnpm personal:prowl -- --help
 ```
 
 For the first local browser test run, install Chromium with `pnpm exec playwright install chromium`. Use `pnpm test:watch`, `pnpm test:e2e:ui`, and `pnpm format` during development.

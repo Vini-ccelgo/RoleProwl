@@ -30,6 +30,14 @@
     "test:e2e:ui": "playwright test --ui",
     "security:check": "pnpm audit --prod --audit-level high",
     "fixtures:generate": "node scripts/generate-synthetic-resume.mjs",
+    "personal": "JITI_TSCONFIG_PATHS=true jiti scripts/personal-prowl.ts",
+    "personal:prowl": "JITI_TSCONFIG_PATHS=true jiti scripts/personal-prowl.ts prowl",
+    "personal:shortlist": "JITI_TSCONFIG_PATHS=true jiti scripts/personal-prowl.ts shortlist",
+    "personal:reject": "JITI_TSCONFIG_PATHS=true jiti scripts/personal-prowl.ts reject",
+    "personal:mark": "JITI_TSCONFIG_PATHS=true jiti scripts/personal-prowl.ts mark",
+    "personal:prepare": "JITI_TSCONFIG_PATHS=true jiti scripts/personal-prowl.ts prepare",
+    "personal:open": "JITI_TSCONFIG_PATHS=true jiti scripts/personal-prowl.ts open",
+    "personal:history": "JITI_TSCONFIG_PATHS=true jiti scripts/personal-prowl.ts history",
     "check": "pnpm lint && pnpm typecheck && pnpm format:check && pnpm test"
   },
   "dependencies": {
@@ -61,6 +69,7 @@
     "eslint": "^9.0.0",
     "eslint-config-next": "16.3.0",
     "eslint-config-prettier": "^10.0.0",
+    "jiti": "^2.7.0",
     "pdf-lib": "^1.17.1",
     "prettier": "^3.4.0",
     "prettier-plugin-tailwindcss": "^0.6.9",

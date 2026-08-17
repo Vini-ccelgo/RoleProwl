@@ -1,0 +1,30 @@
+AVERY QUILL — FICTIONAL EXAMPLE
+avery.quill@example.test
+
+Summary
+Fictional security analyst with experience reviewing alerts, documenting
+incidents, and improving small-team security processes.
+
+Skills: SIEM, Splunk, Incident Response, Python, SQL, Linux, Network Security,
+NIST CSF, Git, Jira
+
+Experience
+Security Operations Analyst — Northstar Test Systems — 2023 to present
+- Investigated fictional SIEM alerts and documented incident-response findings.
+- Used Python and SQL to improve fictional reporting workflows.
+
+Education
+BSc, Information Security — Example State College — 2023
+
+Projects
+- Configured a fictional Ubuntu lab and documented alert-triage procedures.
+
+Certifications
+- Fictional Security Fundamentals Certificate — 2024
+
+Languages: English, Portuguese
+
+Location: São Paulo, Brazil
+
+Work authorization
+Authorized to work in Brazil. No sponsorship required.

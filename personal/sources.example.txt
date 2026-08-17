@@ -1,0 +1,9 @@
+# Optional targeted employer boards. Jobicy and Remotive run without this file.
+# Format: source-type|Company label|public board identifier or supported URL
+# Blank lines and comments are ignored.
+#
+# greenhouse|Example Company|example-board-token
+# greenhouse|Example Company|https://job-boards.greenhouse.io/example-board-token
+# lever|Example Company|example-lever-site
+# lever-eu|Example EU Company|https://jobs.eu.lever.co/example-site
+# ashby|Example Company|https://jobs.ashbyhq.com/example-board
