@@ -36,8 +36,10 @@
     "personal:reject": "JITI_TSCONFIG_PATHS=true jiti scripts/personal-prowl.ts reject",
     "personal:mark": "JITI_TSCONFIG_PATHS=true jiti scripts/personal-prowl.ts mark",
     "personal:prepare": "JITI_TSCONFIG_PATHS=true jiti scripts/personal-prowl.ts prepare",
+    "personal:export-resume": "JITI_TSCONFIG_PATHS=true jiti scripts/personal-prowl.ts export-resume",
     "personal:open": "JITI_TSCONFIG_PATHS=true jiti scripts/personal-prowl.ts open",
     "personal:history": "JITI_TSCONFIG_PATHS=true jiti scripts/personal-prowl.ts history",
+    "personal:doctor": "JITI_TSCONFIG_PATHS=true jiti scripts/personal-prowl.ts doctor",
     "check": "pnpm lint && pnpm typecheck && pnpm format:check && pnpm test"
   },
   "dependencies": {

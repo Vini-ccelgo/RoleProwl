@@ -10,12 +10,12 @@ import {
 } from "@/core/domain/jobs/deduplication";
 import {
   matchCandidateToJob,
-  type CandidateMatchSnapshot,
   type JobMatchResult,
   type JobMatchSnapshot,
   type MatchEvidence,
   type SkillRequirement,
 } from "@/core/domain/matching/match-job";
+import type { PublicApplicationQuestionReference } from "@/core/domain/applications/public-application-question";
 import {
   discoverPersonalJobs,
   type PersonalDiscoveryEnvironment,
@@ -27,6 +27,7 @@ import type {
   PersonalTargetedSource,
 } from "./personal-source-types";
 import { buildPersonalSearchPlan } from "./search-planner";
+import { buildCanonicalPersonalCandidate } from "./personal-candidate";
 
 const stringList = z.array(z.string().trim().min(1)).default([]);
 
@@ -87,6 +88,7 @@ export interface PersonalJobProvenance {
   readonly label: string;
   readonly sourceJobId: string;
   readonly sourceUrl: string;
+  readonly questionReference?: PublicApplicationQuestionReference;
 }
 
 export interface PersonalJobResult {
@@ -531,33 +533,10 @@ function detectAuthorization(description: string | null) {
 
 function candidateSnapshot(resume: string, preferences: PersonalPreferences) {
   const parsed = parsePersonalResume(resume);
-  return {
-    authorizationCountries: parsed.authorizationCountries,
-    requiresSponsorship: parsed.requiresSponsorship,
-    clearances: null,
-    educationLevels: null,
-    experienceMonths: null,
-    industries: null,
-    languages: parsed.languages.length ? parsed.languages : null,
-    licenses: null,
-    locationExclusions: null,
-    preferredIndustries: null,
-    preferredLocations: preferences.locations.length
-      ? preferences.locations
-      : null,
-    preferredRemoteTypes: preferences.remotePreferred ? ["REMOTE"] : null,
-    preferredRoleFamilies: preferences.targetRoles.length
-      ? preferences.targetRoles
-      : null,
-    requiredSalaryMinimum: preferences.minimumSalary,
-    roleFamilies: null,
-    seniority: null,
-    skills: parsed.skills.map((name) => ({
-      name,
-      proficiency: null,
-      experienceMonths: null,
-    })),
-  } satisfies CandidateMatchSnapshot;
+  return buildCanonicalPersonalCandidate({
+    parsedResume: parsed,
+    preferences,
+  }).matchSnapshot;
 }
 
 function jobSnapshot(job: CanonicalJobInput): JobMatchSnapshot {
@@ -937,6 +916,7 @@ export async function runPersonalProwl(input: {
       label: discovered.sourceLabel,
       sourceJobId: discovered.sourceJobId,
       sourceUrl: discovered.sourceUrl,
+      questionReference: discovered.questionReference,
     };
     if (decision.kind === "NEW")
       unique.push({

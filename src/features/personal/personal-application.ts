@@ -5,6 +5,14 @@ import type {
   AIProvider,
   StructuredAIRequest,
 } from "@/core/contracts/ai-provider";
+import { hasExactEvidenceQuote } from "@/core/domain/claims/evidence-grounding";
+import { buildCanonicalPersonalCandidate } from "./personal-candidate";
+import {
+  renderApplicationQuestionsMarkdown,
+  retrieveAndPrepareApplicationQuestions,
+  type PersonalQuestionFetch,
+} from "./personal-questions";
+import { parsePersonalResume } from "./personal-prowl";
 import type { PersonalStateJob } from "./personal-state";
 
 const localApplicationSchema = z.object({
@@ -32,16 +40,6 @@ const localApplicationSchema = z.object({
 
 function safeMarkdown(value: string) {
   return value.replace(/[\\`*_[\]<>#]/gu, "\\$&").trim();
-}
-
-function exactResumeEvidence(resume: string, quote: string) {
-  const normalize = (value: string) =>
-    value
-      .normalize("NFKC")
-      .replace(/\s+/gu, " ")
-      .trim()
-      .toLocaleLowerCase("en-US");
-  return normalize(resume).includes(normalize(quote));
 }
 
 async function generateLocalArtifacts(input: {
@@ -76,7 +74,7 @@ async function generateLocalArtifacts(input: {
   };
   const output = (await input.ai.generateStructured(request)).data;
   const validQuote = (quote: string) =>
-    exactResumeEvidence(input.resume, quote);
+    hasExactEvidenceQuote(input.resume, quote);
   if (
     output.tailoredResume.some(
       (item) => !validQuote(item.resumeEvidenceQuote),
@@ -124,6 +122,7 @@ export async function preparePersonalApplication(input: {
   readonly ai?: AIProvider;
   readonly job: PersonalStateJob;
   readonly resume: string;
+  readonly request?: PersonalQuestionFetch;
 }) {
   if (!/^[a-f0-9]{16}$/u.test(input.job.id))
     throw new Error("Invalid personal job ID.");
@@ -153,7 +152,7 @@ export async function preparePersonalApplication(input: {
   );
   await writeFile(
     resolve(directory, "application-checklist.md"),
-    `# Application Checklist\n\n- [ ] Re-open the official listing and confirm it remains active.\n- [ ] Verify location, work authorization, compensation, and schedule.\n- [ ] Review every gap and unknown in \`evidence.md\`.\n- [ ] Tailor the résumé without adding unsupported claims.\n- [ ] Answer sensitive, legal, consequential, and attestation questions personally.\n- [ ] Submit only through the official application destination.\n- [ ] Mark the job APPLIED after external submission.\n\nApplication URL: ${job.applicationUrl ?? "Unavailable"}\n`,
+    `# Application Checklist\n\n- [ ] Re-open the official listing and confirm it remains active.\n- [ ] Verify location, work authorization, compensation, and schedule.\n- [ ] Review every gap and unknown in \`evidence.md\`.\n- [ ] Review \`questions.md\` when it is present.\n- [ ] Tailor the résumé without adding unsupported claims.\n- [ ] Answer sensitive, legal, consequential, and attestation questions personally.\n- [ ] Submit only through the official application destination.\n- [ ] Mark the job APPLIED after external submission.\n\nApplication URL: ${job.applicationUrl ?? "Unavailable"}\n`,
     { encoding: "utf8", mode: 0o600 },
   );
   const generated = [
@@ -162,7 +161,39 @@ export async function preparePersonalApplication(input: {
     "evidence.md",
     "application-checklist.md",
   ];
-  let warning: string | null = null;
+  const warnings: string[] = [];
+  let questions = [] as Awaited<
+    ReturnType<typeof retrieveAndPrepareApplicationQuestions>
+  >;
+  try {
+    const candidate = buildCanonicalPersonalCandidate({
+      parsedResume: parsePersonalResume(input.resume),
+      preferences: {
+        locations: [],
+        remotePreferred: false,
+        targetRoles: [],
+        minimumSalary: null,
+      },
+    });
+    questions = await retrieveAndPrepareApplicationQuestions({
+      ai: input.ai,
+      candidate,
+      job: input.job,
+      request: input.request,
+    });
+    if (questions.length) {
+      await writeFile(
+        resolve(directory, "questions.md"),
+        renderApplicationQuestionsMarkdown(questions),
+        { encoding: "utf8", mode: 0o600 },
+      );
+      generated.push("questions.md");
+    }
+  } catch (error) {
+    warnings.push(
+      `Public application questions were unavailable: ${error instanceof Error ? error.message : "question retrieval failed"}`,
+    );
+  }
   if (input.ai) {
     try {
       const artifacts = await generateLocalArtifacts({
@@ -191,8 +222,36 @@ export async function preparePersonalApplication(input: {
         "application-draft.md",
       );
     } catch (error) {
-      warning = `Optional local-AI artifacts were not written: ${error instanceof Error ? error.message : "local generation failed"}`;
+      warnings.push(
+        `Optional local-AI artifacts were not written: ${error instanceof Error ? error.message : "local generation failed"}`,
+      );
     }
   }
-  return { directory, generated, warning };
+  const strengths = job.strongMatches.length
+    ? job.strongMatches
+        .slice(0, 5)
+        .map((entry) => `- ${safeMarkdown(entry.label)}`)
+        .join("\n")
+    : "- None identified.";
+  const gaps = [...job.importantGaps, ...job.hardConflicts].length
+    ? [...job.importantGaps, ...job.hardConflicts]
+        .slice(0, 5)
+        .map((entry) => `- ${safeMarkdown(entry.label)}`)
+        .join("\n")
+    : "- None identified.";
+  const questionsNeedingInput = questions.filter(
+    (question) => question.disposition === "NEEDS_REVIEW",
+  ).length;
+  generated.push("application.md");
+  await writeFile(
+    resolve(directory, "application.md"),
+    `# Application Control Sheet\n\n- **Company:** ${safeMarkdown(job.company)}\n- **Role:** ${safeMarkdown(job.title)}\n- **URL:** ${job.applicationUrl ?? "Unavailable"}\n- **Status:** ${input.job.status}\n- **Fit:** ${job.fitScore}%\n\n## Main strengths\n\n${strengths}\n\n## Main gaps\n\n${gaps}\n\n## Questions requiring user input\n\n${questions.length ? `${questionsNeedingInput} of ${questions.length} retrieved questions require explicit review.` : "No public application questions were retrieved. Inspect the employer form manually."}\n\n## Documents prepared\n\n${generated.map((name) => `- \`${name}\``).join("\n")}\n\n## Next action\n\nOpen the official application URL, review this dossier and every employer question, then submit manually only if you choose to proceed.\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
+  return {
+    directory,
+    generated,
+    warning: warnings.length ? warnings.join(" ") : null,
+    questionCount: questions.length,
+  };
 }

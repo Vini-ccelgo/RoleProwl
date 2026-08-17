@@ -3,6 +3,7 @@ import type {
   AIProvider,
   StructuredAIRequest,
 } from "@/core/contracts/ai-provider";
+import { hasExactEvidenceQuote } from "@/core/domain/claims/evidence-grounding";
 import type { PersonalJobResult, PersonalProwlResult } from "./personal-prowl";
 
 const groundedEvidenceSchema = z.object({
@@ -22,21 +23,12 @@ const semanticResultSchema = z.object({
 
 type SemanticResult = z.infer<typeof semanticResultSchema>;
 
-function comparable(value: string) {
-  return value
-    .normalize("NFKC")
-    .replace(/\s+/gu, " ")
-    .trim()
-    .toLocaleLowerCase("en-US");
-}
-
 export function acceptGroundedSemanticResult(
   resume: string,
   output: SemanticResult,
 ) {
-  const candidate = comparable(resume);
   const supported = (item: z.infer<typeof groundedEvidenceSchema>) =>
-    candidate.includes(comparable(item.resumeEvidenceQuote));
+    hasExactEvidenceQuote(resume, item.resumeEvidenceQuote);
   return {
     ...output,
     strongMatches: output.strongMatches.filter(supported),

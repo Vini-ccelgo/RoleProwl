@@ -23,6 +23,8 @@ import {
   type PersonalJobStatus,
 } from "@/features/personal/personal-state";
 import { preparePersonalApplication } from "@/features/personal/personal-application";
+import { exportPersonalResumeHtml } from "@/features/personal/personal-resume-export";
+import { inspectPersonalMode } from "@/features/personal/personal-doctor";
 import { LocalPersonalAIProvider } from "@/integrations/ai/local-personal-ai-provider";
 
 const args = process.argv.slice(2).filter((value) => value !== "--");
@@ -37,6 +39,7 @@ const paths = {
   state: resolve(personalDirectory, "state.json"),
   cache: resolve(personalDirectory, "cache.json"),
   applications: resolve(personalDirectory, "applications"),
+  gitignore: resolve(process.cwd(), ".gitignore"),
 };
 
 function option(name: string) {
@@ -281,6 +284,46 @@ async function openApplication() {
   console.log("No form was filled and no application was submitted.");
 }
 
+async function exportResume() {
+  const state = await loadPersonalState(paths.state);
+  const id = jobId();
+  const job = state.jobs[id];
+  if (!job) throw new Error(`Unknown job ID ${id}. Run personal:prowl first.`);
+  await exportPersonalResumeHtml({
+    applicationsDirectory: paths.applications,
+    job,
+    resume: await resume(),
+  });
+  console.log(
+    `ATS-readable HTML résumé:\npersonal/applications/${id}/tailored-resume.html`,
+  );
+  console.log("Open it in a browser and use Print → Save as PDF if needed.");
+}
+
+async function doctor() {
+  const result = await inspectPersonalMode({
+    paths: {
+      resume: paths.resume,
+      preferences: paths.preferences,
+      sources: paths.sources,
+      state: paths.state,
+      cache: paths.cache,
+      gitignore: paths.gitignore,
+    },
+    environment: process.env,
+    packageManagerUserAgent: process.env.npm_config_user_agent,
+  });
+  console.log("RoleProwl Personal Doctor\n");
+  for (const check of result.checks)
+    console.log(
+      `${check.label}: ${check.status}${check.detail ? ` — ${check.detail}` : ""}`,
+    );
+  console.log(
+    result.ready ? "\nReady." : "\nNot ready. Fix the ERROR checks above.",
+  );
+  if (!result.ready) process.exitCode = 1;
+}
+
 async function history() {
   const state = await loadPersonalState(paths.state);
   const jobs = Object.values(state.jobs).sort((left, right) =>
@@ -305,8 +348,10 @@ Commands:
   pnpm personal:reject -- --job <id> [--note "..."]
   pnpm personal:mark -- --job <id> --status APPLIED [--note "..."]
   pnpm personal:prepare -- --job <id>
+  pnpm personal:export-resume -- --job <id>
   pnpm personal:open -- --job <id>
   pnpm personal:history
+  pnpm personal:doctor
 
 Personal mode never submits an application.`);
 }
@@ -318,8 +363,10 @@ async function main() {
   if (command === "reject") return mutateStatus("REJECTED");
   if (command === "mark") return mark();
   if (command === "prepare") return prepare();
+  if (command === "export-resume") return exportResume();
   if (command === "open") return openApplication();
   if (command === "history") return history();
+  if (command === "doctor") return doctor();
   throw new Error(`Unknown command ${command}. Run pnpm personal -- help.`);
 }
 

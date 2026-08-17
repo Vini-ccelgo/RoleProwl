@@ -1,4 +1,5 @@
 import type { CanonicalJobInput } from "@/core/domain/jobs/job";
+import type { PublicApplicationQuestionReference } from "@/core/domain/applications/public-application-question";
 
 export type PersonalSourceName =
   "ADZUNA" | "ASHBY" | "GREENHOUSE" | "JOBICY" | "LEVER" | "REMOTIVE";
@@ -26,6 +27,7 @@ export interface PersonalDiscoveredJob {
   readonly sourceLabel: string;
   readonly sourceJobId: string;
   readonly sourceUrl: string;
+  readonly questionReference?: PublicApplicationQuestionReference;
   readonly canonical: CanonicalJobInput;
 }
 

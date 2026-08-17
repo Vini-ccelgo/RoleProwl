@@ -356,6 +356,11 @@ async function discoverTargeted(
           sourceLabel: `Greenhouse/${source.company}`,
           sourceJobId: raw.externalId,
           sourceUrl,
+          questionReference: {
+            source: "GREENHOUSE" as const,
+            boardToken: source.boardToken,
+            jobId: raw.externalId,
+          },
           canonical: normalizeCanonicalJob(normalized.canonical),
         };
       }),

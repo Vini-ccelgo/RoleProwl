@@ -39,10 +39,12 @@ Copy a stable 16-character job ID from `results.md`, then use:
 pnpm personal:shortlist -- --job <id>
 pnpm personal:reject -- --job <id> --note "Reason"
 pnpm personal:prepare -- --job <id>
+pnpm personal:export-resume -- --job <id>
 pnpm personal:open -- --job <id>
 pnpm personal:mark -- --job <id> --status APPLIED
 pnpm personal:mark -- --job <id> --status INTERVIEW --note "Interview date"
 pnpm personal:history
+pnpm personal:doctor
 ```
 
 Allowed statuses are `NEW`, `SEEN`, `SHORTLISTED`, `REJECTED`, `APPLIED`,
@@ -157,11 +159,33 @@ personal/applications/<job-id>/job.md
 personal/applications/<job-id>/fit-analysis.md
 personal/applications/<job-id>/evidence.md
 personal/applications/<job-id>/application-checklist.md
+personal/applications/<job-id>/application.md
 ```
 
 The evidence pack maps known requirements/matches to résumé evidence and keeps
 gaps and unknowns visible. With configured local AI it additionally creates the
-three review-required drafts listed above.
+three review-required drafts listed above. For Greenhouse jobs with a retained
+public board reference, it also retrieves the questions exposed by Greenhouse's
+documented public `questions=true` endpoint and writes `questions.md`.
+Compliance and demographic groups are always treated as sensitive; legal,
+consequential, sensitive, and attestation questions remain user-controlled.
+Question retrieval failure does not block the rest of the dossier.
+Run `pnpm personal:prowl -- --refresh` once after upgrading an older Personal
+Mode state so stored Greenhouse jobs gain the public question reference.
+
+`application.md` is the dossier control sheet: job identity, URL, status, fit,
+strengths, gaps, questions needing input, prepared documents, and next action.
+All package files refer to the same stored job snapshot and résumé evidence.
+
+`personal:export-resume` writes a minimal, single-column,
+`tailored-resume.html` from the plaintext source résumé. It uses conventional
+headings and source text only. Open it in a browser and use Print → Save as PDF
+when a PDF is needed.
+
+`personal:doctor` performs local readiness checks for Node, pnpm, private input
+files, state/cache JSON, sources, optional Adzuna/local AI configuration, and
+Git privacy rules. It reports status only and never prints résumé contents or
+credentials.
 
 `personal:open` opens the stored HTTPS application/listing URL in the desktop
 browser. It does not inspect the form, answer questions, upload documents, click
