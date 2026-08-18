@@ -23,9 +23,10 @@ export function ResumeImporter({
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
+  const [selectedFile, setSelectedFile] = useState<File>();
 
   async function upload() {
-    const file = input.current?.files?.[0];
+    const file = selectedFile;
     if (!file) {
       setMessage("Choose a PDF or DOCX résumé first.");
       return;
@@ -48,6 +49,7 @@ export function ResumeImporter({
         `${result.proposalCount ?? 0} possible profile facts are ready for review. Nothing was added automatically.`,
       );
       if (input.current) input.current.value = "";
+      setSelectedFile(undefined);
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Upload failed.");
@@ -82,14 +84,31 @@ export function ResumeImporter({
             </p>
           </div>
         </div>
-        <input
-          ref={input}
-          type="file"
-          name="resume"
-          accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-          aria-describedby="resume-import-message"
-          className="rounded-lg border border-border-default bg-surface-muted p-3 text-sm"
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            id="resume-file-input"
+            ref={input}
+            type="file"
+            name="resume"
+            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            aria-describedby="resume-file-name resume-import-message"
+            className="sr-only"
+            disabled={busy}
+            onChange={(event) => setSelectedFile(event.target.files?.[0])}
+          />
+          <button
+            type="button"
+            className="button button-secondary"
+            aria-controls="resume-file-input"
+            onClick={() => input.current?.click()}
+            disabled={busy}
+          >
+            Choose File
+          </button>
+          <span id="resume-file-name" className="text-sm text-foreground-muted">
+            {selectedFile?.name ?? "No file selected"}
+          </span>
+        </div>
         <button
           type="button"
           className="button button-primary w-fit"

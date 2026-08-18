@@ -4,34 +4,26 @@ This runbook prepares the `codex/alpha-build` branch for its first Vercel Previe
 
 ## A. Neon
 
-1. Create a Neon project for RoleProwl. Neon Object Storage is currently a beta service; confirm that Object Storage is available in the selected project before continuing.
+1. Create or select the Neon PostgreSQL project for RoleProwl. Object storage is not provisioned through Neon.
 2. From the repository root, authenticate, link the project, and create or select the Preview branch:
 
    ```bash
-   pnpm dlx neonctl@latest auth
-   pnpm dlx neonctl@latest link
-   pnpm dlx neonctl@latest checkout roleprowl-alpha
-   pnpm dlx neonctl@latest config plan
-   pnpm dlx neonctl@latest deploy
+   pnpm dlx neon@latest auth
+   pnpm dlx neon@latest link
+   pnpm dlx neon@latest checkout roleprowl-alpha
+   pnpm dlx neon@latest config plan
+   pnpm dlx neon@latest deploy
    ```
 
-   The committed `neon.ts` declares one private-by-default bucket named `roleprowl` and gives newly created non-default branches a seven-day TTL. Do not make the bucket public.
+   The committed `neon.ts` retains only the database branch policy and gives newly created non-default branches a seven-day TTL.
 
 3. Confirm that Neon wrote the selected branch's variables to `.env.local`. The application uses the pooled `DATABASE_URL` at runtime and `DATABASE_URL_UNPOOLED` for Prisma migration commands.
-4. Configure these server-only Preview variables in Vercel using the values issued for this Neon branch and bucket:
+4. Configure the database variables in Vercel using the values issued for this Neon branch:
 
    ```text
    DATABASE_URL
    DATABASE_URL_UNPOOLED
-   ROLEPROWL_STORAGE_PROVIDER
-   ROLEPROWL_STORAGE_BUCKET
-   AWS_ACCESS_KEY_ID
-   AWS_SECRET_ACCESS_KEY
-   AWS_ENDPOINT_URL_S3
-   AWS_REGION
    ```
-
-   Set `ROLEPROWL_STORAGE_PROVIDER` to `s3` and `ROLEPROWL_STORAGE_BUCKET` to `roleprowl`. Never prefix an AWS variable with `NEXT_PUBLIC_`.
 
 5. Apply the committed migrations manually before the first Preview deployment:
 
@@ -42,6 +34,19 @@ This runbook prepares the `codex/alpha-build` branch for its first Vercel Previe
    ```
 
    `prisma.config.ts` selects `DATABASE_URL_UNPOOLED` for migrations when present. Do not run `migrate reset` against the hosted branch.
+
+6. In Backblaze B2, create a private bucket named `roleprowl` in `us-east-005`. Configure its server-only S3-compatible credentials in Vercel Preview:
+
+   ```text
+   ROLEPROWL_STORAGE_PROVIDER=s3
+   ROLEPROWL_STORAGE_BUCKET=roleprowl
+   AWS_ENDPOINT_URL_S3=https://s3.us-east-005.backblazeb2.com
+   AWS_REGION=us-east-005
+   AWS_ACCESS_KEY_ID
+   AWS_SECRET_ACCESS_KEY
+   ```
+
+   Never prefix a storage variable with `NEXT_PUBLIC_`, enable public-read access, or expose a permanent object URL.
 
 ## B. Vercel Preview
 
@@ -165,7 +170,7 @@ The hosted smoke test is read-only: it checks the homepage, health response, sec
 ## Official references
 
 - [Neon configuration as code](https://neon.com/blog/introducing-neon-ts)
-- [Neon Object Storage beta](https://neon.com/blog/neon-backend-is-beta)
+- [Backblaze B2 S3-compatible API](https://www.backblaze.com/docs/cloud-storage-use-the-aws-sdk-for-javascript-v3-with-backblaze-b2)
 - [Prisma `migrate deploy`](https://www.prisma.io/docs/cli/migrate/deploy)
 - [Vercel CLI deployments](https://vercel.com/docs/projects/deploy-from-cli)
 - [Vercel Automation Bypass](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation)

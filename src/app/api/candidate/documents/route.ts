@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import {
   ApplicationError,
   AuthorizationError,
@@ -12,6 +13,7 @@ import {
   validateResumeUpload,
 } from "@/core/domain/candidate/resume-import";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
+import { storeAndRetrieveResume } from "@/features/candidate/store-resume-document";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { extractResumeText } from "@/integrations/documents/extract-resume-text";
 import { documentStorage } from "@/integrations/storage/document-storage";
@@ -90,8 +92,19 @@ export async function GET() {
   }
 }
 
+type IngestionStage =
+  | "upload"
+  | "validation"
+  | "storage_write"
+  | "storage_retrieval"
+  | "document_persistence"
+  | "text_extraction"
+  | "truth_vault_persistence";
+
 export async function POST(request: Request) {
   let storedKey: string | undefined;
+  let stage: IngestionStage = "upload";
+  const correlationId = randomUUID();
   try {
     const actor = await requireAuthenticatedActor(currentAuthProvider());
     assertMutationRequestIsSameOrigin(request);
@@ -113,6 +126,7 @@ export async function POST(request: Request) {
       );
     }
 
+    stage = "validation";
     const validated = validateResumeUpload({
       bytes: new Uint8Array(await file.arrayBuffer()),
       fileName: file.name,
@@ -131,12 +145,15 @@ export async function POST(request: Request) {
     assertResumeIsNotDuplicate(duplicate?.id ?? null);
 
     const storage = documentStorage();
-    await storage.put(
-      validated.storageKey,
-      validated.bytes,
-      validated.mimeType,
-    );
     storedKey = validated.storageKey;
+    const storedBytes = await storeAndRetrieveResume(
+      storage,
+      validated,
+      (storageStage) => {
+        stage = storageStage;
+      },
+    );
+    stage = "document_persistence";
     const document = await db.candidateDocument.create({
       data: {
         userId: actor.id,
@@ -152,11 +169,10 @@ export async function POST(request: Request) {
     });
 
     try {
-      const extraction = await extractResumeText(
-        validated.format,
-        validated.bytes,
-      );
+      stage = "text_extraction";
+      const extraction = await extractResumeText(validated.format, storedBytes);
       const drafts = proposeFactsFromResumeText(extraction.text);
+      stage = "truth_vault_persistence";
       await db.$transaction([
         db.candidateDocument.update({
           where: { id: document.id },
@@ -212,6 +228,12 @@ export async function POST(request: Request) {
       throw error;
     }
   } catch (error) {
+    logger.log("error", "candidate_document_pipeline_failed", {
+      correlationId,
+      stage,
+      errorType: error instanceof Error ? error.name : "unknown",
+      errorCode: error instanceof ApplicationError ? error.code : undefined,
+    });
     if (storedKey && !(error instanceof ExtractionUnsupportedError)) {
       await documentStorage()
         .delete(storedKey)

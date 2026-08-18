@@ -1,7 +1,7 @@
 import { RoleProwlLogo } from "@/components/brand/roleprowl-logo";
 import { AuthNavigation } from "@/components/navigation/auth-navigation";
 import { Button } from "@/components/ui/button";
-import { ALL_NAV_ROUTES } from "@/config/routes";
+import { MARKETING_NAV_ROUTES } from "@/config/routes";
 import { NavigationLink } from "@/components/navigation/navigation-link";
 import { MobileMenu } from "@/components/navigation/mobile-menu";
 
@@ -11,7 +11,7 @@ export function MarketingHeader() {
       <div className="header-inner">
         <RoleProwlLogo />
         <nav className="desktop-nav" aria-label="Primary navigation">
-          {ALL_NAV_ROUTES.map((route) => (
+          {MARKETING_NAV_ROUTES.map((route) => (
             <NavigationLink key={route.href} href={route.href} compact />
           ))}
         </nav>

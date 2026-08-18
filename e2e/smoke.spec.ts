@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { APP_ROUTES, LEGAL_ROUTES } from "../src/config/routes";
+import {
+  APP_ROUTES,
+  LEGAL_ROUTES,
+  MARKETING_NAV_ROUTES,
+} from "../src/config/routes";
 
 test("homepage exposes its brand, CTA, and desktop navigation", async ({
   page,
@@ -12,7 +16,7 @@ test("homepage exposes its brand, CTA, and desktop navigation", async ({
     page.getByRole("link", { name: "Start Your Search" }).first(),
   ).toBeVisible();
   const primary = page.getByRole("navigation", { name: "Primary navigation" });
-  for (const route of APP_ROUTES)
+  for (const route of MARKETING_NAV_ROUTES)
     await expect(
       primary.getByRole("link", { name: route.label }),
     ).toHaveAttribute("href", route.href);

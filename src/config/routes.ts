@@ -35,6 +35,9 @@ export const LEGAL_ROUTES = [
 ] as const;
 
 export const ALL_NAV_ROUTES = [HOME_ROUTE, ...APP_ROUTES] as const;
+export const MARKETING_NAV_ROUTES = ALL_NAV_ROUTES.filter(
+  (route) => route.href !== "/dashboard",
+);
 
 export function routeForPath(pathname: string): AppRoute | undefined {
   return ALL_NAV_ROUTES.find((route) => route.href === pathname);

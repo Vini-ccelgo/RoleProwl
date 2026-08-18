@@ -10,8 +10,8 @@ const hostedStorageEnvironment = {
   ROLEPROWL_STORAGE_BUCKET: "roleprowl",
   AWS_ACCESS_KEY_ID: "fixture-access-key",
   AWS_SECRET_ACCESS_KEY: "fixture-secret-key",
-  AWS_ENDPOINT_URL_S3: "https://storage.example.test",
-  AWS_REGION: "us-east-2",
+  AWS_ENDPOINT_URL_S3: "https://s3.us-east-005.backblazeb2.com",
+  AWS_REGION: "us-east-005",
 } as const;
 
 describe("document storage resolution", () => {

@@ -9,30 +9,33 @@ import { databaseClient } from "@/lib/db/client";
 export default async function OnboardingPage() {
   await connection();
   const actor = await requireAuthenticatedActor(currentAuthProvider());
-  const documents = await databaseClient().candidateDocument.findMany({
-    where: { userId: actor.id },
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      originalFileName: true,
-      format: true,
-      status: true,
-      sizeBytes: true,
-      createdAt: true,
-      _count: { select: { proposals: true } },
-    },
-  });
-  const proposals = await databaseClient().candidateFactProposal.findMany({
-    where: { userId: actor.id, status: "PENDING" },
-    orderBy: { createdAt: "asc" },
-    select: {
-      id: true,
-      factType: true,
-      proposedValue: true,
-      sourceRegion: true,
-      confidence: true,
-    },
-  });
+  const database = databaseClient();
+  const [documents, proposals] = await Promise.all([
+    database.candidateDocument.findMany({
+      where: { userId: actor.id },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        originalFileName: true,
+        format: true,
+        status: true,
+        sizeBytes: true,
+        createdAt: true,
+        _count: { select: { proposals: true } },
+      },
+    }),
+    database.candidateFactProposal.findMany({
+      where: { userId: actor.id, status: "PENDING" },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        factType: true,
+        proposedValue: true,
+        sourceRegion: true,
+        confidence: true,
+      },
+    }),
+  ]);
 
   return (
     <div className="grid gap-7">

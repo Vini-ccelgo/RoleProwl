@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+test.skip(
+  process.env.ROLEPROWL_HOSTED_TEST !== "true",
+  "Hosted smoke tests run only through test:e2e:hosted.",
+);
+
 test("hosted homepage and security headers respond without a server error", async ({
   request,
 }) => {

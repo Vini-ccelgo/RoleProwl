@@ -26,9 +26,6 @@ export function MobileMenu() {
               onClick={() => setOpen(false)}
             />
           ))}
-          <a className="button button-secondary" href="/dashboard">
-            Sign In
-          </a>
         </nav>
       )}
     </div>

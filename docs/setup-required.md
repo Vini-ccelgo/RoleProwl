@@ -41,7 +41,7 @@ DATABASE_URL_UNPOOLED
 
 **Why needed:** RP-004 stores original résumé documents privately. The included filesystem adapter is deliberately restricted to non-production environments.
 
-**Account/action:** Provision the private `roleprowl` bucket declared in `neon.ts`, or another private S3-compatible bucket, and configure the existing `S3ObjectStorageProvider`. Public object URLs and public-read ACLs must remain disabled.
+**Account/action:** Provision the private Backblaze B2 `roleprowl` bucket and configure the existing provider-neutral `S3ObjectStorageProvider`. Public object URLs and public-read ACLs must remain disabled. Neon remains PostgreSQL-only.
 
 **Hosted environment variables:**
 
