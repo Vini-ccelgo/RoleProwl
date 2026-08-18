@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  documentStorageEnv,
   geminiEnv,
   selectedAIProviderEnv,
   syntheticGeminiTestingEnabled,
@@ -95,5 +96,34 @@ describe("server environment validation", () => {
         ROLEPROWL_GEMINI_SYNTHETIC_ONLY: "true",
       }),
     ).toBe(false);
+  });
+
+  it("requires complete private S3 configuration for hosted deployments", () => {
+    expect(() =>
+      validateServerEnvironment({
+        NODE_ENV: "production",
+        ROLEPROWL_DEPLOYMENT_ENVIRONMENT: "preview",
+        ROLEPROWL_STORAGE_PROVIDER: "filesystem",
+      }),
+    ).toThrow("filesystem storage is forbidden");
+    const environment = {
+      NODE_ENV: "production",
+      ROLEPROWL_DEPLOYMENT_ENVIRONMENT: "preview",
+      ROLEPROWL_STORAGE_PROVIDER: "s3",
+      ROLEPROWL_STORAGE_BUCKET: "roleprowl",
+      AWS_ACCESS_KEY_ID: "fixture-access-key",
+      AWS_SECRET_ACCESS_KEY: "fixture-secret-key",
+      AWS_ENDPOINT_URL_S3: "https://storage.example.test",
+      AWS_REGION: "us-east-2",
+    } as const;
+    expect(validateServerEnvironment(environment)).toMatchObject({
+      ROLEPROWL_STORAGE_PROVIDER: "s3",
+      ROLEPROWL_STORAGE_BUCKET: "roleprowl",
+    });
+    expect(documentStorageEnv(environment)).toMatchObject({
+      deployment: "preview",
+      provider: "s3",
+      bucket: "roleprowl",
+    });
   });
 });

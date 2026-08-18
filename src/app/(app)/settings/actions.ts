@@ -12,7 +12,7 @@ import { upsertApplicationPolicy } from "@/integrations/applications/prisma-appl
 import { ClerkIdentityManager } from "@/integrations/auth/clerk-identity-manager";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { PrismaAccountDeletionRepository } from "@/integrations/privacy/prisma-account-deletion-repository";
-import { documentStorage } from "@/integrations/storage/development-filesystem-storage";
+import { documentStorage } from "@/integrations/storage/document-storage";
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "");

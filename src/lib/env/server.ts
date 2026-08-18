@@ -1,5 +1,16 @@
 import "server-only";
 import { z } from "zod";
+import {
+  resolveDeploymentEnvironment,
+  ROLEPROWL_DEPLOYMENT_ENVIRONMENTS,
+} from "./deployment";
+
+export {
+  documentStorageEnv,
+  resolveDeploymentEnvironment,
+  ROLEPROWL_DEPLOYMENT_ENVIRONMENTS,
+} from "./deployment";
+export type { RoleProwlDeploymentEnvironment } from "./deployment";
 
 const optionalSecret = z.preprocess(
   (value) =>
@@ -25,6 +36,7 @@ export const serverEnvironmentSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).optional(),
     DATABASE_URL: z.url().optional(),
+    DATABASE_URL_UNPOOLED: z.url().optional(),
     CLERK_SECRET_KEY: optionalSecret,
     CLERK_WEBHOOK_SIGNING_SECRET: optionalSecret,
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: optionalSecret,
@@ -50,9 +62,15 @@ export const serverEnvironmentSchema = z
     ROLEPROWL_ALLOW_SYNTHETIC_AI_PREVIEW: optionalBoolean,
     ROLEPROWL_ALLOW_SYNTHETIC_AI_PRODUCTION: optionalBoolean,
     ROLEPROWL_DEPLOYMENT_ENVIRONMENT: z
-      .enum(["local", "preview", "production"])
+      .enum(ROLEPROWL_DEPLOYMENT_ENVIRONMENTS)
       .optional(),
     VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
+    ROLEPROWL_STORAGE_PROVIDER: z.enum(["filesystem", "s3"]).optional(),
+    ROLEPROWL_STORAGE_BUCKET: optionalSecret,
+    AWS_ACCESS_KEY_ID: optionalSecret,
+    AWS_SECRET_ACCESS_KEY: optionalSecret,
+    AWS_ENDPOINT_URL_S3: z.url().optional(),
+    AWS_REGION: optionalSecret,
     ROLEPROWL_LOCAL_STORAGE_PATH: z.string().trim().min(1).optional(),
   })
   .superRefine((environment, context) => {
@@ -98,6 +116,41 @@ export const serverEnvironmentSchema = z
         path: ["OPENAI_API_KEY"],
       });
     }
+    const deployment = resolveDeploymentEnvironment(environment);
+    const hosted = deployment === "preview" || deployment === "production";
+    if (hosted && environment.ROLEPROWL_STORAGE_PROVIDER !== "s3") {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Hosted preview and production deployments require ROLEPROWL_STORAGE_PROVIDER=s3; filesystem storage is forbidden.",
+        path: ["ROLEPROWL_STORAGE_PROVIDER"],
+      });
+    }
+    if (environment.ROLEPROWL_STORAGE_PROVIDER === "s3") {
+      for (const key of [
+        "ROLEPROWL_STORAGE_BUCKET",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_ENDPOINT_URL_S3",
+        "AWS_REGION",
+      ] as const)
+        if (!environment[key])
+          context.addIssue({
+            code: "custom",
+            message: `${key} is required when ROLEPROWL_STORAGE_PROVIDER=s3.`,
+            path: [key],
+          });
+      if (
+        hosted &&
+        environment.AWS_ENDPOINT_URL_S3 &&
+        new URL(environment.AWS_ENDPOINT_URL_S3).protocol !== "https:"
+      )
+        context.addIssue({
+          code: "custom",
+          message: "Hosted S3-compatible storage requires an HTTPS endpoint.",
+          path: ["AWS_ENDPOINT_URL_S3"],
+        });
+    }
   });
 
 export function validateServerEnvironment(
@@ -127,6 +180,7 @@ export function selectedAIProviderEnv(
 }
 
 const geminiEnvironment = z.object({
+  NODE_ENV: z.enum(["development", "test", "production"]).optional(),
   GEMINI_API_KEY: z.string().trim().min(1),
   ROLEPROWL_AI_TIMEOUT_MS: z.coerce
     .number()
@@ -183,7 +237,7 @@ const geminiEnvironment = z.object({
     z.boolean(),
   ),
   ROLEPROWL_DEPLOYMENT_ENVIRONMENT: z
-    .enum(["local", "preview", "production"])
+    .enum(ROLEPROWL_DEPLOYMENT_ENVIRONMENTS)
     .optional(),
   VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
 });
@@ -192,13 +246,7 @@ export function geminiEnv(
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ) {
   const parsed = geminiEnvironment.parse(environment);
-  const deployment =
-    parsed.ROLEPROWL_DEPLOYMENT_ENVIRONMENT ??
-    (parsed.VERCEL_ENV === "production"
-      ? "production"
-      : parsed.VERCEL_ENV === "preview"
-        ? "preview"
-        : "local");
+  const deployment = resolveDeploymentEnvironment(parsed);
   if (
     parsed.ROLEPROWL_GEMINI_SYNTHETIC_ONLY &&
     deployment === "preview" &&

@@ -8,6 +8,7 @@ export default defineConfig({
   // are configured. Runtime connections still validate DATABASE_URL in src/lib/env.
   datasource: {
     url:
+      process.env.DATABASE_URL_UNPOOLED ??
       process.env.DATABASE_URL ??
       "postgresql://roleprowl:roleprowl@localhost:5432/roleprowl",
   },

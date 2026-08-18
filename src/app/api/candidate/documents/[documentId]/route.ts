@@ -6,7 +6,7 @@ import {
 import { requireOwnedCandidateDocument } from "@/core/domain/candidate/resume-import";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
-import { documentStorage } from "@/integrations/storage/development-filesystem-storage";
+import { documentStorage } from "@/integrations/storage/document-storage";
 import { databaseClient } from "@/lib/db/client";
 import { assertMutationRequestIsSameOrigin } from "@/lib/security/request-security";
 

@@ -28,6 +28,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "test:e2e:hosted": "ROLEPROWL_HOSTED_TEST=true playwright test e2e/hosted-smoke.spec.ts",
+    "alpha:doctor": "JITI_TSCONFIG_PATHS=true jiti scripts/alpha-doctor.ts",
     "security:check": "pnpm audit --prod --audit-level high",
     "fixtures:generate": "node scripts/generate-synthetic-resume.mjs",
     "personal": "JITI_TSCONFIG_PATHS=true jiti scripts/personal-prowl.ts",
@@ -43,8 +45,10 @@
     "check": "pnpm lint && pnpm typecheck && pnpm format:check && pnpm test"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1112.0",
     "@clerk/nextjs": "^7.7.4",
     "@google/genai": "^2.17.1",
+    "@neon/config": "^1.0.0",
     "@prisma/adapter-pg": "7.9.1",
     "@prisma/client": "7.9.1",
     "docx": "^9.7.1",

@@ -22,29 +22,43 @@ CLERK_WEBHOOK_SIGNING_SECRET
 
 **Without setup:** Public routes and builds work. Protected application routes remain closed and the sign-in/sign-up pages show an explicit configuration notice.
 
-## 2. PostgreSQL
+## 2. Neon PostgreSQL
 
 **Why needed:** RoleProwl-owned account records and all later private domain data.
 
-**Account/action:** Provide a development PostgreSQL database and apply committed migrations.
+**Account/action:** Create/select a Neon Preview branch and apply the committed migrations using the direct connection URL. The application continues to use ordinary PostgreSQL through Prisma.
 
 **Environment variable:**
 
 ```text
 DATABASE_URL
+DATABASE_URL_UNPOOLED
 ```
 
 **Without setup:** Static/public compilation works; authenticated data access cannot persist RoleProwl records.
 
-## 3. Production object storage
+## 3. Hosted private object storage
 
 **Why needed:** RP-004 stores original résumé documents privately. The included filesystem adapter is deliberately restricted to non-production environments.
 
-**Account/action:** Before deployment, select a private object-storage provider, create a non-public bucket, and implement/configure its `ObjectStorageProvider` adapter. Public object URLs must remain disabled.
+**Account/action:** Provision the private `roleprowl` bucket declared in `neon.ts`, or another private S3-compatible bucket, and configure the existing `S3ObjectStorageProvider`. Public object URLs and public-read ACLs must remain disabled.
+
+**Hosted environment variables:**
+
+```text
+ROLEPROWL_STORAGE_PROVIDER=s3
+ROLEPROWL_STORAGE_BUCKET
+AWS_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY
+AWS_ENDPOINT_URL_S3
+AWS_REGION
+```
 
 **Development default:** No account is needed. Files are written with private permissions beneath `ROLEPROWL_LOCAL_STORAGE_PATH` (default: `.roleprowl-storage`) and the directory is ignored by Git.
 
-**Without setup:** Local development and automated tests work; production résumé upload is intentionally blocked by configuration.
+**Without setup:** Local development and automated tests work; Preview and production initialization fail clearly rather than falling back to filesystem persistence.
+
+The exact first-Preview sequence is in [Hosted alpha runbook](./hosted-alpha.md).
 
 ## 4. Temporary Gemini synthetic-only structured AI
 

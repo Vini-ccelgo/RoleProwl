@@ -5,18 +5,16 @@ import type {
   ObjectStorageProvider,
   StoredObject,
 } from "@/core/contracts/object-storage-provider";
-import {
-  ConfigurationError,
-  ValidationError,
-} from "@/core/errors/application-errors";
-
-const SAFE_STORAGE_KEY = /^[a-zA-Z0-9/_-]+$/u;
+import { ConfigurationError } from "@/core/errors/application-errors";
+import { resolveDeploymentEnvironment } from "@/lib/env/server";
+import { assertInternalStorageKey } from "./storage-key";
 
 export class DevelopmentFilesystemStorage implements ObjectStorageProvider {
   private readonly root: string;
 
   constructor(root = path.join(process.cwd(), ".roleprowl-storage")) {
-    if (process.env.NODE_ENV === "production") {
+    const deployment = resolveDeploymentEnvironment();
+    if (deployment === "preview" || deployment === "production") {
       throw new ConfigurationError(
         "Filesystem document storage is development-only. Configure durable private object storage for production.",
       );
@@ -25,10 +23,7 @@ export class DevelopmentFilesystemStorage implements ObjectStorageProvider {
   }
 
   private resolveKey(key: string) {
-    if (!SAFE_STORAGE_KEY.test(key) || key.includes("..")) {
-      throw new ValidationError("Invalid internal storage key.");
-    }
-    return path.join(this.root, key);
+    return path.join(this.root, assertInternalStorageKey(key));
   }
 
   async put(
@@ -58,10 +53,4 @@ export class DevelopmentFilesystemStorage implements ObjectStorageProvider {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
   }
-}
-
-export function documentStorage(): ObjectStorageProvider {
-  return new DevelopmentFilesystemStorage(
-    process.env.ROLEPROWL_LOCAL_STORAGE_PATH,
-  );
 }
