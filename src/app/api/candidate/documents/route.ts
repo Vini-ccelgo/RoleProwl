@@ -17,6 +17,7 @@ import { storeAndRetrieveResume } from "@/features/candidate/store-resume-docume
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { extractResumeText } from "@/integrations/documents/extract-resume-text";
 import { documentStorage } from "@/integrations/storage/document-storage";
+import { storageFailureLogContext } from "@/integrations/storage/storage-diagnostics";
 import { PrismaRateLimiter } from "@/integrations/security/prisma-rate-limiter";
 import { databaseClient } from "@/lib/db/client";
 import { logger } from "@/lib/logging/logger";
@@ -28,6 +29,8 @@ import {
 
 const rateLimiter = new PrismaRateLimiter();
 const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
+
+export const runtime = "nodejs";
 
 function errorResponse(error: unknown) {
   if (error instanceof AuthorizationError) {
@@ -103,7 +106,11 @@ type IngestionStage =
 
 export async function POST(request: Request) {
   let storedKey: string | undefined;
-  let stage: IngestionStage = "upload";
+  const pipelineState: {
+    stage: IngestionStage;
+    storageOperation: "put" | "get" | null;
+  } = { stage: "upload", storageOperation: null };
+  let storageRequestContext = {};
   const correlationId = randomUUID();
   try {
     const actor = await requireAuthenticatedActor(currentAuthProvider());
@@ -126,12 +133,18 @@ export async function POST(request: Request) {
       );
     }
 
-    stage = "validation";
+    pipelineState.stage = "validation";
     const validated = validateResumeUpload({
       bytes: new Uint8Array(await file.arrayBuffer()),
       fileName: file.name,
       mimeType: file.type,
     });
+    storageRequestContext = {
+      bodyType: validated.bytes.constructor.name,
+      bodyBytes: validated.bytes.byteLength,
+      bodyLengthExplicit: true,
+      mediaType: validated.mimeType,
+    };
     const db = databaseClient();
     const duplicate = await db.candidateDocument.findUnique({
       where: {
@@ -150,10 +163,13 @@ export async function POST(request: Request) {
       storage,
       validated,
       (storageStage) => {
-        stage = storageStage;
+        pipelineState.stage = storageStage;
+        pipelineState.storageOperation =
+          storageStage === "storage_write" ? "put" : "get";
       },
     );
-    stage = "document_persistence";
+    pipelineState.storageOperation = null;
+    pipelineState.stage = "document_persistence";
     const document = await db.candidateDocument.create({
       data: {
         userId: actor.id,
@@ -169,10 +185,10 @@ export async function POST(request: Request) {
     });
 
     try {
-      stage = "text_extraction";
+      pipelineState.stage = "text_extraction";
       const extraction = await extractResumeText(validated.format, storedBytes);
       const drafts = proposeFactsFromResumeText(extraction.text);
-      stage = "truth_vault_persistence";
+      pipelineState.stage = "truth_vault_persistence";
       await db.$transaction([
         db.candidateDocument.update({
           where: { id: document.id },
@@ -230,9 +246,16 @@ export async function POST(request: Request) {
   } catch (error) {
     logger.log("error", "candidate_document_pipeline_failed", {
       correlationId,
-      stage,
+      stage: pipelineState.stage,
       errorType: error instanceof Error ? error.name : "unknown",
       errorCode: error instanceof ApplicationError ? error.code : undefined,
+      ...(pipelineState.storageOperation
+        ? storageFailureLogContext(
+            error,
+            pipelineState.storageOperation,
+            storageRequestContext,
+          )
+        : {}),
     });
     if (storedKey && !(error instanceof ExtractionUnsupportedError)) {
       await documentStorage()

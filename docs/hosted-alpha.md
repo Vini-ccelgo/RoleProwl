@@ -46,7 +46,7 @@ This runbook prepares the `codex/alpha-build` branch for its first Vercel Previe
    AWS_SECRET_ACCESS_KEY
    ```
 
-   Never prefix a storage variable with `NEXT_PUBLIC_`, enable public-read access, or expose a permanent object URL.
+   Never prefix a storage variable with `NEXT_PUBLIC_`, enable public-read access, or expose a permanent object URL. Redeploy Preview after changing any environment variable because existing deployments retain their original environment snapshot.
 
 ## B. Vercel Preview
 
@@ -171,6 +171,7 @@ The hosted smoke test is read-only: it checks the homepage, health response, sec
 
 - [Neon configuration as code](https://neon.com/blog/introducing-neon-ts)
 - [Backblaze B2 S3-compatible API](https://www.backblaze.com/docs/cloud-storage-use-the-aws-sdk-for-javascript-v3-with-backblaze-b2)
+- [Vercel environment-variable deployment behavior](https://vercel.com/docs/environment-variables)
 - [Prisma `migrate deploy`](https://www.prisma.io/docs/cli/migrate/deploy)
 - [Vercel CLI deployments](https://vercel.com/docs/projects/deploy-from-cli)
 - [Vercel Automation Bypass](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation)
