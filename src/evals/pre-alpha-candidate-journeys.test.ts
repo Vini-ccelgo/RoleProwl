@@ -315,6 +315,7 @@ describe("RP-031 synthetic candidate journeys", () => {
       factType: proposals[0]!.factType,
       proposedValue: proposals[0]!.proposedValue,
       status: "PENDING",
+      targetPath: proposals[0]!.targetPath,
       userId: actor.id,
     };
     const verified = decideFactProposal(proposal, actor.id, "ACCEPT");

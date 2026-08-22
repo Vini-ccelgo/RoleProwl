@@ -4,6 +4,10 @@ import {
   NotFoundError,
   ValidationError,
 } from "@/core/errors/application-errors";
+import {
+  PROPOSAL_DESTINATIONS,
+  type SupportedProposalFactType,
+} from "./proposal-destinations";
 
 export const MAX_RESUME_BYTES = 5 * 1024 * 1024;
 
@@ -109,23 +113,24 @@ export interface CandidateFactProposalDraft {
   readonly targetPath: string;
 }
 
+function proposalTarget(factType: SupportedProposalFactType) {
+  return {
+    factType,
+    targetPath: PROPOSAL_DESTINATIONS[factType].canonicalPath,
+  };
+}
+
 const SECTION_TARGETS: Record<
   string,
-  { factType: string; targetPath: string }
+  { factType: SupportedProposalFactType; targetPath: string }
 > = {
-  EXPERIENCE: {
-    factType: "WORK_EXPERIENCE_TEXT",
-    targetPath: "workExperiences",
-  },
-  EMPLOYMENT: {
-    factType: "WORK_EXPERIENCE_TEXT",
-    targetPath: "workExperiences",
-  },
-  EDUCATION: { factType: "EDUCATION_TEXT", targetPath: "educationRecords" },
-  SKILLS: { factType: "SKILL_TEXT", targetPath: "skills" },
-  PROJECTS: { factType: "PROJECT_TEXT", targetPath: "projects" },
-  CERTIFICATIONS: { factType: "CREDENTIAL_TEXT", targetPath: "credentials" },
-  CREDENTIALS: { factType: "CREDENTIAL_TEXT", targetPath: "credentials" },
+  EXPERIENCE: proposalTarget("WORK_EXPERIENCE_TEXT"),
+  EMPLOYMENT: proposalTarget("WORK_EXPERIENCE_TEXT"),
+  EDUCATION: proposalTarget("EDUCATION_TEXT"),
+  SKILLS: proposalTarget("SKILL_TEXT"),
+  PROJECTS: proposalTarget("PROJECT_TEXT"),
+  CERTIFICATIONS: proposalTarget("CREDENTIAL_TEXT"),
+  CREDENTIALS: proposalTarget("CREDENTIAL_TEXT"),
 };
 
 export function proposeFactsFromResumeText(
@@ -143,9 +148,7 @@ export function proposeFactsFromResumeText(
       return;
     }
     const email = line.match(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/u)?.[0];
-    const fact = email
-      ? { factType: "PROFILE_EMAIL", targetPath: "candidateProfile.email" }
-      : activeSection;
+    const fact = email ? proposalTarget("PROFILE_EMAIL") : activeSection;
     if (!fact) return;
     proposals.push({
       ...fact,

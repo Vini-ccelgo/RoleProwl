@@ -7,6 +7,7 @@ import {
   ProfileDetailsSection,
   ProjectsCredentialsSection,
   SkillsSection,
+  VerifiedResumeFactsSection,
 } from "@/components/candidate/truth-vault-sections";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
@@ -26,6 +27,7 @@ export default async function ProfilePage() {
       />
       <nav className="vault-jump-nav" aria-label="Profile sections">
         <a href="#details">Details</a>
+        <a href="#resume-facts">Résumé facts</a>
         <a href="#experience">Experience</a>
         <a href="#education">Education</a>
         <a href="#skills">Skills</a>
@@ -36,6 +38,9 @@ export default async function ProfilePage() {
       <div className="vault-sections">
         <div id="details">
           <ProfileDetailsSection vault={vault} />
+        </div>
+        <div id="resume-facts">
+          <VerifiedResumeFactsSection vault={vault} />
         </div>
         <div id="experience">
           <ExperienceSection vault={vault} />

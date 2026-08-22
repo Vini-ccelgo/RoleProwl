@@ -3,12 +3,15 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Pencil, X } from "lucide-react";
+import { getProposalDestination } from "@/core/domain/candidate/proposal-destinations";
+import { availableProposalActions } from "@/core/domain/candidate/proposal-review-state";
 
 interface ProposalSummary {
   readonly confidence: number | null;
   readonly factType: string;
   readonly id: string;
   readonly sourceText: string;
+  readonly supported: boolean;
   readonly value: string;
 }
 
@@ -76,60 +79,89 @@ export function FactProposalReview({
           No pending facts need review.
         </div>
       ) : (
-        proposals.map((proposal) => (
-          <article className="card grid gap-3 p-4" key={proposal.id}>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <strong className="text-sm">
-                {proposal.factType.replaceAll("_", " ").toLowerCase()}
-              </strong>
-              <span className="badge">
-                {proposal.confidence == null
-                  ? "Unscored"
-                  : `${Math.round(proposal.confidence * 100)}% parser confidence`}
-              </span>
-            </div>
-            <label className="grid gap-1 text-xs font-medium">
-              Proposed value
-              <input
-                className="rounded-lg border border-border-default bg-white px-3 py-2 text-sm font-normal"
-                value={edits[proposal.id] ?? proposal.value}
-                onChange={(event) =>
-                  setEdits((current) => ({
-                    ...current,
-                    [proposal.id]: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            <p className="m-0 text-xs">Source: “{proposal.sourceText}”</p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="button button-primary"
-                type="button"
-                disabled={busyId === proposal.id}
-                onClick={() => decide(proposal, "ACCEPT")}
-              >
-                <Check size={16} aria-hidden="true" /> Accept original
-              </button>
-              <button
-                className="button button-secondary"
-                type="button"
-                disabled={busyId === proposal.id}
-                onClick={() => decide(proposal, "EDIT_AND_ACCEPT")}
-              >
-                <Pencil size={16} aria-hidden="true" /> Accept edited
-              </button>
-              <button
-                className="button button-ghost"
-                type="button"
-                disabled={busyId === proposal.id}
-                onClick={() => decide(proposal, "REJECT")}
-              >
-                <X size={16} aria-hidden="true" /> Reject
-              </button>
-            </div>
-          </article>
-        ))
+        proposals.map((proposal) => {
+          const currentValue = edits[proposal.id] ?? proposal.value;
+          const actions = availableProposalActions({
+            original: proposal.value,
+            current: currentValue,
+            supported: proposal.supported,
+          });
+          const hasAction = (action: "ACCEPT" | "EDIT_AND_ACCEPT" | "REJECT") =>
+            (actions as readonly string[]).includes(action);
+          const destination = proposal.supported
+            ? getProposalDestination(proposal.factType)
+            : undefined;
+          return (
+            <article className="card grid gap-3 p-4" key={proposal.id}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <strong className="text-sm">
+                  {destination?.label ??
+                    proposal.factType.replaceAll("_", " ").toLowerCase()}
+                </strong>
+                <span className="badge">
+                  {proposal.confidence == null
+                    ? "Unscored"
+                    : `${Math.round(proposal.confidence * 100)}% parser confidence`}
+                </span>
+              </div>
+              <label className="grid gap-1 text-xs font-medium">
+                Proposed value
+                <input
+                  className="rounded-lg border border-border-default bg-white px-3 py-2 text-sm font-normal"
+                  disabled={!proposal.supported || busyId === proposal.id}
+                  value={currentValue}
+                  onChange={(event) =>
+                    setEdits((current) => ({
+                      ...current,
+                      [proposal.id]: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <p className="m-0 text-xs">
+                Destination: {destination?.label ?? "Unsupported proposal type"}
+                {destination ? " · Verified résumé facts" : ""}
+              </p>
+              {!proposal.supported && (
+                <p className="m-0 text-xs text-foreground-muted">
+                  This historical proposal has no supported canonical
+                  destination. It can only be rejected.
+                </p>
+              )}
+              <p className="m-0 text-xs">Source: “{proposal.sourceText}”</p>
+              <div className="flex flex-wrap gap-2">
+                {hasAction("ACCEPT") && (
+                  <button
+                    className="button button-primary"
+                    type="button"
+                    disabled={busyId === proposal.id}
+                    onClick={() => decide(proposal, "ACCEPT")}
+                  >
+                    <Check size={16} aria-hidden="true" /> Accept original
+                  </button>
+                )}
+                {hasAction("EDIT_AND_ACCEPT") && (
+                  <button
+                    className="button button-primary"
+                    type="button"
+                    disabled={busyId === proposal.id}
+                    onClick={() => decide(proposal, "EDIT_AND_ACCEPT")}
+                  >
+                    <Pencil size={16} aria-hidden="true" /> Accept edited
+                  </button>
+                )}
+                <button
+                  className="button button-ghost"
+                  type="button"
+                  disabled={busyId === proposal.id}
+                  onClick={() => decide(proposal, "REJECT")}
+                >
+                  <X size={16} aria-hidden="true" /> Reject
+                </button>
+              </div>
+            </article>
+          );
+        })
       )}
     </section>
   );

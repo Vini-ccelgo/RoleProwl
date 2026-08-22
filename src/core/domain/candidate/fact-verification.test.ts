@@ -10,6 +10,7 @@ const proposal: ReviewableProposal = {
   factType: "SKILL_TEXT",
   proposedValue: { text: "TypeScript" },
   status: "PENDING",
+  targetPath: "candidateFacts.skills",
 };
 
 describe("candidate fact proposal decisions", () => {
@@ -56,5 +57,40 @@ describe("candidate fact proposal decisions", () => {
     expect(() =>
       decideFactProposal(proposal, "user-1", "EDIT_AND_ACCEPT", { text: " " }),
     ).toThrow("non-empty");
+  });
+
+  it("enforces distinct original, edited, and rejected payload semantics", () => {
+    expect(() =>
+      decideFactProposal(proposal, "user-1", "ACCEPT", {
+        text: "TypeScript 5",
+      }),
+    ).toThrow("cannot include a modified");
+    expect(() =>
+      decideFactProposal(proposal, "user-1", "EDIT_AND_ACCEPT", {
+        text: " TypeScript ",
+      }),
+    ).toThrow("differs from the original");
+    expect(() =>
+      decideFactProposal(proposal, "user-1", "REJECT", {
+        text: "TypeScript 5",
+      }),
+    ).toThrow("cannot include an edited value");
+  });
+
+  it("rejects unsupported acceptance while still permitting rejection", () => {
+    const unsupported = {
+      ...proposal,
+      factType: "UNKNOWN_TEXT",
+      targetPath: "unknown",
+    };
+    expect(() => decideFactProposal(unsupported, "user-1", "ACCEPT")).toThrow(
+      "does not have a supported",
+    );
+    expect(decideFactProposal(unsupported, "user-1", "REJECT")).toEqual(
+      expect.objectContaining({
+        status: "REJECTED",
+        createCanonicalFact: false,
+      }),
+    );
   });
 });

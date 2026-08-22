@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
+import { isSupportedProposalDestination } from "@/core/domain/candidate/proposal-destinations";
 
 export default async function OnboardingPage() {
   await connection();
@@ -32,6 +33,7 @@ export default async function OnboardingPage() {
         factType: true,
         proposedValue: true,
         sourceRegion: true,
+        targetPath: true,
         confidence: true,
       },
     }),
@@ -57,6 +59,10 @@ export default async function OnboardingPage() {
           return {
             id: proposal.id,
             factType: proposal.factType,
+            supported: isSupportedProposalDestination(
+              proposal.factType,
+              proposal.targetPath,
+            ),
             confidence: proposal.confidence,
             value:
               typeof value.text === "string"

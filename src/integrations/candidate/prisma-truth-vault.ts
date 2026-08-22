@@ -10,6 +10,7 @@ export async function getCandidateTruthVault(userId: string) {
     skills,
     projects,
     credentials,
+    verifiedResumeFacts,
     preferences,
     authorization,
   ] = await Promise.all([
@@ -35,6 +36,23 @@ export async function getCandidateTruthVault(userId: string) {
       where: { userId },
       orderBy: { issuedAt: "desc" },
     }),
+    database.candidateFact.findMany({
+      where: { userId },
+      include: {
+        sourceProposal: {
+          select: {
+            id: true,
+            status: true,
+            targetPath: true,
+            sourceRegion: true,
+            document: {
+              select: { id: true, originalFileName: true },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+    }),
     database.candidatePreferences.findUnique({ where: { userId } }),
     database.workAuthorizationProfile.findUnique({ where: { userId } }),
   ]);
@@ -46,6 +64,7 @@ export async function getCandidateTruthVault(userId: string) {
     skills,
     projects,
     credentials,
+    verifiedResumeFacts,
     preferences,
     authorization,
   };

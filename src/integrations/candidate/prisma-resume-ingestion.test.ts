@@ -71,7 +71,7 @@ describe.each(["PDF", "DOCX"] as const)(
                 lineEnd: 2,
                 text: "Incident response",
               },
-              targetPath: "skills",
+              targetPath: "candidateFacts.skills",
             },
           ],
           userId: "user_fixture",

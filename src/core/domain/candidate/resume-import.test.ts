@@ -66,15 +66,18 @@ describe("resume proposal parsing", () => {
     expect(drafts).toEqual([
       expect.objectContaining({
         factType: "PROFILE_EMAIL",
+        targetPath: "candidateFacts.profileEmails",
         proposedValue: { text: "candidate@example.test" },
         sourceRegion: expect.objectContaining({ lineStart: 1 }),
       }),
       expect.objectContaining({
         factType: "SKILL_TEXT",
+        targetPath: "candidateFacts.skills",
         proposedValue: { text: "TypeScript" },
       }),
       expect.objectContaining({
         factType: "SKILL_TEXT",
+        targetPath: "candidateFacts.skills",
         proposedValue: { text: "PostgreSQL" },
       }),
     ]);

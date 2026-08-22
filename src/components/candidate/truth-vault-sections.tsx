@@ -12,6 +12,7 @@ import {
   saveWorkExperience,
 } from "@/app/(app)/profile/actions";
 import type { CandidateTruthVault } from "@/integrations/candidate/prisma-truth-vault";
+import { getProposalDestination } from "@/core/domain/candidate/proposal-destinations";
 import { VaultForm } from "./vault-form";
 import {
   dateInput,
@@ -29,6 +30,75 @@ type Education = CandidateTruthVault["education"][number];
 type Skill = CandidateTruthVault["skills"][number];
 type Project = CandidateTruthVault["projects"][number];
 type Credential = CandidateTruthVault["credentials"][number];
+type VerifiedResumeFact = CandidateTruthVault["verifiedResumeFacts"][number];
+
+function factText(value: unknown) {
+  if (value && typeof value === "object" && "text" in value) {
+    const text = (value as { text?: unknown }).text;
+    if (typeof text === "string") return text;
+  }
+  return JSON.stringify(value);
+}
+
+function sourceRegionText(value: unknown) {
+  if (value && typeof value === "object" && "text" in value) {
+    const text = (value as { text?: unknown }).text;
+    if (typeof text === "string") return text;
+  }
+  return "Extracted document region";
+}
+
+function VerifiedResumeFactRecord({ item }: { item: VerifiedResumeFact }) {
+  const destination = getProposalDestination(item.factType);
+  return (
+    <article className="vault-record">
+      <div className="vault-record-heading">
+        <div>
+          <strong>{destination?.label ?? item.factType}</strong>
+          <small>{factText(item.value)}</small>
+        </div>
+        <span className="badge">Verified from résumé</span>
+      </div>
+      <details>
+        <summary>View provenance</summary>
+        <div className="grid gap-2 pt-3 text-sm">
+          <p className="m-0">
+            Source document: {item.sourceProposal.document.originalFileName}
+          </p>
+          <p className="m-0">
+            Source region: {sourceRegionText(item.sourceProposal.sourceRegion)}
+          </p>
+          <p className="m-0">
+            Review decision: {item.sourceProposal.status.replaceAll("_", " ")}
+          </p>
+        </div>
+      </details>
+    </article>
+  );
+}
+
+export function VerifiedResumeFactsSection({
+  vault,
+}: {
+  vault: CandidateTruthVault;
+}) {
+  return (
+    <VaultSection
+      title="Verified résumé facts"
+      description="Accepted résumé claims remain linked to their source document and review decision. They do not overwrite structured profile records or your sign-in email."
+    >
+      {vault.verifiedResumeFacts.length === 0 ? (
+        <p className="m-0 text-sm text-foreground-muted">
+          No résumé proposals have been accepted yet.
+        </p>
+      ) : (
+        vault.verifiedResumeFacts.map((item) => (
+          <VerifiedResumeFactRecord key={item.id} item={item} />
+        ))
+      )}
+    </VaultSection>
+  );
+}
 
 function DeleteButton({
   kind,

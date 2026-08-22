@@ -60,6 +60,8 @@ Prisma 7 targets PostgreSQL via `prisma.config.ts`. The generated client has an 
 
 RP-005 separates extracted proposals, user decisions, verified canonical facts, generated claims, and claim evidence. Accepting or editing a pending proposal transactionally creates a `CandidateFact` and records the canonical identifier on the proposal. Rejecting changes only the proposal status, so provenance history remains without influencing the candidate. Reviewed proposals cannot be decided twice and foreign identifiers remain concealed.
 
+Résumé proposals target the verified `CandidateFact` ledger explicitly through `candidateFacts.*` paths. The accepted value remains one-to-one with its source proposal, so repeated sections append independently and preserve document/source-region provenance. These raw extracted text claims do not overwrite structured `CandidateProfile`, `Skill`, `Education`, or other records; `PROFILE_EMAIL` is likewise a verified résumé fact and never replaces the Clerk/account email. Legacy target paths emitted before RP-031F remain reviewable through an explicit compatibility map.
+
 Every generated claim carries a classification, generator identity, prompt version, structured assertions, and immutable evidence snapshots. Deterministic policy checks high-risk atoms such as employer names, credentials, durations, management scope, and numeric achievements against owned evidence. `UNSUPPORTED` and evidence-free claims are categorically ineligible for application readiness.
 
 ## Matching
