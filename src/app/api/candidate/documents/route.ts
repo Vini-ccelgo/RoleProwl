@@ -15,11 +15,18 @@ import {
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { storeAndRetrieveResume } from "@/features/candidate/store-resume-document";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
+import {
+  PrismaResumeIngestionRepository,
+  RESUME_PERSISTENCE_TRANSACTION_TIMEOUT_MS,
+  removeFailedResumeRecord,
+  type ResumePersistenceSubstage,
+} from "@/integrations/candidate/prisma-resume-ingestion";
 import { extractResumeText } from "@/integrations/documents/extract-resume-text";
 import { documentStorage } from "@/integrations/storage/document-storage";
 import { storageFailureLogContext } from "@/integrations/storage/storage-diagnostics";
 import { PrismaRateLimiter } from "@/integrations/security/prisma-rate-limiter";
 import { databaseClient } from "@/lib/db/client";
+import { prismaFailureLogContext } from "@/lib/db/prisma-diagnostics";
 import { logger } from "@/lib/logging/logger";
 import {
   assertContentLength,
@@ -32,7 +39,7 @@ const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
 
 export const runtime = "nodejs";
 
-function errorResponse(error: unknown) {
+function errorResponse(error: unknown, logUnexpected = true) {
   if (error instanceof AuthorizationError) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
@@ -64,9 +71,11 @@ function errorResponse(error: unknown) {
       },
     );
   }
-  logger.log("error", "candidate_document_request_failed", {
-    errorType: error instanceof Error ? error.name : "unknown",
-  });
+  if (logUnexpected) {
+    logger.log("error", "candidate_document_request_failed", {
+      errorType: error instanceof Error ? error.name : "unknown",
+    });
+  }
   return NextResponse.json(
     { error: "The document could not be processed. Try again." },
     { status: 500 },
@@ -102,18 +111,45 @@ type IngestionStage =
   | "storage_retrieval"
   | "document_persistence"
   | "text_extraction"
+  | "extraction_failure_persistence"
   | "truth_vault_persistence";
+
+function persistenceOperation(substage: ResumePersistenceSubstage | null) {
+  switch (substage) {
+    case "document_record_create":
+      return "candidate_document_create";
+    case "document_status_update":
+      return "candidate_document_update";
+    case "extraction_status_update":
+      return "document_extraction_update";
+    case "fact_proposal_persistence":
+      return "fact_proposal_create_many";
+    case "transaction_commit":
+      return "resume_persistence_commit";
+    default:
+      return "resume_persistence";
+  }
+}
 
 export async function POST(request: Request) {
   let storedKey: string | undefined;
+  let actorId: string | undefined;
+  let db: ReturnType<typeof databaseClient> | undefined;
+  let ingestionComplete = false;
   const pipelineState: {
     stage: IngestionStage;
     storageOperation: "put" | "get" | null;
-  } = { stage: "upload", storageOperation: null };
+    persistenceSubstage: ResumePersistenceSubstage | null;
+  } = {
+    stage: "upload",
+    storageOperation: null,
+    persistenceSubstage: null,
+  };
   let storageRequestContext = {};
   const correlationId = randomUUID();
   try {
     const actor = await requireAuthenticatedActor(currentAuthProvider());
+    actorId = actor.id;
     assertMutationRequestIsSameOrigin(request);
     assertContentType(request, "multipart/form-data");
     assertContentLength(request, MAX_RESUME_BYTES + MULTIPART_OVERHEAD_BYTES);
@@ -145,7 +181,7 @@ export async function POST(request: Request) {
       bodyLengthExplicit: true,
       mediaType: validated.mimeType,
     };
-    const db = databaseClient();
+    db = databaseClient();
     const duplicate = await db.candidateDocument.findUnique({
       where: {
         userId_contentHash: {
@@ -170,6 +206,7 @@ export async function POST(request: Request) {
     );
     pipelineState.storageOperation = null;
     pipelineState.stage = "document_persistence";
+    pipelineState.persistenceSubstage = "document_record_create";
     const document = await db.candidateDocument.create({
       data: {
         userId: actor.id,
@@ -183,72 +220,79 @@ export async function POST(request: Request) {
       },
       include: { extraction: true },
     });
+    pipelineState.persistenceSubstage = null;
 
+    pipelineState.stage = "text_extraction";
+    let extraction: Awaited<ReturnType<typeof extractResumeText>>;
     try {
-      pipelineState.stage = "text_extraction";
-      const extraction = await extractResumeText(validated.format, storedBytes);
-      const drafts = proposeFactsFromResumeText(extraction.text);
-      pipelineState.stage = "truth_vault_persistence";
-      await db.$transaction([
-        db.candidateDocument.update({
-          where: { id: document.id },
-          data: { status: "EXTRACTED" },
-        }),
-        db.documentExtraction.update({
-          where: { documentId: document.id },
-          data: {
-            status: "SUCCEEDED",
-            extractedText: extraction.text,
-            characterCount: extraction.text.length,
-            pageCount: extraction.pageCount,
-          },
-        }),
-        ...drafts.map((draft) =>
-          db.candidateFactProposal.create({
-            data: {
-              userId: actor.id,
-              documentId: document.id,
-              extractionId: document.extraction!.id,
-              ...draft,
-            },
-          }),
-        ),
-      ]);
-      return NextResponse.json(
-        {
-          documentId: document.id,
-          proposalCount: drafts.length,
-          status: "EXTRACTED",
-        },
-        { status: 201 },
-      );
+      extraction = await extractResumeText(validated.format, storedBytes);
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Text extraction is unsupported for this document.";
-      await db.$transaction([
-        db.candidateDocument.update({
-          where: { id: document.id },
-          data: { status: "EXTRACTION_UNSUPPORTED" },
-        }),
-        db.documentExtraction.update({
-          where: { documentId: document.id },
-          data: {
-            status: "EXTRACTION_UNSUPPORTED",
-            errorCode: "EXTRACTION_UNSUPPORTED",
-            errorMessage: message,
-          },
-        }),
-      ]);
+      if (!(error instanceof ExtractionUnsupportedError)) throw error;
+      pipelineState.stage = "extraction_failure_persistence";
+      pipelineState.persistenceSubstage = "document_status_update";
+      await db.$transaction(
+        async (transaction) => {
+          await transaction.candidateDocument.update({
+            where: { id: document.id },
+            data: { status: "EXTRACTION_UNSUPPORTED" },
+          });
+          pipelineState.persistenceSubstage = "extraction_status_update";
+          await transaction.documentExtraction.update({
+            where: { documentId: document.id },
+            data: {
+              status: "EXTRACTION_UNSUPPORTED",
+              errorCode: error.code,
+              errorMessage: error.message,
+            },
+          });
+          pipelineState.persistenceSubstage = "transaction_commit";
+        },
+        { timeout: RESUME_PERSISTENCE_TRANSACTION_TIMEOUT_MS },
+      );
+      pipelineState.persistenceSubstage = null;
+      pipelineState.stage = "text_extraction";
       throw error;
     }
+
+    const drafts = proposeFactsFromResumeText(extraction.text);
+    pipelineState.stage = "truth_vault_persistence";
+    const repository = new PrismaResumeIngestionRepository(db);
+    await repository.persistExtractedResume(
+      {
+        documentId: document.id,
+        extractionId: document.extraction!.id,
+        extractedText: extraction.text,
+        pageCount: extraction.pageCount,
+        proposals: drafts,
+        userId: actor.id,
+      },
+      (substage) => {
+        pipelineState.persistenceSubstage = substage;
+      },
+    );
+    pipelineState.persistenceSubstage = null;
+    ingestionComplete = true;
+    return NextResponse.json(
+      {
+        documentId: document.id,
+        proposalCount: drafts.length,
+        status: "EXTRACTED",
+      },
+      { status: 201 },
+    );
   } catch (error) {
     logger.log("error", "candidate_document_pipeline_failed", {
       correlationId,
       stage: pipelineState.stage,
       errorType: error instanceof Error ? error.name : "unknown",
       errorCode: error instanceof ApplicationError ? error.code : undefined,
+      ...(pipelineState.persistenceSubstage
+        ? prismaFailureLogContext(
+            error,
+            persistenceOperation(pipelineState.persistenceSubstage),
+            pipelineState.persistenceSubstage,
+          )
+        : {}),
       ...(pipelineState.storageOperation
         ? storageFailureLogContext(
             error,
@@ -257,11 +301,45 @@ export async function POST(request: Request) {
           )
         : {}),
     });
-    if (storedKey && !(error instanceof ExtractionUnsupportedError)) {
-      await documentStorage()
-        .delete(storedKey)
-        .catch(() => undefined);
+    if (
+      storedKey &&
+      !ingestionComplete &&
+      !(error instanceof ExtractionUnsupportedError)
+    ) {
+      let deleteStoredObject = !db || !actorId;
+      if (db && actorId) {
+        try {
+          deleteStoredObject = await removeFailedResumeRecord(db, {
+            storageKey: storedKey,
+            userId: actorId,
+          });
+        } catch (cleanupError) {
+          deleteStoredObject = false;
+          logger.log("error", "candidate_document_database_cleanup_failed", {
+            correlationId,
+            ...prismaFailureLogContext(
+              cleanupError,
+              "failed_candidate_document_delete",
+              "failed_ingestion_cleanup",
+            ),
+          });
+        }
+      }
+      if (deleteStoredObject) {
+        try {
+          await documentStorage().delete(storedKey);
+        } catch (cleanupError) {
+          logger.log("error", "candidate_document_storage_cleanup_failed", {
+            correlationId,
+            ...storageFailureLogContext(
+              cleanupError,
+              "delete",
+              storageRequestContext,
+            ),
+          });
+        }
+      }
     }
-    return errorResponse(error);
+    return errorResponse(error, false);
   }
 }
