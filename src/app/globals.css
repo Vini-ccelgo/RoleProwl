@@ -41,6 +41,11 @@
   --success: #198754;
   --warning: #b98516;
   --danger: #b83a3a;
+  --input-background: var(--surface);
+  --input-foreground: var(--foreground);
+  --input-placeholder: var(--foreground-muted);
+  --input-disabled-background: var(--surface-muted);
+  --input-disabled-foreground: var(--foreground-muted);
 }
 [data-theme="dark"] {
   color-scheme: dark;
@@ -666,7 +671,7 @@ p {
 }
 .app-frame {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 260px minmax(0, 1fr);
   min-height: 100vh;
   background: var(--surface-muted);
 }
@@ -762,6 +767,7 @@ p {
   margin-top: 1rem;
 }
 .app-main {
+  min-width: 0;
   padding: clamp(1.5rem, 4vw, 4rem);
 }
 .synthetic-ai-notice {
@@ -782,6 +788,8 @@ p {
   color: var(--warning);
 }
 .app-page {
+  width: 100%;
+  min-width: 0;
   max-width: 1100px;
   margin: auto;
 }
@@ -824,6 +832,7 @@ p {
   color: var(--brand);
 }
 .profile-page {
+  min-width: 0;
   max-width: 1200px;
 }
 .vault-jump-nav {
@@ -831,8 +840,8 @@ p {
   z-index: 4;
   top: 0;
   display: flex;
+  flex-wrap: wrap;
   gap: 0.45rem;
-  overflow-x: auto;
   margin-bottom: 1.5rem;
   padding: 0.65rem;
   border: 1px solid var(--border);
@@ -851,6 +860,38 @@ p {
 .vault-jump-nav a:hover {
   background: var(--brand-soft);
   color: var(--brand);
+}
+.vault-jump-nav a[aria-current="location"] {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.vault-jump-select {
+  position: sticky;
+  z-index: 4;
+  top: 0;
+  display: none;
+  gap: 0.35rem;
+  margin-bottom: 1.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(10px);
+}
+.vault-jump-select > span {
+  color: var(--foreground);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.vault-jump-select select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  padding: 0.6rem 0.75rem;
+  background: var(--input-background);
+  color: var(--input-foreground);
+  font: inherit;
 }
 .vault-sections {
   display: grid;
@@ -906,14 +947,15 @@ p {
 }
 .field input,
 .field textarea,
-.field select {
+.field select,
+.proposal-review-input {
   width: 100%;
   min-height: 42px;
   border: 1px solid var(--border-strong);
   border-radius: 7px;
   padding: 0.65rem 0.75rem;
-  background: var(--surface);
-  color: var(--foreground);
+  background: var(--input-background);
+  color: var(--input-foreground);
   font: inherit;
   font-size: 0.82rem;
 }
@@ -922,9 +964,36 @@ p {
 }
 .field input:focus,
 .field textarea:focus,
-.field select:focus {
+.field select:focus,
+.proposal-review-input:focus,
+.vault-jump-select select:focus {
   border-color: var(--brand);
   outline: 3px solid rgb(18 132 116 / 0.16);
+}
+.proposal-review-input {
+  width: 100%;
+}
+.field input::placeholder,
+.field textarea::placeholder,
+.proposal-review-input::placeholder {
+  color: var(--input-placeholder);
+  opacity: 1;
+}
+.field input:disabled,
+.field textarea:disabled,
+.field select:disabled,
+.proposal-review-input:disabled {
+  background: var(--input-disabled-background);
+  color: var(--input-disabled-foreground);
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+.field input:-webkit-autofill,
+.field textarea:-webkit-autofill,
+.proposal-review-input:-webkit-autofill {
+  box-shadow: 0 0 0 1000px var(--input-background) inset;
+  -webkit-text-fill-color: var(--input-foreground);
+  caret-color: var(--input-foreground);
 }
 .field-wide {
   grid-column: 1 / -1;
@@ -977,13 +1046,33 @@ p {
 }
 .record-delete {
   display: inline-flex;
+  min-height: 44px;
   align-items: center;
   gap: 0.35rem;
-  border: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 0.55rem 0.65rem;
   background: transparent;
   color: var(--danger);
   font-size: 0.7rem;
   cursor: pointer;
+}
+.verified-fact-badge {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  white-space: nowrap;
+}
+.verified-fact-remove {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.verified-fact-remove-button {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--border));
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+}
+.verified-fact-remove-button:hover {
+  border-color: var(--danger);
 }
 .vault-record details,
 .add-record {
@@ -1107,8 +1196,14 @@ p {
   color: var(--brand);
 }
 .clerk-account-panel {
+  width: 100%;
   max-width: 100%;
-  overflow-x: auto;
+  overflow-x: clip;
+}
+.clerk-account-panel .cl-rootBox,
+.clerk-account-panel .cl-cardBox {
+  width: 100%;
+  max-width: 100%;
 }
 .vault-record details > .vault-form,
 .add-record > .vault-form {
@@ -1154,6 +1249,12 @@ p {
   }
 }
 @media (max-width: 1000px) {
+  .vault-jump-nav-desktop {
+    display: none;
+  }
+  .vault-jump-select {
+    display: grid;
+  }
   .vault-form-grid {
     grid-template-columns: 1fr;
   }
@@ -1162,6 +1263,31 @@ p {
   }
   .home-next-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .app-frame {
+    display: block;
+  }
+  .app-sidebar {
+    display: none;
+  }
+  .app-mobile-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 70px;
+    padding: 0 1rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .app-mobile-header .mobile-menu nav {
+    position: fixed;
+    top: 70px;
+    right: 1rem;
+  }
+  .app-main {
+    padding: 2rem 1rem;
   }
 }
 @media (max-width: 768px) {
@@ -1245,29 +1371,6 @@ p {
     flex-direction: column;
     gap: 0.5rem;
   }
-  .app-frame {
-    display: block;
-  }
-  .app-sidebar {
-    display: none;
-  }
-  .app-mobile-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    height: 70px;
-    padding: 0 1rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
-  }
-  .app-mobile-header .mobile-menu nav {
-    position: fixed;
-    top: 70px;
-    right: 1rem;
-  }
-  .app-main {
-    padding: 2rem 1rem;
-  }
   .synthetic-ai-notice {
     align-items: flex-start;
     flex-direction: column;
@@ -1315,6 +1418,11 @@ p {
   }
   .legal-page h1 {
     font-size: 2.7rem;
+  }
+}
+@media (max-width: 560px) {
+  .verified-fact-heading {
+    flex-direction: column;
   }
 }
 @media (max-width: 420px) {

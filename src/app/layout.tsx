@@ -27,6 +27,13 @@ export default function RootLayout({
 
   return (
     <ClerkProvider
+      localization={{
+        userProfile: {
+          navbar: {
+            account: "Account identity",
+          },
+        },
+      }}
       signInUrl="/sign-in"
       signUpUrl="/sign-up"
       signInFallbackRedirectUrl="/dashboard"

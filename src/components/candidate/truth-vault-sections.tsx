@@ -22,6 +22,7 @@ import {
   TextAreaField,
   TextField,
 } from "./vault-fields";
+import { ConfirmFactRemovalButton } from "./confirm-fact-removal-button";
 
 const yesNo = [
   { value: "yes", label: "Yes" },
@@ -55,12 +56,12 @@ function VerifiedResumeFactRecord({ item }: { item: VerifiedResumeFact }) {
   const removeAction = removeCandidateFact.bind(null, item.id);
   return (
     <article className="vault-record">
-      <div className="vault-record-heading">
+      <div className="vault-record-heading verified-fact-heading">
         <div>
           <strong>{destination?.label ?? item.factType}</strong>
           <small>{factText(item.value)}</small>
         </div>
-        <span className="badge">Verified from résumé</span>
+        <span className="badge verified-fact-badge">Verified from résumé</span>
       </div>
       <details>
         <summary>View provenance</summary>
@@ -76,7 +77,7 @@ function VerifiedResumeFactRecord({ item }: { item: VerifiedResumeFact }) {
           </p>
         </div>
       </details>
-      <details>
+      <details className="verified-fact-edit">
         <summary>Edit active value</summary>
         <VaultForm action={editCandidateFact} submitLabel="Save correction">
           <input name="id" type="hidden" value={item.id} />
@@ -88,10 +89,8 @@ function VerifiedResumeFactRecord({ item }: { item: VerifiedResumeFact }) {
           />
         </VaultForm>
       </details>
-      <form action={removeAction}>
-        <button className="record-delete" type="submit">
-          <Trash2 size={15} /> Remove from active facts
-        </button>
+      <form action={removeAction} className="verified-fact-remove">
+        <ConfirmFactRemovalButton />
       </form>
     </article>
   );

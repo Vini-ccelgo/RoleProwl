@@ -29,7 +29,7 @@ export default async function HomePage() {
         <Container>
           <header className="page-header">
             <p className="eyebrow">RoleProwl Home</p>
-            <h1>Your next useful action</h1>
+            <h1>What’s next</h1>
             <p>
               Start discovery, then review the real opportunities and decisions
               already waiting in your workspace.

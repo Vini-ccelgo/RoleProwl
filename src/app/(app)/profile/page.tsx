@@ -13,6 +13,7 @@ import { requireAuthenticatedActor } from "@/features/accounts/require-authentic
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { getCandidateTruthVault } from "@/integrations/candidate/prisma-truth-vault";
 import { connection } from "next/server";
+import { ProfileSectionNavigation } from "@/components/candidate/profile-section-navigation";
 
 export default async function ProfilePage() {
   await connection();
@@ -25,16 +26,7 @@ export default async function ProfilePage() {
         title="Candidate Truth Vault"
         description="Your canonical factual profile. AI interpretations and generated claims remain outside this record until you explicitly verify them."
       />
-      <nav className="vault-jump-nav" aria-label="Profile sections">
-        <a href="#details">Details</a>
-        <a href="#resume-facts">Résumé facts</a>
-        <a href="#experience">Experience</a>
-        <a href="#education">Education</a>
-        <a href="#skills">Skills</a>
-        <a href="#projects">Projects</a>
-        <a href="#authorization">Authorization</a>
-        <a href="#preferences">Preferences</a>
-      </nav>
+      <ProfileSectionNavigation />
       <div className="vault-sections">
         <div id="details">
           <ProfileDetailsSection vault={vault} />

@@ -107,7 +107,7 @@ export function FactProposalReview({
               <label className="grid gap-1 text-xs font-medium">
                 Proposed value
                 <input
-                  className="rounded-lg border border-border-default bg-white px-3 py-2 text-sm font-normal"
+                  className="proposal-review-input"
                   disabled={!proposal.supported || busyId === proposal.id}
                   value={currentValue}
                   onChange={(event) =>
