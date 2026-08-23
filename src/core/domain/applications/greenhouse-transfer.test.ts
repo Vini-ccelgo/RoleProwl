@@ -34,6 +34,56 @@ function readyPacket() {
       coverLetter: null,
       questions: [
         {
+          id: "standard:first_name",
+          source: "GREENHOUSE",
+          group: "STANDARD",
+          label: "First Name",
+          required: true,
+          fieldNames: ["first_name"],
+          fieldTypes: ["input_text"],
+          options: [],
+        },
+        {
+          id: "standard:last_name",
+          source: "GREENHOUSE",
+          group: "STANDARD",
+          label: "Last Name",
+          required: true,
+          fieldNames: ["last_name"],
+          fieldTypes: ["input_text"],
+          options: [],
+        },
+        {
+          id: "standard:email",
+          source: "GREENHOUSE",
+          group: "STANDARD",
+          label: "Email",
+          required: true,
+          fieldNames: ["email"],
+          fieldTypes: ["input_text"],
+          options: [],
+        },
+        {
+          id: "standard:phone",
+          source: "GREENHOUSE",
+          group: "STANDARD",
+          label: "Phone",
+          required: true,
+          fieldNames: ["phone"],
+          fieldTypes: ["input_text"],
+          options: [],
+        },
+        {
+          id: "location:candidate-location",
+          source: "GREENHOUSE",
+          group: "LOCATION",
+          label: "Location",
+          required: true,
+          fieldNames: ["candidate-location"],
+          fieldTypes: ["input_text"],
+          options: [],
+        },
+        {
           id: "standard:question_42",
           source: "GREENHOUSE",
           group: "STANDARD",
@@ -77,6 +127,28 @@ describe("Greenhouse assisted transfer draft", () => {
         }),
       ]),
     );
+    expect(
+      draft.fields.find((field) => field.id === "identity:location"),
+    ).toEqual(
+      expect.objectContaining({
+        fieldNames: expect.arrayContaining(["candidate-location"]),
+      }),
+    );
+    expect(draft.fields.map((field) => field.id)).not.toEqual(
+      expect.arrayContaining([
+        "answer:standard:first_name",
+        "answer:standard:last_name",
+        "answer:standard:email",
+        "answer:standard:phone",
+        "answer:location:candidate-location",
+      ]),
+    );
+    expect(
+      draft.fields.filter((field) => field.id.startsWith("identity:")),
+    ).toHaveLength(6);
+    expect(
+      draft.fields.filter((field) => field.id.startsWith("answer:")),
+    ).toHaveLength(1);
     expect(JSON.stringify(draft)).not.toContain("candidate-documents/private");
   });
 

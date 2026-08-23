@@ -32,7 +32,7 @@
     }
   }
 
-  function labelText(element) {
+  function labelCandidates(element) {
     const document = element.ownerDocument;
     const labels = [];
     const aria = element.getAttribute("aria-label");
@@ -52,7 +52,17 @@
       );
     const parent = element.closest("label");
     if (parent) labels.push(parent.textContent ?? "");
-    return normalize(labels.join(" ").replace(/\*+/gu, ""));
+    return [
+      ...new Set(
+        labels
+          .map((label) =>
+            normalize(
+              label.replace(/\*+/gu, "").replace(/\(required\)/giu, ""),
+            ),
+          )
+          .filter(Boolean),
+      ),
+    ];
   }
 
   function candidateElements(document, field) {
@@ -64,14 +74,21 @@
           element.getAttribute("type")?.toLocaleLowerCase("en-US") ?? "",
         ) && !element.disabled,
     );
-    const exactNames = controls.filter((element) =>
-      field.fieldNames.some(
-        (name) => normalize(element.getAttribute("name")) === normalize(name),
-      ),
+    const exactIdentifiers = controls.filter((element) =>
+      field.fieldNames.some((fieldName) => {
+        const expected = normalize(fieldName);
+        if (!expected) return false;
+        return [element.getAttribute("name"), element.id].some(
+          (identifier) => normalize(identifier) === expected,
+        );
+      }),
     );
-    if (exactNames.length) return exactNames;
+    if (exactIdentifiers.length) return exactIdentifiers;
     const expectedLabel = normalize(field.label.replace(/\(required\)/giu, ""));
-    return controls.filter((element) => labelText(element) === expectedLabel);
+    const semanticMatches = controls.filter((element) =>
+      labelCandidates(element).includes(expectedLabel),
+    );
+    return semanticMatches.length === 1 ? semanticMatches : [];
   }
 
   function setNativeValue(element, value) {
@@ -88,13 +105,58 @@
     return true;
   }
 
+  function choiceValues(field) {
+    if (Array.isArray(field.value))
+      return [...new Set(field.value.map(normalize).filter(Boolean))];
+    if (typeof field.value !== "string") return [];
+    try {
+      const parsed = JSON.parse(field.value);
+      if (Array.isArray(parsed))
+        return [...new Set(parsed.map(normalize).filter(Boolean))];
+    } catch {
+      // A scalar choice is the normal packet representation.
+    }
+    const values = field.value
+      .split(/(?:\r?\n|;)/u)
+      .map(normalize)
+      .filter(Boolean);
+    return [...new Set(values)];
+  }
+
+  function choiceMatches(element, expected) {
+    return (
+      normalize(element.value) === expected ||
+      labelCandidates(element).includes(expected)
+    );
+  }
+
+  function fillCheckboxGroup(elements, field, used) {
+    const expected = choiceValues(field);
+    if (!expected.length) return "UNSUPPORTED";
+    const selections = expected.map((value) =>
+      elements.filter((element) => choiceMatches(element, value)),
+    );
+    if (
+      selections.some((matches) => matches.length !== 1) ||
+      new Set(selections.map(([element]) => element)).size !== selections.length
+    )
+      return "UNSUPPORTED";
+    const selected = selections.map(([element]) => element);
+    for (const element of selected) if (!element.checked) element.click();
+    if (!selected.every((element) => element.checked)) return "FAILED";
+    for (const element of elements) used.add(element);
+    return "VERIFIED";
+  }
+
   function fillChoice(element, field) {
     const view = element.ownerDocument.defaultView;
     if (element instanceof view.HTMLSelectElement) {
+      const expected = choiceValues(field);
+      if (expected.length !== 1) return "UNSUPPORTED";
       const matches = [...element.options].filter(
         (option) =>
-          normalize(option.value) === normalize(field.value) ||
-          normalize(option.textContent) === normalize(field.value),
+          normalize(option.value) === expected[0] ||
+          normalize(option.textContent) === expected[0],
       );
       if (matches.length !== 1) return "UNSUPPORTED";
       element.value = matches[0].value;
@@ -107,10 +169,8 @@
       element instanceof view.HTMLInputElement &&
       ["radio", "checkbox"].includes(element.type)
     ) {
-      if (
-        normalize(element.value) !== normalize(field.value) &&
-        !labelText(element).includes(normalize(field.value))
-      )
+      const expected = choiceValues(field);
+      if (expected.length !== 1 || !choiceMatches(element, expected[0]))
         return "UNSUPPORTED";
       element.click();
       return element.checked ? "VERIFIED" : "FAILED";
@@ -124,6 +184,15 @@
       (element) => !used.has(element),
     );
     const view = document.defaultView;
+    const checkboxGroup =
+      matches.length > 0 &&
+      matches.every(
+        (element) =>
+          element instanceof view.HTMLInputElement &&
+          element.type === "checkbox",
+      );
+    if (checkboxGroup) return fillCheckboxGroup(matches, field, used);
+    const expectedChoices = choiceValues(field);
     const radioMatch =
       matches.length > 1 &&
       matches.every(
@@ -132,8 +201,8 @@
       )
         ? matches.filter(
             (element) =>
-              normalize(element.value) === normalize(field.value) ||
-              labelText(element).includes(normalize(field.value)),
+              expectedChoices.length === 1 &&
+              choiceMatches(element, expectedChoices[0]),
           )
         : [];
     const element =

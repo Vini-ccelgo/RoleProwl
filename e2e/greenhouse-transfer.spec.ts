@@ -572,6 +572,162 @@ test("Greenhouse readiness timeout leaves the packet unconsumed and undisclosed"
   expect(timedOut.html).not.toContain(privateValue);
 });
 
+test("Greenhouse helper maps confirmed empty-name IDs, semantic labels, and checkbox groups", async ({
+  page,
+}) => {
+  await page.setContent(`
+    <form>
+      <input id="first_name" name="" aria-label="First Name">
+      <input id="first_name_decoy" name="" aria-label="First Name">
+      <input id="last_name" name="" aria-label="Last Name">
+      <input id="email" name="" aria-label="Email">
+      <input id="phone" name="" aria-label="Phone">
+      <input id="candidate-location" name="" aria-label="Location">
+      <input id="question_68481653" name="" aria-label="How many years of relevant experience do you have?">
+      <label for="semantic_only">Preferred arrangement</label>
+      <input id="semantic_only" name="" aria-label="Preferred arrangement">
+      <fieldset>
+        <legend>Workplace choices</legend>
+        <label><input type="checkbox" name="question_68481656[]" value="remote-code">Remote</label>
+        <label><input type="checkbox" name="question_68481656[]" value="Hybrid">Hybrid</label>
+        <label><input type="checkbox" name="question_68481656[]" value="Office">Office</label>
+      </fieldset>
+      <fieldset>
+        <legend>Unsupported choices</legend>
+        <label><input type="checkbox" name="question_68481657[]" value="Alpha">Alpha</label>
+        <label><input type="checkbox" name="question_68481657[]" value="Beta">Beta</label>
+      </fieldset>
+      <input id="unrelated" name="unrelated" aria-label="Unrelated">
+      <div class="g-recaptcha"><textarea id="g-recaptcha-response" name="g-recaptcha-response"></textarea></div>
+      <button id="submit" type="submit">Submit application</button>
+    </form>
+    <script>
+      window.submitClicks = 0;
+      document.querySelector('form').addEventListener('submit', event => {
+        event.preventDefault();
+        window.submitClicks += 1;
+      });
+    </script>
+  `);
+  await page.addScriptTag({ path: helper });
+  const result = await page.evaluate(() => {
+    const engine = (
+      globalThis as unknown as {
+        RoleProwlGreenhouseTransfer: {
+          transfer: (
+            document: Document,
+            packet: unknown,
+            url: string,
+          ) => {
+            authorized: boolean;
+            fields: { id: string; status: string }[];
+          };
+        };
+      }
+    ).RoleProwlGreenhouseTransfer;
+    return {
+      transfer: engine.transfer(
+        document,
+        {
+          version: "greenhouse-assisted-v1",
+          destination: "https://job-boards.greenhouse.io/acme/jobs/42",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          fields: [
+            ["first", "First Name", "Avery", ["first_name"], "TEXT"],
+            ["last", "Last Name", "Quill", ["last_name"], "TEXT"],
+            ["email", "Email", "avery@example.test", ["email"], "TEXT"],
+            ["phone", "Phone", "+1 555 0100", ["phone"], "TEXT"],
+            ["location", "Location", "Boston", ["candidate-location"], "TEXT"],
+            [
+              "experience",
+              "How many years of relevant experience do you have?",
+              "7",
+              ["question_68481653"],
+              "TEXT",
+            ],
+            [
+              "semantic",
+              "Preferred arrangement",
+              "Flexible",
+              ["missing_semantic_identifier"],
+              "TEXT",
+            ],
+            [
+              "workplace",
+              "Workplace choices",
+              ["Remote", "Hybrid"],
+              ["question_68481656[]"],
+              "CHOICE",
+            ],
+            [
+              "unsupported-choice",
+              "Unsupported choices",
+              ["Alpha", "Missing"],
+              ["question_68481657[]"],
+              "CHOICE",
+            ],
+          ].map(([id, label, value, fieldNames, kind]) => ({
+            id,
+            label,
+            value,
+            fieldNames,
+            fieldTypes: [],
+            options: [],
+            kind,
+          })),
+        },
+        "https://job-boards.greenhouse.io/acme/jobs/42",
+      ),
+      submitClicks: (globalThis as unknown as { submitClicks: number })
+        .submitClicks,
+    };
+  });
+
+  await expect(page.locator("#first_name")).toHaveValue("Avery");
+  await expect(page.locator("#first_name_decoy")).toHaveValue("");
+  await expect(page.locator("#last_name")).toHaveValue("Quill");
+  await expect(page.locator("#email")).toHaveValue("avery@example.test");
+  await expect(page.locator("#phone")).toHaveValue("+1 555 0100");
+  await expect(page.locator("#candidate-location")).toHaveValue("Boston");
+  await expect(page.locator("#question_68481653")).toHaveValue("7");
+  await expect(page.locator("#semantic_only")).toHaveValue("Flexible");
+  await expect(
+    page.locator('[name="question_68481656[]"][value="remote-code"]'),
+  ).toBeChecked();
+  await expect(
+    page.locator('[name="question_68481656[]"][value="Hybrid"]'),
+  ).toBeChecked();
+  await expect(
+    page.locator('[name="question_68481656[]"][value="Office"]'),
+  ).not.toBeChecked();
+  await expect(
+    page.locator('[name="question_68481657[]"][value="Alpha"]'),
+  ).not.toBeChecked();
+  await expect(
+    page.locator('[name="question_68481657[]"][value="Beta"]'),
+  ).not.toBeChecked();
+  await expect(page.locator("#unrelated")).toHaveValue("");
+  await expect(page.locator("#g-recaptcha-response")).toHaveValue("");
+  expect(result.transfer.authorized).toBe(true);
+  expect(result.transfer.fields).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: "first", status: "VERIFIED" }),
+      expect.objectContaining({ id: "experience", status: "VERIFIED" }),
+      expect.objectContaining({ id: "semantic", status: "VERIFIED" }),
+      expect.objectContaining({ id: "workplace", status: "VERIFIED" }),
+      expect.objectContaining({
+        id: "unsupported-choice",
+        status: "UNSUPPORTED",
+      }),
+      expect.objectContaining({
+        id: "human:verification",
+        status: "HUMAN_REQUIRED",
+      }),
+    ]),
+  );
+  expect(result.submitClicks).toBe(0);
+});
+
 test("Greenhouse helper fills exact fields, reports boundaries, and never submits", async ({
   page,
 }) => {

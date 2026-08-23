@@ -25,7 +25,12 @@ const IDENTITY_FIELD_NAMES: Readonly<Record<string, readonly string[]>> = {
   lastName: ["last_name", "job_application[last_name]"],
   email: ["email", "job_application[email]"],
   phone: ["phone", "phone_number", "job_application[phone]"],
-  location: ["location", "city", "job_application[location]"],
+  location: [
+    "candidate-location",
+    "location",
+    "city",
+    "job_application[location]",
+  ],
   country: ["country", "country_code", "job_application[country]"],
 };
 
@@ -80,8 +85,26 @@ export function buildGreenhouseTransferDraft(input: {
         ]
       : [],
   );
+  const projectedIdentityKeys = new Set(
+    identity.map((field) => field.id.slice("identity:".length)),
+  );
+  const canonicalIdentityKey = (fieldNames: readonly string[]) =>
+    Object.entries(IDENTITY_FIELD_NAMES).find(([, aliases]) =>
+      fieldNames.some((fieldName) =>
+        aliases.some(
+          (alias) =>
+            fieldName.trim().toLocaleLowerCase("en-US") ===
+            alias.toLocaleLowerCase("en-US"),
+        ),
+      ),
+    )?.[0];
   const answers = input.packet.answers.flatMap((answer) =>
-    answer.status === "RESOLVED" && answer.value
+    answer.status === "RESOLVED" &&
+    answer.value &&
+    !(
+      ["STANDARD", "LOCATION"].includes(answer.questionGroup ?? "") &&
+      projectedIdentityKeys.has(canonicalIdentityKey(answer.fieldNames) ?? "")
+    )
       ? [
           {
             id: `answer:${answer.questionId}`,
