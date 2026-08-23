@@ -1,6 +1,8 @@
 import { connection } from "next/server";
 import Link from "next/link";
+import type { Prisma } from "@/generated/prisma/client";
 import { MatchAnalysisSummary } from "@/components/jobs/match-analysis-summary";
+import { JobCardActions } from "@/components/jobs/job-card-actions";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   candidateDispositionLabel,
@@ -11,11 +13,8 @@ import { requireAuthenticatedActor } from "@/features/accounts/require-authentic
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 import {
-  analyzeJobAction,
   openEmployerPostingAction,
   recordMatchFeedbackAction,
-  setJobDispositionAction,
-  startApplicationAction,
 } from "./actions";
 
 const FILTERS = [
@@ -36,13 +35,19 @@ export default async function JobsPage({
   const view = parseJobDispositionView(
     Array.isArray(rawView) ? rawView[0] : rawView,
   );
-  const dispositionFilter =
+  const dispositionFilter:
+    Prisma.CandidateJobDispositionListRelationFilter | undefined =
     view === "shortlisted"
       ? { some: { userId: actor.id, status: "SHORTLISTED" as const } }
       : view === "rejected"
         ? { some: { userId: actor.id, status: "REJECTED" as const } }
         : view === "active"
-          ? { none: { userId: actor.id, status: "REJECTED" as const } }
+          ? {
+              none: {
+                userId: actor.id,
+                status: { in: ["REJECTED", "SHORTLISTED"] },
+              },
+            }
           : undefined;
   const jobs = await databaseClient().job.findMany({
     where: {
@@ -112,9 +117,7 @@ export default async function JobsPage({
               <article className="card grid gap-4 p-5" key={job.id}>
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
-                    <h2 className="text-lg font-semibold">
-                      <Link href={`/jobs/${job.id}`}>{job.title}</Link>
-                    </h2>
+                    <h2 className="text-lg font-semibold">{job.title}</h2>
                     <p className="m-0 text-sm">
                       {job.company}
                       {job.locations && Array.isArray(job.locations)
@@ -161,14 +164,7 @@ export default async function JobsPage({
                       ))}
                     </div>
                   </div>
-                ) : (
-                  <form action={analyzeJobAction}>
-                    <input type="hidden" name="jobId" value={job.id} />
-                    <button className="button button-primary" type="submit">
-                      Analyze my fit
-                    </button>
-                  </form>
-                )}
+                ) : null}
                 {source?.applicationUrl && (
                   <form action={openEmployerPostingAction}>
                     <input name="jobId" type="hidden" value={job.id} />
@@ -180,94 +176,14 @@ export default async function JobsPage({
                     </button>
                   </form>
                 )}
-                <div className="flex flex-wrap gap-2">
-                  {disposition === "SHORTLISTED" && (
-                    <>
-                      <div className="border-border grid gap-1 rounded-xl border p-3 text-sm">
-                        <strong>Shortlist saved</strong>
-                        <span className="text-foreground-muted">
-                          Revisit it from the Shortlisted filter, then review
-                          the fit or open the employer posting when ready.
-                        </span>
-                        <Link
-                          className="font-semibold text-brand"
-                          href="/jobs?view=shortlisted"
-                        >
-                          View shortlist →
-                        </Link>
-                      </div>
-                      <form action={setJobDispositionAction}>
-                        <input name="jobId" type="hidden" value={job.id} />
-                        <button
-                          className="button button-secondary"
-                          name="status"
-                          type="submit"
-                          value="UNDECIDED"
-                        >
-                          Remove from shortlist
-                        </button>
-                      </form>
-                    </>
-                  )}
-                  {disposition === "REJECTED" && (
-                    <form action={setJobDispositionAction}>
-                      <input name="jobId" type="hidden" value={job.id} />
-                      <button
-                        className="button button-secondary"
-                        name="status"
-                        type="submit"
-                        value="UNDECIDED"
-                      >
-                        Reconsider
-                      </button>
-                    </form>
-                  )}
-                  {!disposition && !application && (
-                    <>
-                      <form action={setJobDispositionAction}>
-                        <input name="jobId" type="hidden" value={job.id} />
-                        <button
-                          className="button button-secondary"
-                          name="status"
-                          type="submit"
-                          value="SHORTLISTED"
-                        >
-                          Shortlist
-                        </button>
-                      </form>
-                      <form action={setJobDispositionAction}>
-                        <input name="jobId" type="hidden" value={job.id} />
-                        <button
-                          className="button button-secondary"
-                          name="status"
-                          type="submit"
-                          value="REJECTED"
-                        >
-                          Not pursuing
-                        </button>
-                      </form>
-                    </>
-                  )}
-                  {disposition !== "REJECTED" &&
-                    !application &&
-                    source?.applicationUrl && (
-                      <form action={startApplicationAction}>
-                        <input name="jobId" type="hidden" value={job.id} />
-                        <button className="button button-primary" type="submit">
-                          Prepare application
-                        </button>
-                      </form>
-                    )}
-                  {application && (
-                    <Link
-                      className="button button-secondary"
-                      href={`/applications/${application.id}`}
-                    >
-                      Application:{" "}
-                      {application.state.replaceAll("_", " ").toLowerCase()} →
-                    </Link>
-                  )}
-                </div>
+                <JobCardActions
+                  analysisExists={Boolean(analysis)}
+                  applicationId={application?.id}
+                  disposition={disposition}
+                  jobId={job.id}
+                  preparationAvailable={Boolean(source?.applicationUrl)}
+                  view={view}
+                />
               </article>
             );
           })}

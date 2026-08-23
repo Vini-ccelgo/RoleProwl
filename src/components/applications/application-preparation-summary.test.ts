@@ -39,6 +39,7 @@ describe("application preparation summary", () => {
       }),
     );
     expect(markup).toContain("Unknown answers remain unresolved");
-    expect(markup).toContain("has not fabricated any application text");
+    expect(markup).not.toContain("Prepared writing");
+    expect(markup).not.toContain("Application documents");
   });
 });

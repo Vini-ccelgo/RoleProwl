@@ -37,6 +37,9 @@ export function ApplicationPreparationSummary({
   const textRecord = record(generatedText);
   const answerRecord = record(answers);
   const documentList = Array.isArray(documents) ? documents : [];
+  const hasPreparedWriting = Boolean(
+    textRecord && Object.keys(textRecord).length > 0,
+  );
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
@@ -79,10 +82,10 @@ export function ApplicationPreparationSummary({
           )}
       </section>
 
-      <section className="card grid gap-3 p-5">
-        <h2 className="text-base font-semibold">Prepared writing</h2>
-        {textRecord && Object.keys(textRecord).length > 0 ? (
-          Object.entries(textRecord).map(([kind, content]) => (
+      {hasPreparedWriting && (
+        <section className="card grid gap-3 p-5">
+          <h2 className="text-base font-semibold">Prepared writing</h2>
+          {Object.entries(textRecord ?? {}).map(([kind, content]) => (
             <div className="grid gap-1" key={kind}>
               <h3 className="text-sm font-semibold capitalize">
                 {title(kind)}
@@ -91,14 +94,9 @@ export function ApplicationPreparationSummary({
                 {scalar(content) ?? "Structured content requires review."}
               </p>
             </div>
-          ))
-        ) : (
-          <p className="m-0 text-sm text-foreground-muted">
-            No generated writing is attached. RoleProwl has not fabricated any
-            application text.
-          </p>
-        )}
-      </section>
+          ))}
+        </section>
+      )}
 
       <section className="card grid gap-3 p-5">
         <h2 className="text-base font-semibold">Prepared answers</h2>
@@ -121,9 +119,9 @@ export function ApplicationPreparationSummary({
         )}
       </section>
 
-      <section className="card grid gap-3 p-5 lg:col-span-2">
-        <h2 className="text-base font-semibold">Application documents</h2>
-        {documentList.length > 0 ? (
+      {documentList.length > 0 && (
+        <section className="card grid gap-3 p-5 lg:col-span-2">
+          <h2 className="text-base font-semibold">Application documents</h2>
           <ul className="m-0 grid gap-2 pl-5 text-sm">
             {documentList.map((document, index) => {
               const item = record(document);
@@ -137,12 +135,8 @@ export function ApplicationPreparationSummary({
               );
             })}
           </ul>
-        ) : (
-          <p className="m-0 text-sm text-foreground-muted">
-            No application document is attached yet.
-          </p>
-        )}
-      </section>
+        </section>
+      )}
     </div>
   );
 }

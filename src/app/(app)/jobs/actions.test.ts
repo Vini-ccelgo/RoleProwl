@@ -106,6 +106,15 @@ describe("candidate job disposition action", () => {
     expect(deleteMany).not.toHaveBeenCalled();
   });
 
+  it("persists transient shortlist feedback immediately without removing the card", async () => {
+    const form = dispositionForm("SHORTLISTED");
+    form.set("feedbackMode", "transient");
+    await setJobDispositionAction(form);
+    expect(upsert).toHaveBeenCalledOnce();
+    expect(revalidatePath).not.toHaveBeenCalledWith("/jobs");
+    expect(revalidatePath).toHaveBeenCalledWith("/dashboard");
+  });
+
   it("restores shortlisted or rejected work to undecided without deleting the job", async () => {
     await setJobDispositionAction(dispositionForm("UNDECIDED"));
     expect(deleteMany).toHaveBeenCalledWith({

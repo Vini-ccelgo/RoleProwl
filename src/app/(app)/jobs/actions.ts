@@ -141,6 +141,8 @@ export async function setJobDispositionAction(formData: FormData) {
   const actor = await requireAuthenticatedActor(currentAuthProvider());
   const jobId = String(formData.get("jobId") ?? "");
   const status = String(formData.get("status") ?? "");
+  const transientFeedback =
+    status === "SHORTLISTED" && formData.get("feedbackMode") === "transient";
   if (
     !jobId ||
     (status !== "SHORTLISTED" &&
@@ -186,7 +188,7 @@ export async function setJobDispositionAction(formData: FormData) {
     properties: { surface: "jobs" },
     userId: actor.id,
   });
-  revalidatePath("/jobs");
+  if (!transientFeedback) revalidatePath("/jobs");
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/dashboard");
 }

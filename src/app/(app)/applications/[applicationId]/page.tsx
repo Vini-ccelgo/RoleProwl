@@ -242,11 +242,8 @@ export default async function ApplicationDetailPage({
 
       {canMarkReady && (
         <section className="card grid gap-3 border-brand p-5">
-          <h2 className="text-base font-semibold">Review preparation</h2>
-          <p className="m-0 text-sm">
-            Review the attached résumé, writing, answers, and warnings below.
-            Marking ready does not submit anything.
-          </p>
+          <h2 className="text-base font-semibold">Mark application ready</h2>
+          <p className="m-0 text-sm">Marking ready does not submit anything.</p>
           <form action={markApplicationReadyAction}>
             <input name="applicationId" type="hidden" value={application.id} />
             <button className="button button-primary" type="submit">
@@ -330,41 +327,33 @@ export default async function ApplicationDetailPage({
         policy={application.policyResultSnapshot}
       />
 
-      <div className="grid gap-5">
+      {application.resumeVersion && (
         <section className="card p-5">
           <h2 className="text-base font-semibold">Résumé version</h2>
-          {application.resumeVersion ? (
-            <dl className="grid gap-2 text-sm">
-              <div>
-                <dt className="font-semibold">Version ID</dt>
-                <dd className="m-0 break-all">
-                  {application.resumeVersion.id}
-                </dd>
-              </div>
-              <div>
-                <dt className="font-semibold">File</dt>
-                <dd className="m-0">
-                  {application.resumeVersion.renderedFileName}
-                </dd>
-              </div>
-              <div>
-                <dt className="font-semibold">Template</dt>
-                <dd className="m-0">
-                  {application.resumeVersion.templateVersion}
-                </dd>
-              </div>
-              <div>
-                <dt className="font-semibold">Prompt</dt>
-                <dd className="m-0">
-                  {application.resumeVersion.promptVersion}
-                </dd>
-              </div>
-            </dl>
-          ) : (
-            <p className="m-0 text-sm">Unknown or no résumé was attached.</p>
-          )}
+          <dl className="grid gap-2 text-sm">
+            <div>
+              <dt className="font-semibold">Version ID</dt>
+              <dd className="m-0 break-all">{application.resumeVersion.id}</dd>
+            </div>
+            <div>
+              <dt className="font-semibold">File</dt>
+              <dd className="m-0">
+                {application.resumeVersion.renderedFileName}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold">Template</dt>
+              <dd className="m-0">
+                {application.resumeVersion.templateVersion}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold">Prompt</dt>
+              <dd className="m-0">{application.resumeVersion.promptVersion}</dd>
+            </div>
+          </dl>
         </section>
-      </div>
+      )}
 
       {nextStates.length > 0 && (
         <section className="card grid gap-3 p-5">

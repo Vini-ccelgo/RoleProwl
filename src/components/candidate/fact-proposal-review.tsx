@@ -93,17 +93,10 @@ export function FactProposalReview({
             : undefined;
           return (
             <article className="card grid gap-3 p-4" key={proposal.id}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <strong className="text-sm">
-                  {destination?.label ??
-                    proposal.factType.replaceAll("_", " ").toLowerCase()}
-                </strong>
-                <span className="badge">
-                  {proposal.confidence == null
-                    ? "Unscored"
-                    : `${Math.round(proposal.confidence * 100)}% parser confidence`}
-                </span>
-              </div>
+              <strong className="text-sm">
+                {destination?.label ??
+                  proposal.factType.replaceAll("_", " ").toLowerCase()}
+              </strong>
               <label className="grid gap-1 text-xs font-medium">
                 Proposed value
                 <input

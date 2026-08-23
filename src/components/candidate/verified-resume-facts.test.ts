@@ -38,6 +38,11 @@ describe("verified résumé facts rendering", () => {
     expect(markup).toContain("Edit active value");
     expect(markup).toContain("Save correction");
     expect(markup).toContain("Remove from active facts");
+    expect(markup).toContain(
+      "Accepted résumé claims remain linked to their source document",
+    );
+    expect(markup).not.toContain("Verified from résumé");
+    expect(markup).not.toContain("verified-fact-badge");
   });
 
   it("renders a clear empty state", () => {

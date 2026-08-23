@@ -23,6 +23,7 @@ import {
   TextField,
 } from "./vault-fields";
 import { ConfirmFactRemovalButton } from "./confirm-fact-removal-button";
+import { CurrentEmploymentFields } from "./current-employment-fields";
 
 const yesNo = [
   { value: "yes", label: "Yes" },
@@ -61,7 +62,6 @@ function VerifiedResumeFactRecord({ item }: { item: VerifiedResumeFact }) {
           <strong>{destination?.label ?? item.factType}</strong>
           <small>{factText(item.value)}</small>
         </div>
-        <span className="badge verified-fact-badge">Verified from résumé</span>
       </div>
       <details>
         <summary>View provenance</summary>
@@ -289,20 +289,10 @@ function ExperienceForm({ item }: { item?: Experience }) {
         defaultValue={dateInput(item?.startDate)}
         required
       />
-      <TextField
-        name="endDate"
-        label="End date"
-        type="date"
-        defaultValue={dateInput(item?.endDate)}
+      <CurrentEmploymentFields
+        defaultCurrent={item?.isCurrent}
+        defaultEndDate={dateInput(item?.endDate)}
       />
-      <label className="field checkbox-field">
-        <input
-          name="isCurrent"
-          type="checkbox"
-          defaultChecked={item?.isCurrent}
-        />
-        <span>Current employment</span>
-      </label>
       <TextAreaField
         name="description"
         label="Description"

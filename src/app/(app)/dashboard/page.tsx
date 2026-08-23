@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { PageHeader } from "@/components/ui/page-header";
+import { DASHBOARD_RECORDS_DESCRIPTION } from "@/components/dashboard/dashboard-copy";
 import {
   MINIMUM_HIGH_FIT_EVIDENCE_COVERAGE,
   hasSufficientEvidenceForHighFit,
@@ -108,7 +109,7 @@ export default async function DashboardPage() {
     <div className="grid gap-7">
       <PageHeader
         title="Your job search, organized"
-        description="Live totals from your RoleProwl records. Nothing on this dashboard is sample activity."
+        description={DASHBOARD_RECORDS_DESCRIPTION}
       />
 
       <section

@@ -27,6 +27,8 @@ describe("fact proposal review component", () => {
     expect(markup).toContain("Reject");
     expect(markup).toContain("Destination: Profile email");
     expect(markup).toContain('class="proposal-review-input"');
+    expect(markup).not.toContain("parser confidence");
+    expect(markup).not.toContain("98%");
   });
 
   it("renders unsupported historical proposals as reject-only", () => {
