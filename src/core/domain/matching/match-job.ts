@@ -52,7 +52,12 @@ export interface JobMatchSnapshot {
   readonly sponsorshipAvailable: boolean | null;
 }
 
+export type MatchAssessment =
+  "SUPPORTED" | "PARTIAL" | "GAP" | "CONFLICT" | "UNKNOWN";
+
 export interface MatchEvidence {
+  readonly assessment?: MatchAssessment;
+  readonly category?: "QUALIFICATION" | "PREFERENCE";
   readonly code: string;
   readonly evidence: string;
   readonly label: string;
@@ -66,9 +71,18 @@ export interface JobMatchResult {
   readonly partialMatches: readonly MatchEvidence[];
   readonly preferenceScore: number;
   readonly qualificationScore: number;
-  readonly scoringVersion: "match-v1.0";
+  readonly scoringVersion: "match-v1.1";
   readonly strengths: readonly MatchEvidence[];
   readonly unknowns: readonly MatchEvidence[];
+}
+
+export const MATCH_SCORING_VERSION = "match-v1.1" as const;
+// A High-fit label needs at least half of the job's relevant signals to be
+// assessable. Lower coverage remains useful, but is explicitly preliminary.
+export const MINIMUM_HIGH_FIT_EVIDENCE_COVERAGE = 0.5;
+
+export function hasSufficientEvidenceForHighFit(confidence: number) {
+  return confidence >= MINIMUM_HIGH_FIT_EVIDENCE_COVERAGE;
 }
 
 const PROFICIENCY = {
@@ -92,8 +106,8 @@ function evaluateSkill(
   );
   if (!skill)
     return {
-      outcome: "GAP" as const,
-      evidence: "No exact candidate skill evidence",
+      outcome: "UNKNOWN" as const,
+      evidence: "No verified candidate skill evidence yet",
     };
   if (
     requirement.minimumProficiency &&
@@ -148,29 +162,39 @@ export function matchCandidateToJob(
   );
   if (contradictory) {
     hardConflicts.push({
+      assessment: "CONFLICT",
+      category: "QUALIFICATION",
       code: "CONTRADICTORY_JOB_REQUIREMENTS",
       label: "The job both requires and excludes the same skill",
       evidence: contradictory,
     });
   }
 
-  possibleSignals += 1;
+  if (job.authorizationCountries?.length) {
+    possibleSignals += 1;
+  }
   if (
-    job.authorizationCountries === null ||
+    job.authorizationCountries?.length &&
     candidate.authorizationCountries === null
   ) {
     unknowns.push({
+      assessment: "UNKNOWN",
+      category: "QUALIFICATION",
       code: "AUTHORIZATION_UNKNOWN",
       label: "Work authorization cannot be confirmed",
       evidence: "Candidate or job authorization data is missing",
     });
-  } else {
-    knownSignals += 1;
+  } else if (job.authorizationCountries?.length) {
     const authorized = job.authorizationCountries.some((country) =>
       includesNormalized(candidate.authorizationCountries, country),
     );
-    if (!authorized && candidate.requiresSponsorship === false) {
+    if (authorized) {
+      knownSignals += 1;
+    } else if (candidate.requiresSponsorship === false) {
+      knownSignals += 1;
       hardConflicts.push({
+        assessment: "CONFLICT",
+        category: "QUALIFICATION",
         code: "WORK_AUTHORIZATION_CONFLICT",
         label: "Work authorization conflicts with the role",
         evidence: `Role countries: ${job.authorizationCountries.join(", ")}`,
@@ -180,17 +204,30 @@ export function matchCandidateToJob(
       candidate.requiresSponsorship === true &&
       job.sponsorshipAvailable === false
     ) {
+      knownSignals += 1;
       hardConflicts.push({
+        assessment: "CONFLICT",
+        category: "QUALIFICATION",
         code: "SPONSORSHIP_CONFLICT",
         label: "Sponsorship is required but unavailable",
         evidence:
           "Candidate requires sponsorship; job explicitly does not offer it",
       });
-    } else if (!authorized && job.sponsorshipAvailable === null) {
+    } else if (
+      candidate.requiresSponsorship === true &&
+      job.sponsorshipAvailable === true
+    ) {
+      knownSignals += 1;
+    } else {
       unknowns.push({
+        assessment: "UNKNOWN",
+        category: "QUALIFICATION",
         code: "SPONSORSHIP_UNKNOWN",
         label: "Sponsorship availability is unknown",
-        evidence: "The source did not specify sponsorship",
+        evidence:
+          candidate.requiresSponsorship === null
+            ? "Candidate sponsorship needs are not recorded"
+            : "The source did not specify sponsorship",
       });
     }
   }
@@ -209,6 +246,8 @@ export function matchCandidateToJob(
     possibleSignals += 1;
     if (held === null) {
       unknowns.push({
+        assessment: "UNKNOWN",
+        category: "QUALIFICATION",
         code: `${code}_UNKNOWN`,
         label: `Required ${label} is unknown`,
         evidence: required.join(", "),
@@ -221,6 +260,8 @@ export function matchCandidateToJob(
     );
     if (missing.length)
       hardConflicts.push({
+        assessment: "CONFLICT",
+        category: "QUALIFICATION",
         code: `${code}_CONFLICT`,
         label: `Missing mandatory ${label}`,
         evidence: missing.join(", "),
@@ -236,6 +277,8 @@ export function matchCandidateToJob(
       )
     ) {
       hardConflicts.push({
+        assessment: "CONFLICT",
+        category: "QUALIFICATION",
         code: "LOCATION_CONFLICT",
         label: "Every listed job location is excluded",
         evidence: job.locations.join(", "),
@@ -246,6 +289,8 @@ export function matchCandidateToJob(
     possibleSignals += 1;
     if (job.maximumSalary == null) {
       unknowns.push({
+        assessment: "UNKNOWN",
+        category: "PREFERENCE",
         code: "COMPENSATION_UNKNOWN",
         label: "Maximum compensation is unknown",
         evidence: "The source did not specify salary",
@@ -254,6 +299,8 @@ export function matchCandidateToJob(
       knownSignals += 1;
       if (job.maximumSalary < candidate.requiredSalaryMinimum) {
         hardConflicts.push({
+          assessment: "CONFLICT",
+          category: "PREFERENCE",
           code: "COMPENSATION_CONFLICT",
           label: "Maximum compensation is below the candidate minimum",
           evidence: `${job.maximumSalary} < ${candidate.requiredSalaryMinimum}`,
@@ -267,22 +314,29 @@ export function matchCandidateToJob(
   for (const requirement of job.requiredSkills ?? []) {
     possibleSignals += 1;
     const result = evaluateSkill(requirement, candidate.skills);
-    requiredPoints += 1;
     const item = {
+      assessment: "UNKNOWN" as MatchEvidence["assessment"],
+      category: "QUALIFICATION" as const,
       code: `REQUIRED_SKILL_${normalizeSkillName(requirement.name)}`,
       label: `Required skill: ${requirement.name}`,
       evidence: result.evidence,
     };
     if (result.outcome === "STRENGTH") {
+      item.assessment = "SUPPORTED";
+      requiredPoints += 1;
       requiredEarned += 1;
       knownSignals += 1;
       strengths.push(item);
     } else if (result.outcome === "PARTIAL") {
+      item.assessment = "PARTIAL";
+      requiredPoints += 1;
       requiredEarned += 0.5;
       knownSignals += 1;
       partialMatches.push(item);
     } else if (result.outcome === "UNKNOWN") unknowns.push(item);
     else {
+      item.assessment = "GAP";
+      requiredPoints += 1;
       knownSignals += 1;
       gaps.push(item);
     }
@@ -292,21 +346,33 @@ export function matchCandidateToJob(
   let preferredEarned = 0;
   for (const requirement of job.preferredSkills ?? []) {
     possibleSignals += 1;
-    knownSignals += 1;
-    preferredPoints += 1;
     const result = evaluateSkill(requirement, candidate.skills);
     const item = {
+      assessment: "UNKNOWN" as MatchEvidence["assessment"],
+      category: "QUALIFICATION" as const,
       code: `PREFERRED_SKILL_${normalizeSkillName(requirement.name)}`,
       label: `Preferred skill: ${requirement.name}`,
       evidence: result.evidence,
     };
     if (result.outcome === "STRENGTH") {
+      item.assessment = "SUPPORTED";
+      preferredPoints += 1;
+      knownSignals += 1;
       preferredEarned += 1;
       strengths.push(item);
     } else if (result.outcome === "PARTIAL") {
+      item.assessment = "PARTIAL";
+      preferredPoints += 1;
+      knownSignals += 1;
       preferredEarned += 0.5;
       partialMatches.push(item);
-    } else gaps.push(item);
+    } else if (result.outcome === "UNKNOWN") unknowns.push(item);
+    else {
+      item.assessment = "GAP";
+      preferredPoints += 1;
+      knownSignals += 1;
+      gaps.push(item);
+    }
   }
 
   const qualificationChecks = [
@@ -320,9 +386,10 @@ export function matchCandidateToJob(
   for (const [code, requirement, candidateValue] of qualificationChecks) {
     if (requirement === null) continue;
     possibleSignals += 1;
-    otherPoints += 1;
     if (candidateValue === null) {
       unknowns.push({
+        assessment: "UNKNOWN",
+        category: "QUALIFICATION",
         code: `${code}_UNKNOWN`,
         label: `${code.toLowerCase().replaceAll("_", " ")} is unknown`,
         evidence: "Candidate evidence is missing",
@@ -330,6 +397,7 @@ export function matchCandidateToJob(
       continue;
     }
     knownSignals += 1;
+    otherPoints += 1;
     let matches = false;
     if (code === "EXPERIENCE")
       matches = (candidateValue as number) >= (requirement as number);
@@ -342,6 +410,8 @@ export function matchCandidateToJob(
     else
       matches = norm(candidateValue as string) === norm(requirement as string);
     const item = {
+      assessment: matches ? ("SUPPORTED" as const) : ("GAP" as const),
+      category: "QUALIFICATION" as const,
       code,
       label: code.toLowerCase().replaceAll("_", " "),
       evidence: String(requirement),
@@ -352,44 +422,105 @@ export function matchCandidateToJob(
     } else gaps.push(item);
   }
 
-  const requiredScore = requiredPoints ? requiredEarned / requiredPoints : 1;
+  const requiredScore = requiredPoints ? requiredEarned / requiredPoints : 0;
   const preferredScore = preferredPoints
     ? preferredEarned / preferredPoints
-    : 1;
-  const otherScore = otherPoints ? otherEarned / otherPoints : 1;
-  const qualificationScore =
-    requiredPoints + preferredPoints + otherPoints === 0
-      ? 50
-      : Math.round(
-          (requiredScore * 0.6 + preferredScore * 0.15 + otherScore * 0.25) *
-            100,
-        );
+    : 0;
+  const otherScore = otherPoints ? otherEarned / otherPoints : 0;
+  const qualificationGroups = [
+    { points: requiredPoints, score: requiredScore, weight: 0.6 },
+    { points: preferredPoints, score: preferredScore, weight: 0.15 },
+    { points: otherPoints, score: otherScore, weight: 0.25 },
+  ].filter((group) => group.points > 0);
+  const qualificationWeight = qualificationGroups.reduce(
+    (total, group) => total + group.weight,
+    0,
+  );
+  const qualificationScore = qualificationWeight
+    ? Math.round(
+        (qualificationGroups.reduce(
+          (total, group) => total + group.score * group.weight,
+          0,
+        ) /
+          qualificationWeight) *
+          100,
+      )
+    : 50;
 
   const preferences: boolean[] = [];
-  if (job.roleFamily && candidate.preferredRoleFamilies)
-    preferences.push(
-      includesNormalized(candidate.preferredRoleFamilies, job.roleFamily),
+  const preferenceChecks = [
+    ["ROLE_PREFERENCE", job.roleFamily, candidate.preferredRoleFamilies],
+    ["REMOTE_PREFERENCE", job.remoteType, candidate.preferredRemoteTypes],
+    ["INDUSTRY_PREFERENCE", job.industry, candidate.preferredIndustries],
+  ] as const;
+  for (const [code, requirement, preferred] of preferenceChecks) {
+    if (!requirement) continue;
+    possibleSignals += 1;
+    if (preferred === null) {
+      unknowns.push({
+        assessment: "UNKNOWN",
+        category: "PREFERENCE",
+        code: `${code}_UNKNOWN`,
+        label: `${code.toLowerCase().replaceAll("_", " ")} is unknown`,
+        evidence: "No candidate preference has been recorded yet",
+      });
+      continue;
+    }
+    knownSignals += 1;
+    const matches = preferred.some(
+      (value) => norm(value) === norm(requirement),
     );
-  if (job.remoteType && candidate.preferredRemoteTypes)
-    preferences.push(candidate.preferredRemoteTypes.includes(job.remoteType));
-  if (job.industry && candidate.preferredIndustries)
-    preferences.push(
-      includesNormalized(candidate.preferredIndustries, job.industry),
-    );
-  if (job.locations && candidate.preferredLocations)
-    preferences.push(
-      job.locations.some((location) =>
+    preferences.push(matches);
+    const item: MatchEvidence = {
+      assessment: matches ? "SUPPORTED" : "GAP",
+      category: "PREFERENCE",
+      code,
+      label: code.toLowerCase().replaceAll("_", " "),
+      evidence: String(requirement),
+    };
+    (matches ? strengths : gaps).push(item);
+  }
+  if (job.locations?.length) {
+    possibleSignals += 1;
+    if (candidate.preferredLocations === null) {
+      unknowns.push({
+        assessment: "UNKNOWN",
+        category: "PREFERENCE",
+        code: "LOCATION_PREFERENCE_UNKNOWN",
+        label: "location preference is unknown",
+        evidence: "No candidate location preference has been recorded yet",
+      });
+    } else {
+      knownSignals += 1;
+      const matches = job.locations.some((location) =>
         includesNormalized(candidate.preferredLocations, location),
-      ),
-    );
+      );
+      preferences.push(matches);
+      const item: MatchEvidence = {
+        assessment: matches ? "SUPPORTED" : "GAP",
+        category: "PREFERENCE",
+        code: "LOCATION_PREFERENCE",
+        label: "location preference",
+        evidence: job.locations.join(", "),
+      };
+      (matches ? strengths : gaps).push(item);
+    }
+  }
   const preferenceScore = preferences.length
     ? Math.round(
         (preferences.filter(Boolean).length / preferences.length) * 100,
       )
     : 50;
-  const unconstrainedOverall = Math.round(
-    qualificationScore * 0.75 + preferenceScore * 0.25,
-  );
+  const hasQualificationEvidence = qualificationGroups.length > 0;
+  const hasPreferenceEvidence = preferences.length > 0;
+  const unconstrainedOverall =
+    hasQualificationEvidence && hasPreferenceEvidence
+      ? Math.round(qualificationScore * 0.75 + preferenceScore * 0.25)
+      : hasQualificationEvidence
+        ? qualificationScore
+        : hasPreferenceEvidence
+          ? preferenceScore
+          : 50;
   return {
     qualificationScore,
     preferenceScore,
@@ -404,6 +535,6 @@ export function matchCandidateToJob(
     confidence: possibleSignals
       ? Math.round((knownSignals / possibleSignals) * 100) / 100
       : 0,
-    scoringVersion: "match-v1.0",
+    scoringVersion: MATCH_SCORING_VERSION,
   };
 }

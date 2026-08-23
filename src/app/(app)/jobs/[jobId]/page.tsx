@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { JsonSnapshot } from "@/components/applications/json-snapshot";
+import { MatchAnalysisSummary } from "@/components/jobs/match-analysis-summary";
 import { PageHeader } from "@/components/ui/page-header";
+import { candidateDispositionLabel } from "@/core/domain/jobs/job-disposition";
+import { MATCH_SCORING_VERSION } from "@/core/domain/matching/match-job";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
@@ -36,7 +38,7 @@ export default async function JobDetailPage({
         },
       },
       matchAnalyses: {
-        where: { userId: actor.id, scoringVersion: "match-v1.0" },
+        where: { userId: actor.id, scoringVersion: MATCH_SCORING_VERSION },
         take: 1,
       },
       candidateDispositions: { where: { userId: actor.id }, take: 1 },
@@ -110,7 +112,9 @@ export default async function JobDetailPage({
           <div>
             <dt className="text-xs text-foreground-muted">Your state</dt>
             <dd className="m-0">
-              <Unknown value={job.candidateDispositions[0]?.status} />
+              {candidateDispositionLabel(
+                job.candidateDispositions[0]?.status ?? null,
+              )}
             </dd>
           </div>
         </dl>
@@ -124,24 +128,7 @@ export default async function JobDetailPage({
       <section className="card grid gap-4 p-5">
         <h2 className="text-lg font-semibold">Explainable fit</h2>
         {analysis ? (
-          <div className="grid gap-4">
-            <p className="m-0">
-              <strong className="text-2xl text-brand">
-                {analysis.overallFit}
-              </strong>{" "}
-              overall · {Math.round(analysis.confidence * 100)}% confidence ·{" "}
-              {analysis.scoringVersion}
-            </p>
-            <JsonSnapshot
-              value={{
-                strengths: analysis.strengths,
-                partialMatches: analysis.partialMatches,
-                gaps: analysis.gaps,
-                hardConflicts: analysis.hardConflicts,
-                unknowns: analysis.unknowns,
-              }}
-            />
-          </div>
+          <MatchAnalysisSummary analysis={analysis} />
         ) : (
           <p className="m-0 text-sm text-foreground-muted">
             No fit analysis has been recorded for this candidate and job yet.

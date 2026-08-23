@@ -98,6 +98,8 @@ export async function analyzeJobAction(formData: FormData) {
     },
   });
   revalidatePath("/jobs");
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/dashboard");
 }
 
 export async function recordMatchFeedbackAction(formData: FormData) {
@@ -135,12 +137,35 @@ export async function setJobDispositionAction(formData: FormData) {
   const actor = await requireAuthenticatedActor(currentAuthProvider());
   const jobId = String(formData.get("jobId") ?? "");
   const status = String(formData.get("status") ?? "");
-  if (!jobId || (status !== "SHORTLISTED" && status !== "REJECTED")) return;
+  if (
+    !jobId ||
+    (status !== "SHORTLISTED" &&
+      status !== "REJECTED" &&
+      status !== "UNDECIDED")
+  )
+    return;
   const job = await databaseClient().job.findUnique({
     where: { id: jobId, status: "ACTIVE" },
-    select: { id: true },
+    select: {
+      id: true,
+      applications: {
+        where: { userId: actor.id },
+        select: { id: true },
+        take: 1,
+      },
+    },
   });
   if (!job) return;
+  if (status === "REJECTED" && job.applications.length > 0) return;
+  if (status === "UNDECIDED") {
+    await databaseClient().candidateJobDisposition.deleteMany({
+      where: { userId: actor.id, jobId },
+    });
+    revalidatePath("/jobs");
+    revalidatePath(`/jobs/${jobId}`);
+    revalidatePath("/dashboard");
+    return;
+  }
   await databaseClient().candidateJobDisposition.upsert({
     where: { userId_jobId: { userId: actor.id, jobId } },
     create: { userId: actor.id, jobId, status },
@@ -158,6 +183,8 @@ export async function setJobDispositionAction(formData: FormData) {
     userId: actor.id,
   });
   revalidatePath("/jobs");
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/dashboard");
 }
 
 export async function openEmployerPostingAction(formData: FormData) {

@@ -1,13 +1,21 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { PageHeader } from "@/components/ui/page-header";
+import {
+  MINIMUM_HIGH_FIT_EVIDENCE_COVERAGE,
+  hasSufficientEvidenceForHighFit,
+} from "@/core/domain/matching/match-job";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
+import {
+  activeEvidenceAwareMatchWhere,
+  confirmedHighFitWhere,
+} from "@/features/jobs/match-query-policy";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 
 const METRICS = [
   { key: "relevant", label: "Relevant jobs", href: "/jobs" },
-  { key: "highFit", label: "High-fit jobs", href: "/jobs" },
+  { key: "highFit", label: "Confirmed high-fit jobs", href: "/jobs" },
   { key: "prepared", label: "Prepared applications", href: "/applications" },
   { key: "review", label: "Needs review", href: "/queue" },
   { key: "submitted", label: "Submitted", href: "/applications" },
@@ -40,14 +48,10 @@ export default async function DashboardPage() {
     recentActivity,
   ] = await Promise.all([
     database.jobMatchAnalysis.count({
-      where: { userId: actor.id, job: { status: "ACTIVE" } },
+      where: activeEvidenceAwareMatchWhere(actor.id),
     }),
     database.jobMatchAnalysis.count({
-      where: {
-        userId: actor.id,
-        overallFit: { gte: highFitThreshold },
-        job: { status: "ACTIVE" },
-      },
+      where: confirmedHighFitWhere(actor.id, highFitThreshold),
     }),
     database.application.count({
       where: { userId: actor.id, state: { in: ["PREPARING", "READY"] } },
@@ -70,7 +74,7 @@ export default async function DashboardPage() {
       where: { userId: actor.id, state: "INTERVIEW" },
     }),
     database.jobMatchAnalysis.findMany({
-      where: { userId: actor.id, job: { status: "ACTIVE" } },
+      where: activeEvidenceAwareMatchWhere(actor.id),
       orderBy: [{ overallFit: "desc" }, { updatedAt: "desc" }],
       take: 5,
       include: {
@@ -134,7 +138,9 @@ export default async function DashboardPage() {
             <div>
               <h2 className="text-lg font-semibold">Top job matches</h2>
               <p className="m-0 text-sm">
-                High fit begins at your current {highFitThreshold}% threshold.
+                High fit requires your {highFitThreshold}% threshold and at
+                least {MINIMUM_HIGH_FIT_EVIDENCE_COVERAGE * 100}% evidence
+                coverage.
               </p>
             </div>
             <Link className="text-sm font-semibold text-brand" href="/jobs">
@@ -157,7 +163,16 @@ export default async function DashboardPage() {
                     <strong>{match.job.title}</strong>
                     <p className="m-0 text-sm">{match.job.company}</p>
                   </div>
-                  <span className="badge">{match.overallFit}% fit</span>
+                  <div className="text-right">
+                    <span className="badge">
+                      {hasSufficientEvidenceForHighFit(match.confidence)
+                        ? `${match.overallFit}% fit`
+                        : "Preliminary fit"}
+                    </span>
+                    <p className="m-0 text-xs text-foreground-muted">
+                      {Math.round(match.confidence * 100)}% evidence coverage
+                    </p>
+                  </div>
                 </li>
               ))}
             </ol>

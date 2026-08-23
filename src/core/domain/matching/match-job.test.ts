@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  hasSufficientEvidenceForHighFit,
   matchCandidateToJob,
   type CandidateMatchSnapshot,
   type JobMatchSnapshot,
@@ -85,8 +86,13 @@ describe("matching engine v1", () => {
       roleFamily: "Site Reliability",
       seniority: "SENIOR",
     });
-    expect(result.qualificationScore).toBeLessThan(50);
-    expect(result.gaps.length).toBeGreaterThanOrEqual(3);
+    expect(result.qualificationScore).toBeLessThan(80);
+    expect(result.gaps.length).toBeGreaterThanOrEqual(2);
+    expect(result.unknowns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "REQUIRED_SKILL_rust" }),
+      ]),
+    );
   });
 
   it("caps overall fit on a hard sponsorship conflict", () => {
@@ -142,7 +148,7 @@ describe("matching engine v1", () => {
         ],
       },
     );
-    expect(result.gaps).toEqual(
+    expect(result.unknowns).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ label: `Required skill: ${required}` }),
       ]),
@@ -197,5 +203,120 @@ describe("matching engine v1", () => {
     const result = matchCandidateToJob(candidate, sparse);
     expect(result.confidence).toBe(0);
     expect(result.preferenceScore).toBe(50);
+  });
+
+  it("treats absent candidate skill evidence as unknown, not a gap", () => {
+    const result = matchCandidateToJob(
+      { ...candidate, skills: [] },
+      {
+        ...job,
+        requiredSkills: [
+          {
+            name: "Rust",
+            minimumExperienceMonths: null,
+            minimumProficiency: null,
+          },
+        ],
+        preferredSkills: null,
+      },
+    );
+    expect(result.unknowns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assessment: "UNKNOWN",
+          code: "REQUIRED_SKILL_rust",
+        }),
+      ]),
+    );
+    expect(result.gaps).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "REQUIRED_SKILL_rust" }),
+      ]),
+    );
+  });
+
+  it("does not let unknown criteria erase partial positive evidence", () => {
+    const result = matchCandidateToJob(
+      {
+        ...candidate,
+        authorizationCountries: null,
+        clearances: null,
+        educationLevels: null,
+        experienceMonths: null,
+        industries: null,
+        languages: null,
+        licenses: null,
+        preferredIndustries: null,
+        preferredLocations: null,
+        preferredRemoteTypes: null,
+        preferredRoleFamilies: null,
+        requiredSalaryMinimum: null,
+        roleFamilies: null,
+        seniority: null,
+        skills: [
+          { name: "Java", proficiency: "ADVANCED", experienceMonths: 48 },
+        ],
+      },
+      {
+        ...job,
+        authorizationCountries: null,
+        educationLevels: null,
+        industry: null,
+        locations: null,
+        maximumSalary: null,
+        minimumExperienceMonths: null,
+        preferredSkills: null,
+        remoteType: null,
+        requiredLanguages: null,
+        requiredSkills: [
+          {
+            name: "Java",
+            minimumExperienceMonths: 36,
+            minimumProficiency: "WORKING",
+          },
+          {
+            name: "Rust",
+            minimumExperienceMonths: null,
+            minimumProficiency: null,
+          },
+          {
+            name: "Kubernetes",
+            minimumExperienceMonths: null,
+            minimumProficiency: null,
+          },
+        ],
+        roleFamily: null,
+        seniority: null,
+      },
+    );
+    expect(result.qualificationScore).toBe(100);
+    expect(result.overallFit).toBe(100);
+    expect(result.confidence).toBeCloseTo(1 / 3, 2);
+    expect(result.strengths).toHaveLength(1);
+    expect(result.unknowns).toHaveLength(2);
+    expect(hasSufficientEvidenceForHighFit(result.confidence)).toBe(false);
+  });
+
+  it("keeps actual not-met evidence as a gap", () => {
+    const result = matchCandidateToJob(
+      { ...candidate, experienceMonths: 12 },
+      {
+        ...job,
+        requiredSkills: null,
+        preferredSkills: null,
+        minimumExperienceMonths: 48,
+      },
+    );
+    expect(result.gaps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ assessment: "GAP", code: "EXPERIENCE" }),
+      ]),
+    );
+  });
+
+  it("allows high-fit classification only with sufficient evidence", () => {
+    const result = matchCandidateToJob(candidate, job);
+    expect(result.confidence).toBeGreaterThanOrEqual(0.5);
+    expect(hasSufficientEvidenceForHighFit(result.confidence)).toBe(true);
   });
 });
