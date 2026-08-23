@@ -40,6 +40,7 @@ describe("Greenhouse job source", () => {
     expect(source.getCapabilities()).toEqual(
       new Set([
         "READ_JOBS",
+        "READ_APPLICATION_SCHEMA",
         "REQUIRES_USER_INTERACTION",
         "REQUIRES_PARTNER_AUTH",
       ]),

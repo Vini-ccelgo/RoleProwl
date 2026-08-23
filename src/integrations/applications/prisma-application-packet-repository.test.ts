@@ -1,0 +1,232 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { buildApplicationPacket } from "@/core/domain/applications/application-packet";
+
+const mocks = vi.hoisted(() => ({
+  applicationFindFirst: vi.fn(),
+  applicationUpdateMany: vi.fn(async () => ({ count: 1 })),
+  applicationEventCreate: vi.fn(async () => undefined),
+  auditCreate: vi.fn(async () => undefined),
+  userFindUnique: vi.fn(),
+  profileFindUnique: vi.fn(),
+  factsFindMany: vi.fn(),
+  experienceFindMany: vi.fn(),
+  educationFindMany: vi.fn(),
+  credentialFindMany: vi.fn(),
+  skillFindMany: vi.fn(),
+  authorizationFindUnique: vi.fn(),
+  preferencesFindUnique: vi.fn(),
+  answerFindMany: vi.fn(),
+  resumeFindFirst: vi.fn(),
+  documentFindFirst: vi.fn(),
+  writingFindMany: vi.fn(),
+}));
+
+vi.mock("server-only", () => ({}));
+vi.mock("@/lib/db/client", () => ({
+  databaseClient: vi.fn(() => ({
+    application: { findFirst: mocks.applicationFindFirst },
+    user: { findUnique: mocks.userFindUnique },
+    candidateProfile: { findUnique: mocks.profileFindUnique },
+    candidateFact: { findMany: mocks.factsFindMany },
+    workExperience: { findMany: mocks.experienceFindMany },
+    education: { findMany: mocks.educationFindMany },
+    credential: { findMany: mocks.credentialFindMany },
+    skill: { findMany: mocks.skillFindMany },
+    workAuthorizationProfile: { findUnique: mocks.authorizationFindUnique },
+    candidatePreferences: { findUnique: mocks.preferencesFindUnique },
+    answerMemory: { findMany: mocks.answerFindMany },
+    resumeVersion: { findFirst: mocks.resumeFindFirst },
+    candidateDocument: { findFirst: mocks.documentFindFirst },
+    applicationWritingArtifact: { findMany: mocks.writingFindMany },
+    $transaction: vi.fn(async (callback) =>
+      callback({
+        application: { updateMany: mocks.applicationUpdateMany },
+        applicationEvent: { create: mocks.applicationEventCreate },
+        auditEvent: { create: mocks.auditCreate },
+      }),
+    ),
+  })),
+}));
+
+import { PrismaApplicationPacketRepository } from "./prisma-application-packet-repository";
+
+const application = {
+  id: "application-1",
+  userId: "user-1",
+  jobId: "job-1",
+  state: "NEEDS_REVIEW",
+  submittedAt: null,
+  submissionDestination: "https://job-boards.greenhouse.io/acme/jobs/42",
+  submissionPayloadSnapshot: {
+    reference: { source: "GREENHOUSE", externalId: "42" },
+  },
+  job: {
+    title: "Security Analyst",
+    sourceRecords: [
+      {
+        source: "GREENHOUSE",
+        externalId: "42",
+        applicationUrl: "https://job-boards.greenhouse.io/acme/jobs/42",
+      },
+    ],
+  },
+};
+
+describe("Prisma application packet repository", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.applicationFindFirst.mockResolvedValue(application);
+    mocks.userFindUnique.mockResolvedValue({ email: "signin@example.test" });
+    mocks.profileFindUnique.mockResolvedValue({
+      firstName: "Avery",
+      lastName: "Quill",
+      applicationEmail: "apply@example.test",
+      phone: "+1 555 0100",
+      location: "Boston, MA",
+      countryCode: "US",
+      professionalTitle: "Security Analyst",
+    });
+    mocks.factsFindMany.mockResolvedValue([
+      { factType: "SKILL_TEXT", value: { text: "Incident response" } },
+    ]);
+    mocks.experienceFindMany.mockResolvedValue([]);
+    mocks.educationFindMany.mockResolvedValue([]);
+    mocks.credentialFindMany.mockResolvedValue([]);
+    mocks.skillFindMany.mockResolvedValue([]);
+    mocks.authorizationFindUnique.mockResolvedValue(null);
+    mocks.preferencesFindUnique.mockResolvedValue(null);
+    mocks.answerFindMany.mockResolvedValue([]);
+    mocks.resumeFindFirst.mockResolvedValue(null);
+    mocks.documentFindFirst.mockResolvedValue({
+      originalFileName: "resume.pdf",
+      mimeType: "application/pdf",
+      storageKey: "candidate-documents/safe",
+    });
+    mocks.writingFindMany.mockResolvedValue([]);
+  });
+
+  it("builds and approves a complete owner-scoped packet", async () => {
+    const request = vi.fn(async () =>
+      Response.json({
+        questions: [
+          {
+            required: true,
+            label: "First Name",
+            fields: [{ name: "first_name", type: "input_text" }],
+          },
+          {
+            required: true,
+            label: "Résumé/CV",
+            fields: [{ name: "resume", type: "input_file" }],
+          },
+        ],
+      }),
+    );
+    const packet = await new PrismaApplicationPacketRepository(request).refresh(
+      {
+        applicationId: "application-1",
+        userId: "user-1",
+        reviewed: true,
+      },
+    );
+    expect(packet.completeness.readyForSubmissionHandoff).toBe(true);
+    expect(packet.professional.skills).toContain("Incident response");
+    expect(mocks.applicationFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "application-1", userId: "user-1" },
+      }),
+    );
+    expect(mocks.applicationUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ state: "READY" }),
+      }),
+    );
+  });
+
+  it("selects the job-tailored résumé but keeps it unresolved before candidate review", async () => {
+    mocks.resumeFindFirst.mockResolvedValue({
+      id: "resume-version-1",
+      renderedFileName: "avery-security-analyst.docx",
+      renderedContentType:
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      renderedStorageKey: "resume-versions/tailored-safe",
+    });
+    const packet = await new PrismaApplicationPacketRepository(
+      vi.fn(async () => Response.json({ questions: [] })),
+    ).refresh({
+      applicationId: "application-1",
+      userId: "user-1",
+      reviewed: false,
+    });
+    expect(packet.documents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "RESUME",
+          fileName: "avery-security-analyst.docx",
+          status: "UNRESOLVED",
+          provenance: [expect.objectContaining({ source: "TAILORED_RESUME" })],
+        }),
+      ]),
+    );
+    expect(packet.completeness.readyForSubmissionHandoff).toBe(false);
+    expect(mocks.applicationUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          resumeVersionId: "resume-version-1",
+          state: "NEEDS_REVIEW",
+        }),
+      }),
+    );
+  });
+
+  it("returns a submitted historical packet without rebuilding it", async () => {
+    const packet = buildApplicationPacket({
+      reviewed: true,
+      source: {
+        accountEmail: null,
+        profile: null,
+        verifiedResumeFacts: [],
+        experience: [],
+        education: [],
+        credentials: [],
+        skills: [],
+        languages: [],
+        workAuthorization: null,
+        sponsorshipRequired: null,
+        answerMemories: [],
+        selectedResume: null,
+        coverLetter: null,
+        questions: [],
+        questionInspection: "UNAVAILABLE",
+        sourceName: "GREENHOUSE",
+        targetRole: "Security Analyst",
+      },
+    });
+    mocks.applicationFindFirst.mockResolvedValue({
+      ...application,
+      state: "SUBMITTED",
+      submittedAt: new Date(),
+      submissionPayloadSnapshot: { packet },
+    });
+    const result = await new PrismaApplicationPacketRepository().refresh({
+      applicationId: "application-1",
+      userId: "user-1",
+      reviewed: false,
+    });
+    expect(result).toEqual(packet);
+    expect(mocks.profileFindUnique).not.toHaveBeenCalled();
+    expect(mocks.applicationUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("conceals another candidate's application", async () => {
+    mocks.applicationFindFirst.mockResolvedValue(null);
+    await expect(
+      new PrismaApplicationPacketRepository().refresh({
+        applicationId: "foreign",
+        userId: "user-1",
+        reviewed: false,
+      }),
+    ).rejects.toThrow("Application not found");
+    expect(mocks.profileFindUnique).not.toHaveBeenCalled();
+  });
+});

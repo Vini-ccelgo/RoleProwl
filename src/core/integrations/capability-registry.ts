@@ -25,7 +25,11 @@ export const INTEGRATION_CAPABILITY_REGISTRY: Readonly<
   Record<IntegrationSource, IntegrationCapabilityDefinition>
 > = {
   GREENHOUSE: {
-    baseCapabilities: ["READ_JOBS", "REQUIRES_USER_INTERACTION"],
+    baseCapabilities: [
+      "READ_JOBS",
+      "READ_APPLICATION_SCHEMA",
+      "REQUIRES_USER_INTERACTION",
+    ],
     prohibitedAutomation: false,
     requiresPartnerAuthForSubmission: true,
     submissionModeWithoutAuthorization: "EXTERNAL_APPLICATION",

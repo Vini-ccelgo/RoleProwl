@@ -21,6 +21,7 @@ describe("integration capability registry", () => {
       partnerSubmissionAuthorized: false,
     });
     expect(capability.capabilities.has("READ_JOBS")).toBe(true);
+    expect(capability.capabilities.has("READ_APPLICATION_SCHEMA")).toBe(true);
     expect(capability.capabilities.has("SUBMIT_APPLICATION")).toBe(false);
     expect(capability.mode).toBe("EXTERNAL_APPLICATION");
   });

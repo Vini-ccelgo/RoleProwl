@@ -10,6 +10,7 @@ import { requireAuthenticatedActor } from "@/features/accounts/require-authentic
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { persistFactProposalDecision } from "@/integrations/candidate/prisma-fact-proposal-review";
 import { databaseClient } from "@/lib/db/client";
+import { invalidateReadyApplicationPackets } from "@/integrations/applications/invalidate-application-packets";
 import {
   assertContentLength,
   assertContentType,
@@ -37,9 +38,13 @@ export async function PATCH(
         userId: actor.id,
       }),
     );
+    if (result.status !== "REJECTED")
+      await invalidateReadyApplicationPackets(db, actor.id);
 
     revalidatePath("/onboarding");
     revalidatePath("/profile");
+    revalidatePath("/applications");
+    revalidatePath("/dashboard");
 
     return NextResponse.json(result);
   } catch (error) {

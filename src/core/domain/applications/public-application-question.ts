@@ -19,6 +19,7 @@ export interface PublicApplicationQuestion {
   readonly group: PublicApplicationQuestionGroup;
   readonly label: string;
   readonly required: boolean;
+  readonly fieldNames: readonly string[];
   readonly fieldTypes: readonly string[];
   readonly options: readonly string[];
 }

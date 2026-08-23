@@ -8,7 +8,7 @@ Discover published jobs from explicitly configured employer job boards and norma
 
 - Greenhouse Job Board API: https://developers.greenhouse.io/job-board
 
-Reviewed: 2026-08-13.
+Reviewed: 2026-08-23.
 
 ## Access model
 
@@ -19,6 +19,10 @@ Application submission is separate: Greenhouse documents its Job Board applicati
 ## Candidate-side suitability
 
 Suitable for read-only discovery of already-published jobs and for sending the candidate to the employer-hosted job URL. It is not evidence of partner submission authorization.
+
+The documented public job detail request with `questions=true` can expose the published application-question schema. RP-033C uses that fixed-host public read to map packet values and unresolved questions. Fetching or mapping a field is not evidence that the field reached the employer form.
+
+Greenhouse's candidate-controlled MyGreenhouse Quick Apply can autofill information saved in the candidate's own MyGreenhouse account when an employer enables it. RoleProwl does not possess that candidate session, does not copy data into it, and does not claim its autofill as a RoleProwl transfer.
 
 ## Rate limits and errors
 
@@ -33,7 +37,9 @@ Only documented public GET endpoints are used. No authenticated Harvest, Candida
 - `READ_JOBS`
 - `REQUIRES_USER_INTERACTION` (the candidate follows the hosted application URL)
 
-Not advertised: application schema, application submission, application status, or partner authentication.
+- `READ_APPLICATION_SCHEMA` for published questions retrieved from the documented public job detail interface
+
+Not advertised: application submission, application status, or partner authentication.
 
 ## Data stored
 
@@ -45,4 +51,4 @@ Fetch the configured board and refresh individual published job identifiers. Mis
 
 ## Submission status and fallback
 
-Submission is unsupported. The fallback is the public Greenhouse hosted job/application page and explicit candidate interaction.
+Submission is unsupported without an employer-controlled Job Board API key. The fallback is the public Greenhouse hosted job/application page, a candidate-reviewed RoleProwl Application Packet with copy/download assistance, human completion of unsupported or verification controls, and explicit candidate submission confirmation.

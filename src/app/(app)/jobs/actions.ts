@@ -14,6 +14,8 @@ import {
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { PrismaProductAnalyticsProvider } from "@/integrations/analytics/prisma-product-analytics-provider";
 import { PrismaApplicationStartRepository } from "@/integrations/applications/prisma-application-start-repository";
+import { PrismaApplicationPacketRepository } from "@/integrations/applications/prisma-application-packet-repository";
+import { refreshApplicationPacket } from "@/features/applications/refresh-application-packet";
 import { trackProductEvent } from "@/features/analytics/track-product-event";
 import { databaseClient } from "@/lib/db/client";
 
@@ -198,6 +200,12 @@ export async function startApplicationAction(formData: FormData) {
     repository: new PrismaApplicationStartRepository(),
     userId: actor.id,
   });
+  if (application.created)
+    await refreshApplicationPacket({
+      applicationId: application.applicationId,
+      repository: new PrismaApplicationPacketRepository(),
+      userId: actor.id,
+    });
   revalidatePath("/applications");
   revalidatePath("/dashboard");
   redirect(`/applications/${application.applicationId}`);

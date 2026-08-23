@@ -318,6 +318,14 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 
 ## Temporary alpha provider migration
 
+### RP-033C — Application packet integrity
+
+- **Status:** Implemented; hosted authenticated acceptance remains operator-required.
+- **Major implementation:** Versioned Application Packet projection, deterministic candidate-field precedence, explicit field/completeness status, Career Profile application email/country fields, accepted résumé-fact and answer-memory projection, public Greenhouse question inspection, reviewed READY gate, pre-submission packet refresh, submitted snapshot immutability, provider-neutral transfer verification vocabulary, candidate copy assistance, and owner-scoped private résumé download.
+- **Greenhouse boundary:** Public published questions are inspected through the fixed Greenhouse Job Board endpoint. No employer Job Board API credential exists, so submission remains an external human handoff with explicit candidate confirmation. Greenhouse/MyGreenhouse candidate sessions, CAPTCHA, employer authentication, and unsupported widgets are not automated.
+- **Migration:** `20260823010000_add_application_contact_fields` adds nullable application-email and country-code fields to the existing Candidate Profile without altering historical Application snapshots.
+- **Known limitations:** RoleProwl does not yet transfer values directly into an employer form. Mapped values remain `NOT_ATTEMPTED` until a future authorized or verifiable transfer adapter exists.
+
 ### RP-031A — Gemini free-tier AI provider
 
 - **Status:** Pass

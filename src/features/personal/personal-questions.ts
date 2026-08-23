@@ -3,142 +3,19 @@ import { decideAnswerAuthority } from "@/core/domain/applications/answer-authori
 import type {
   PreparedApplicationQuestion,
   PublicApplicationQuestion,
-  PublicApplicationQuestionGroup,
-  PublicApplicationQuestionReference,
 } from "@/core/domain/applications/public-application-question";
 import type { QuestionClassificationResult } from "@/core/domain/applications/question-classifier";
 import { classifyApplicationQuestion } from "@/features/applications/classify-application-question";
+import {
+  fetchGreenhouseApplicationQuestions,
+  parseGreenhouseApplicationQuestions,
+  type GreenhouseQuestionFetch,
+} from "@/integrations/applications/greenhouse-application-inspector";
 import type { CanonicalPersonalCandidate } from "./personal-candidate";
 import type { PersonalStateJob } from "./personal-state";
 
-export type PersonalQuestionFetch = (
-  input: string,
-  init?: RequestInit,
-) => Promise<Response>;
-
-interface GreenhouseField {
-  readonly name?: unknown;
-  readonly type?: unknown;
-  readonly values?: unknown;
-}
-
-interface GreenhouseQuestion {
-  readonly required?: unknown;
-  readonly label?: unknown;
-  readonly fields?: unknown;
-}
-
-function parseOptions(fields: readonly GreenhouseField[]) {
-  return fields.flatMap((field) =>
-    Array.isArray(field.values)
-      ? field.values.flatMap((value) => {
-          if (!value || typeof value !== "object") return [];
-          const label = (value as Record<string, unknown>).label;
-          return typeof label === "string" && label.trim()
-            ? [label.trim()]
-            : [];
-        })
-      : [],
-  );
-}
-
-function parseQuestionGroup(
-  value: unknown,
-  group: PublicApplicationQuestionGroup,
-  prefix: string,
-): PublicApplicationQuestion[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry, index) => {
-    if (!entry || typeof entry !== "object") return [];
-    const question = entry as GreenhouseQuestion;
-    if (typeof question.label !== "string" || !question.label.trim()) return [];
-    const fields = Array.isArray(question.fields)
-      ? question.fields.filter((field): field is GreenhouseField =>
-          Boolean(field && typeof field === "object"),
-        )
-      : [];
-    const fieldTypes = fields.flatMap((field) =>
-      typeof field.type === "string" && field.type !== "input_hidden"
-        ? [field.type]
-        : [],
-    );
-    if (fields.length && !fieldTypes.length) return [];
-    const names = fields.flatMap((field) =>
-      typeof field.name === "string" && field.name.trim()
-        ? [field.name.trim()]
-        : [],
-    );
-    return [
-      {
-        id: `${prefix}:${names.join(",") || index + 1}`,
-        source: "GREENHOUSE" as const,
-        group,
-        label: question.label.trim(),
-        required: question.required === true,
-        fieldTypes,
-        options: [...new Set(parseOptions(fields))],
-      },
-    ];
-  });
-}
-
-export function parseGreenhouseApplicationQuestions(payload: unknown) {
-  if (!payload || typeof payload !== "object")
-    throw new Error("Greenhouse question response is invalid.");
-  const data = payload as Record<string, unknown>;
-  const compliance = Array.isArray(data.compliance)
-    ? data.compliance.flatMap((entry, index) =>
-        entry && typeof entry === "object"
-          ? parseQuestionGroup(
-              (entry as Record<string, unknown>).questions,
-              "COMPLIANCE",
-              `compliance:${index + 1}`,
-            )
-          : [],
-      )
-    : [];
-  const demographic =
-    data.demographic_questions && typeof data.demographic_questions === "object"
-      ? parseQuestionGroup(
-          (data.demographic_questions as Record<string, unknown>).questions,
-          "DEMOGRAPHIC",
-          "demographic",
-        )
-      : [];
-  return [
-    ...parseQuestionGroup(data.questions, "STANDARD", "standard"),
-    ...parseQuestionGroup(data.location_questions, "LOCATION", "location"),
-    ...compliance,
-    ...demographic,
-  ];
-}
-
-async function fetchGreenhouseQuestions(
-  reference: PublicApplicationQuestionReference,
-  request: PersonalQuestionFetch,
-) {
-  const url = new URL(
-    `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(reference.boardToken)}/jobs/${encodeURIComponent(reference.jobId)}`,
-  );
-  url.searchParams.set("questions", "true");
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const response = await request(url.toString(), {
-      headers: { accept: "application/json" },
-      signal: controller.signal,
-    });
-    if (!response.ok)
-      throw new Error(`Greenhouse questions returned HTTP ${response.status}.`);
-    return parseGreenhouseApplicationQuestions(await response.json());
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError")
-      throw new Error("Greenhouse question request timed out.");
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
+export type PersonalQuestionFetch = GreenhouseQuestionFetch;
+export { parseGreenhouseApplicationQuestions };
 
 function evidenceForQuestion(
   question: PublicApplicationQuestion,
@@ -202,7 +79,10 @@ export async function retrieveAndPrepareApplicationQuestions(input: {
   const questions: PublicApplicationQuestion[] = [];
   for (const reference of unique.values())
     questions.push(
-      ...(await fetchGreenhouseQuestions(reference, input.request ?? fetch)),
+      ...(await fetchGreenhouseApplicationQuestions(
+        reference,
+        input.request ?? fetch,
+      )),
     );
 
   const prepared: PreparedApplicationQuestion[] = [];

@@ -62,10 +62,23 @@ export function normalizeSkillAliases(
 export const candidateProfileSchema = z.object({
   firstName: requiredText.max(100),
   lastName: requiredText.max(100),
+  applicationEmail: z.preprocess(
+    (value) => (typeof value === "string" && !value.trim() ? undefined : value),
+    z.email().optional(),
+  ),
   professionalTitle: optionalText,
   summary: optionalText,
   phone: optionalText,
   location: optionalText,
+  countryCode: z.preprocess(
+    (value) => (typeof value === "string" && !value.trim() ? undefined : value),
+    z
+      .string()
+      .trim()
+      .length(2, "Use a two-letter country code")
+      .transform((value) => value.toUpperCase())
+      .optional(),
+  ),
   websiteUrl: optionalUrl,
   linkedInUrl: optionalUrl,
 });

@@ -4,6 +4,7 @@ const {
   deleteMany,
   findUnique,
   redirect,
+  refreshApplicationPacket,
   requireAuthenticatedActor,
   revalidatePath,
   startApplication,
@@ -13,6 +14,7 @@ const {
   deleteMany: vi.fn(async () => ({ count: 1 })),
   findUnique: vi.fn(),
   redirect: vi.fn(),
+  refreshApplicationPacket: vi.fn(async () => undefined),
   requireAuthenticatedActor: vi.fn(async () => ({ id: "user-1" })),
   revalidatePath: vi.fn(),
   startApplication: vi.fn(),
@@ -35,6 +37,13 @@ vi.mock("@/features/analytics/track-product-event", () => ({
 vi.mock("@/features/applications/start-application", () => ({
   startApplication,
 }));
+vi.mock("@/features/applications/refresh-application-packet", () => ({
+  refreshApplicationPacket,
+}));
+vi.mock(
+  "@/integrations/applications/prisma-application-packet-repository",
+  () => ({ PrismaApplicationPacketRepository: class {} }),
+);
 vi.mock(
   "@/integrations/applications/prisma-application-start-repository",
   () => ({ PrismaApplicationStartRepository: class {} }),
@@ -77,6 +86,12 @@ describe("candidate job disposition action", () => {
       expect.objectContaining({ jobId: "job-1", userId: "user-1" }),
     );
     expect(redirect).toHaveBeenCalledWith("/applications/application-1");
+    expect(refreshApplicationPacket).toHaveBeenCalledWith(
+      expect.objectContaining({
+        applicationId: "application-1",
+        userId: "user-1",
+      }),
+    );
   });
 
   it("persists an owner-scoped shortlist and refreshes relevant views", async () => {

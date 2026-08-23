@@ -202,14 +202,26 @@ export function ProfileDetailsSection({
           required
         />
         <TextField
+          name="applicationEmail"
+          label="Application email"
+          type="email"
+          defaultValue={item?.applicationEmail}
+        />
+        <TextField
           name="professionalTitle"
           label="Professional title"
           defaultValue={item?.professionalTitle}
         />
         <TextField
           name="location"
-          label="Location"
+          label="City / location"
           defaultValue={item?.location}
+        />
+        <TextField
+          name="countryCode"
+          label="Country code"
+          defaultValue={item?.countryCode}
+          placeholder="US"
         />
         <TextField
           name="phone"

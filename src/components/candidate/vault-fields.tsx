@@ -13,7 +13,7 @@ export function TextField({
   label: string;
   name: string;
   defaultValue?: string | number | null;
-  type?: "text" | "url" | "tel" | "date" | "number";
+  type?: "text" | "email" | "url" | "tel" | "date" | "number";
   required?: boolean;
   min?: number;
   max?: number;

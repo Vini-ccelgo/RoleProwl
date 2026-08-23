@@ -2,6 +2,7 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import type { ResumeArtifactRepository } from "@/features/resumes/tailored-resume";
 import { databaseClient } from "@/lib/db/client";
+import { invalidateReadyApplicationPackets } from "@/integrations/applications/invalidate-application-packets";
 
 function json(value: unknown) {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
@@ -9,7 +10,8 @@ function json(value: unknown) {
 
 export class PrismaResumeArtifactRepository implements ResumeArtifactRepository {
   async save(input: Parameters<ResumeArtifactRepository["save"]>[0]) {
-    return databaseClient().resumeVersion.create({
+    const database = databaseClient();
+    const result = await database.resumeVersion.create({
       data: {
         userId: input.userId,
         targetJobId: input.targetJobId,
@@ -47,5 +49,7 @@ export class PrismaResumeArtifactRepository implements ResumeArtifactRepository 
       },
       select: { id: true },
     });
+    await invalidateReadyApplicationPackets(database, input.userId);
+    return result;
   }
 }

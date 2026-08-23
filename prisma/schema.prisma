@@ -856,10 +856,12 @@ model CandidateProfile {
   userId            String            @unique
   firstName         String
   lastName          String
+  applicationEmail  String?
   professionalTitle String?
   summary           String?
   phone             String?
   location          String?
+  countryCode       String?
   websiteUrl        String?
   linkedInUrl       String?
   verificationState VerificationState @default(UNVERIFIED)

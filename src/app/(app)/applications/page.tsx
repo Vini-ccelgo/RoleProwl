@@ -9,6 +9,13 @@ import {
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
+import { isApplicationPacket } from "@/core/domain/applications/application-packet";
+
+function object(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
 
 export default async function ApplicationsPage() {
   await connection();
@@ -54,60 +61,76 @@ export default async function ApplicationsPage() {
         </div>
       ) : (
         <div className="grid gap-4">
-          {applications.map((application) => (
-            <article
-              className="card grid gap-3 p-5 transition hover:border-brand sm:grid-cols-[1fr_auto]"
-              key={application.id}
-            >
-              <div>
-                <span className="badge">
-                  {applicationStateLabel(application.state)}
-                </span>
-                <h2 className="mt-3 text-lg font-semibold">
-                  <Link href={`/applications/${application.id}`}>
-                    {application.job.title}
-                  </Link>
-                </h2>
-                <p className="m-0 text-sm">{application.job.company}</p>
-                {application.submissionDestination?.startsWith("https://") ? (
-                  <a
-                    className="text-sm font-semibold text-brand"
-                    href={application.submissionDestination}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    Open employer posting ↗
-                  </a>
-                ) : null}
-                <p className="mb-0 text-sm font-semibold text-brand">
-                  {applicationNextAction(application.state)} →
-                </p>
-              </div>
-              <div className="text-left text-sm text-foreground-muted sm:text-right">
-                <p className="m-0 font-semibold text-foreground">
-                  {application.submissionMechanism
-                    .replaceAll("_", " ")
-                    .toLowerCase()}
-                </p>
-                <p className="m-0">
-                  {application.submittedAt ? "Submitted" : "Updated"}{" "}
-                  {(
-                    application.submittedAt ?? application.updatedAt
-                  ).toLocaleString()}
-                </p>
-                <p className="m-0">
-                  {application._count.events} history event
-                  {application._count.events === 1 ? "" : "s"}
-                </p>
-              </div>
-              <Link
-                className="text-sm font-semibold text-brand sm:col-span-2"
-                href={`/applications/${application.id}`}
+          {applications.map((application) => {
+            const packetValue = object(
+              application.submissionPayloadSnapshot,
+            )?.packet;
+            const packet = isApplicationPacket(packetValue)
+              ? packetValue
+              : null;
+            const packetRefreshRequired =
+              application.state === "READY" &&
+              packet?.completeness.readyForSubmissionHandoff !== true;
+            return (
+              <article
+                className="card grid gap-3 p-5 transition hover:border-brand sm:grid-cols-[1fr_auto]"
+                key={application.id}
               >
-                Open application record →
-              </Link>
-            </article>
-          ))}
+                <div>
+                  <span className="badge">
+                    {packetRefreshRequired
+                      ? "Packet refresh required"
+                      : applicationStateLabel(application.state)}
+                  </span>
+                  <h2 className="mt-3 text-lg font-semibold">
+                    <Link href={`/applications/${application.id}`}>
+                      {application.job.title}
+                    </Link>
+                  </h2>
+                  <p className="m-0 text-sm">{application.job.company}</p>
+                  {application.submissionDestination?.startsWith("https://") ? (
+                    <a
+                      className="text-sm font-semibold text-brand"
+                      href={application.submissionDestination}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      Open employer posting ↗
+                    </a>
+                  ) : null}
+                  <p className="mb-0 text-sm font-semibold text-brand">
+                    {packetRefreshRequired
+                      ? "Refresh application packet"
+                      : applicationNextAction(application.state)}{" "}
+                    →
+                  </p>
+                </div>
+                <div className="text-left text-sm text-foreground-muted sm:text-right">
+                  <p className="m-0 font-semibold text-foreground">
+                    {application.submissionMechanism
+                      .replaceAll("_", " ")
+                      .toLowerCase()}
+                  </p>
+                  <p className="m-0">
+                    {application.submittedAt ? "Submitted" : "Updated"}{" "}
+                    {(
+                      application.submittedAt ?? application.updatedAt
+                    ).toLocaleString()}
+                  </p>
+                  <p className="m-0">
+                    {application._count.events} history event
+                    {application._count.events === 1 ? "" : "s"}
+                  </p>
+                </div>
+                <Link
+                  className="text-sm font-semibold text-brand sm:col-span-2"
+                  href={`/applications/${application.id}`}
+                >
+                  Open application record →
+                </Link>
+              </article>
+            );
+          })}
         </div>
       )}
     </div>

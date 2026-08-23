@@ -9,6 +9,7 @@ import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { documentStorage } from "@/integrations/storage/document-storage";
 import { databaseClient } from "@/lib/db/client";
 import { assertMutationRequestIsSameOrigin } from "@/lib/security/request-security";
+import { invalidateReadyApplicationPackets } from "@/integrations/applications/invalidate-application-packets";
 
 export async function DELETE(
   request: Request,
@@ -34,6 +35,7 @@ export async function DELETE(
     }
     await documentStorage().delete(ownedDocument.storageKey);
     await db.candidateDocument.delete({ where: { id: ownedDocument.id } });
+    await invalidateReadyApplicationPackets(db, actor.id);
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     if (error instanceof AuthorizationError) {

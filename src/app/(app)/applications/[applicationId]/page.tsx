@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { ApplicationPreparationSummary } from "@/components/applications/application-preparation-summary";
+import { ApplicationPacketSummary } from "@/components/applications/application-packet-summary";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   applicationTransitionsFrom,
@@ -12,12 +13,17 @@ import {
   applicationEventLabel,
   applicationStateLabel,
 } from "@/features/applications/application-presentation";
+import {
+  applicationPacketCanBeReviewed,
+  isApplicationPacket,
+} from "@/core/domain/applications/application-packet";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 import {
   confirmExternalApplicationAction,
   markApplicationReadyAction,
+  refreshApplicationPacketAction,
   updateApplicationStateAction,
 } from "./actions";
 
@@ -32,6 +38,12 @@ const USER_OUTCOME_STATES = new Set<ApplicationState>([
 
 function Unknown({ children }: { children: React.ReactNode }) {
   return <span className="text-foreground-muted">{children || "Unknown"}</span>;
+}
+
+function object(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 export default async function ApplicationDetailPage({
@@ -70,18 +82,33 @@ export default async function ApplicationDetailPage({
     },
   });
   if (!application) notFound();
+  const packetValue = object(application.submissionPayloadSnapshot)?.packet;
+  const packet = isApplicationPacket(packetValue) ? packetValue : null;
   const nextStates = applicationTransitionsFrom(application.state).filter(
     (state) => USER_OUTCOME_STATES.has(state),
   );
   const canConfirmExternal =
     application.state === "READY" &&
+    packet?.completeness.readyForSubmissionHandoff === true &&
     ["EXTERNAL_APPLICATION", "MANUAL_EXTERNAL"].includes(
       application.submissionMechanism,
     );
   const pendingReview = application.job.reviewQueueItems[0] ?? null;
   const canMarkReady =
     !pendingReview &&
-    (application.state === "PREPARING" || application.state === "NEEDS_REVIEW");
+    (application.state === "PREPARING" ||
+      application.state === "NEEDS_REVIEW") &&
+    Boolean(packet && applicationPacketCanBeReviewed(packet));
+  const canRefreshPacket =
+    !application.submittedAt &&
+    ["PREPARING", "NEEDS_REVIEW", "READY", "FAILED"].includes(
+      application.state,
+    );
+  const displayedState =
+    application.state === "READY" &&
+    packet?.completeness.readyForSubmissionHandoff !== true
+      ? "Packet refresh required"
+      : applicationStateLabel(application.state);
 
   return (
     <div className="grid gap-7">
@@ -90,7 +117,7 @@ export default async function ApplicationDetailPage({
       </Link>
       <PageHeader
         title={application.job.title}
-        description={`${application.job.company} · ${applicationStateLabel(application.state)}`}
+        description={`${application.job.company} · ${displayedState}`}
       />
 
       <section className="card grid gap-4 p-5 md:grid-cols-2">
@@ -99,9 +126,7 @@ export default async function ApplicationDetailPage({
           <dl className="grid gap-2 text-sm">
             <div>
               <dt className="font-semibold">State</dt>
-              <dd className="m-0">
-                {applicationStateLabel(application.state)}
-              </dd>
+              <dd className="m-0">{displayedState}</dd>
             </div>
             <div>
               <dt className="font-semibold">Mechanism</dt>
@@ -170,6 +195,23 @@ export default async function ApplicationDetailPage({
         <p className="m-0 text-sm">{APPLICATION_OUTCOME_POLICY_COPY}</p>
       </section>
 
+      {canRefreshPacket && (
+        <section className="card grid gap-3 p-5">
+          <h2 className="text-base font-semibold">Packet source refresh</h2>
+          <p className="m-0 text-sm">
+            Rebuild this pre-submission packet from the current Career Profile,
+            accepted résumé facts, answer memory, and approved document
+            candidates. A refreshed packet must be reviewed again.
+          </p>
+          <form action={refreshApplicationPacketAction}>
+            <input name="applicationId" type="hidden" value={application.id} />
+            <button className="button button-secondary" type="submit">
+              Refresh application packet
+            </button>
+          </form>
+        </section>
+      )}
+
       {pendingReview && (
         <section className="card grid gap-3 border-brand p-5">
           <h2 className="text-base font-semibold">Review required</h2>
@@ -198,6 +240,21 @@ export default async function ApplicationDetailPage({
           </form>
         </section>
       )}
+
+      {!pendingReview &&
+        !canMarkReady &&
+        (application.state === "PREPARING" ||
+          application.state === "NEEDS_REVIEW") && (
+          <section className="card grid gap-2 border-brand p-5">
+            <h2 className="text-base font-semibold">
+              Packet is not ready for approval
+            </h2>
+            <p className="m-0 text-sm">
+              Resolve the required fields listed in the packet, then refresh it.
+              RoleProwl will not label an incomplete packet ready.
+            </p>
+          </section>
+        )}
 
       {canConfirmExternal && (
         <section className="card grid gap-3 border-brand p-5">
@@ -237,6 +294,11 @@ export default async function ApplicationDetailPage({
           </div>
         </section>
       )}
+
+      <ApplicationPacketSummary
+        applicationId={application.id}
+        packet={packetValue}
+      />
 
       <ApplicationPreparationSummary
         answers={application.answersSnapshot}

@@ -2,6 +2,7 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import type { AnswerMemoryRepository } from "@/features/applications/answer-memory-service";
 import { databaseClient } from "@/lib/db/client";
+import { invalidateReadyApplicationPackets } from "./invalidate-application-packets";
 
 export class PrismaAnswerMemoryRepository implements AnswerMemoryRepository {
   async upsert(input: Parameters<AnswerMemoryRepository["upsert"]>[0]) {
@@ -46,6 +47,7 @@ export class PrismaAnswerMemoryRepository implements AnswerMemoryRepository {
           },
         },
       });
+      await invalidateReadyApplicationPackets(transaction, input.userId);
       return memory;
     });
   }

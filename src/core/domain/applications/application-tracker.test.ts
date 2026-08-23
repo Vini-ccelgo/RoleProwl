@@ -14,6 +14,7 @@ describe("application tracker", () => {
 
   it.each([
     ["READY", "SUBMITTED"],
+    ["READY", "NEEDS_REVIEW"],
     ["SUBMITTED", "INTERVIEW"],
     ["INTERVIEW", "OFFER"],
     ["FAILED", "PREPARING"],

@@ -116,6 +116,12 @@ RP-023 makes application adapters a discriminated union. Only an `AUTHORIZED_API
 
 Every attempt first persists an immutable payload snapshot containing the exact résumé reference, private document references, generated text, and answers. External/manual paths stop at `READY` with a validated HTTPS employer/ATS destination. They reach `SUBMITTED` only through explicit candidate confirmation. Authorized adapters must return and verify a receipt. Application and event records retain the mechanism and state change so RP-024 can answer what was prepared and sent.
 
+## Application packet integrity
+
+RP-033C projects existing account identity, structured Career Profile data, accepted résumé facts, work authorization, answer memory, job-specific résumé/writing artifacts, and public ATS questions into `application-packet-v1` inside the existing Application submission snapshot. Each identity, document, and answer field retains a resolved, unresolved, conflicting, not-required, or unsupported status plus bounded provenance. Explicit application-contact data outranks accepted résumé facts and account fallback; equal-precedence conflicts remain review work. Job-location preferences are never reused as residential location.
+
+`READY` now requires a freshly rebuilt, candidate-reviewed packet with a selected résumé and no unresolved/conflicting supported required fields. Public Greenhouse question inspection enriches that gate, but unavailable employer widgets and CAPTCHA remain explicit human handoffs. A provider-neutral transfer plan records mapped fields separately from transfer status; mapping, opening a page, or an attempted fill never implies verified transfer or submission. Pre-submission packets can be rebuilt from current candidate sources and return to review when those sources change. A submitted packet is historical and cannot be rebuilt from later profile edits. Owner-scoped no-store document retrieval lets the candidate use the selected résumé without exposing private object keys or storage credentials.
+
 ## Application tracker
 
 RP-024 exposes owner-scoped `/applications` and `/applications/[applicationId]` views over the durable application record. The detail route shows job identity, fit/policy snapshots, exact generated text and answers, document metadata, exact résumé version, submission mechanism/receipt, timestamps, and ordered history. Private storage keys and credential-shaped fields are excluded from rendering even when retained server-side.

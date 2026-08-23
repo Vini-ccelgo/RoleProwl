@@ -1,0 +1,64 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { findFirst, get, requireAuthenticatedActor } = vi.hoisted(() => ({
+  findFirst: vi.fn(),
+  get: vi.fn(),
+  requireAuthenticatedActor: vi.fn(async () => ({ id: "user-1" })),
+}));
+
+vi.mock("server-only", () => ({}));
+vi.mock("@/features/accounts/require-authenticated-actor", () => ({
+  requireAuthenticatedActor,
+}));
+vi.mock("@/integrations/auth/clerk-auth-provider", () => ({
+  currentAuthProvider: vi.fn(() => ({})),
+}));
+vi.mock("@/lib/db/client", () => ({
+  databaseClient: vi.fn(() => ({ application: { findFirst } })),
+}));
+vi.mock("@/integrations/storage/document-storage", () => ({
+  documentStorage: vi.fn(() => ({ get })),
+}));
+
+import { GET } from "./route";
+
+describe("application résumé download", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("retrieves only an owner-scoped snapshot key without exposing it", async () => {
+    findFirst.mockResolvedValue({
+      documentsSnapshot: [
+        {
+          kind: "RESUME",
+          fileName: "Avery résumé.pdf",
+          contentType: "application/pdf",
+          storageKey: "candidate-documents/private-key",
+        },
+      ],
+    });
+    get.mockResolvedValue(new Uint8Array([37, 80, 68, 70]));
+    const response = await GET(new Request("https://roleprowl.test"), {
+      params: Promise.resolve({ applicationId: "application-1" }),
+    });
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "application-1", userId: "user-1" },
+      }),
+    );
+    expect(get).toHaveBeenCalledWith("candidate-documents/private-key");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("content-disposition")).not.toContain(
+      "private-key",
+    );
+  });
+
+  it("conceals a missing or foreign application", async () => {
+    findFirst.mockResolvedValue(null);
+    const response = await GET(new Request("https://roleprowl.test"), {
+      params: Promise.resolve({ applicationId: "foreign" }),
+    });
+    expect(response.status).toBe(404);
+    expect(get).not.toHaveBeenCalled();
+  });
+});

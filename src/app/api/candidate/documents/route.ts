@@ -26,6 +26,7 @@ import { documentStorage } from "@/integrations/storage/document-storage";
 import { storageFailureLogContext } from "@/integrations/storage/storage-diagnostics";
 import { PrismaRateLimiter } from "@/integrations/security/prisma-rate-limiter";
 import { databaseClient } from "@/lib/db/client";
+import { invalidateReadyApplicationPackets } from "@/integrations/applications/invalidate-application-packets";
 import { prismaFailureLogContext } from "@/lib/db/prisma-diagnostics";
 import { logger } from "@/lib/logging/logger";
 import {
@@ -272,6 +273,7 @@ export async function POST(request: Request) {
     );
     pipelineState.persistenceSubstage = null;
     ingestionComplete = true;
+    await invalidateReadyApplicationPackets(db, actor.id);
     return NextResponse.json(
       {
         documentId: document.id,

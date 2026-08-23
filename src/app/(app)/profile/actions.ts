@@ -23,6 +23,7 @@ import {
 } from "@/features/candidate/ownership";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
+import { invalidateReadyApplicationPackets } from "@/integrations/applications/invalidate-application-packets";
 
 function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "");
@@ -52,8 +53,14 @@ function formError(error: unknown): CandidateFormState {
   };
 }
 
-function success(message: string): CandidateFormState {
+async function success(
+  message: string,
+  userId: string,
+): Promise<CandidateFormState> {
+  await invalidateReadyApplicationPackets(databaseClient(), userId);
   revalidatePath("/profile");
+  revalidatePath("/applications");
+  revalidatePath("/dashboard");
   return { status: "success", message };
 }
 
@@ -66,10 +73,12 @@ export async function saveCandidateProfile(
     const data = candidateProfileSchema.parse({
       firstName: value(formData, "firstName"),
       lastName: value(formData, "lastName"),
+      applicationEmail: value(formData, "applicationEmail"),
       professionalTitle: value(formData, "professionalTitle"),
       summary: value(formData, "summary"),
       phone: value(formData, "phone"),
       location: value(formData, "location"),
+      countryCode: value(formData, "countryCode"),
       websiteUrl: value(formData, "websiteUrl"),
       linkedInUrl: value(formData, "linkedInUrl"),
     });
@@ -82,7 +91,7 @@ export async function saveCandidateProfile(
         source: "USER_ENTERED",
       },
     });
-    return success("Professional details saved.");
+    return success("Professional details saved.", actor.id);
   } catch (error) {
     return formError(error);
   }
@@ -128,7 +137,7 @@ export async function saveWorkExperience(
         },
       });
     }
-    return success(id ? "Experience updated." : "Experience added.");
+    return success(id ? "Experience updated." : "Experience added.", actor.id);
   } catch (error) {
     return formError(error);
   }
@@ -165,7 +174,7 @@ export async function saveEducation(
       await databaseClient().education.create({
         data: { userId: actor.id, ...data },
       });
-    return success(id ? "Education updated." : "Education added.");
+    return success(id ? "Education updated." : "Education added.", actor.id);
   } catch (error) {
     return formError(error);
   }
@@ -205,7 +214,7 @@ export async function saveSkill(
       await databaseClient().skill.create({
         data: { userId: actor.id, ...skillData },
       });
-    return success(id ? "Skill updated." : "Skill added.");
+    return success(id ? "Skill updated." : "Skill added.", actor.id);
   } catch (error) {
     return formError(error);
   }
@@ -249,7 +258,7 @@ export async function saveSkillEvidence(
         source: "USER_ENTERED",
       },
     });
-    return success("Skill evidence linked.");
+    return success("Skill evidence linked.", actor.id);
   } catch (error) {
     return formError(error);
   }
@@ -287,7 +296,7 @@ export async function saveProject(
       await databaseClient().project.create({
         data: { userId: actor.id, ...data },
       });
-    return success(id ? "Project updated." : "Project added.");
+    return success(id ? "Project updated." : "Project added.", actor.id);
   } catch (error) {
     return formError(error);
   }
@@ -323,7 +332,7 @@ export async function saveCredential(
       await databaseClient().credential.create({
         data: { userId: actor.id, ...data },
       });
-    return success(id ? "Credential updated." : "Credential added.");
+    return success(id ? "Credential updated." : "Credential added.", actor.id);
   } catch (error) {
     return formError(error);
   }
@@ -355,7 +364,7 @@ export async function saveCandidatePreferences(
       create: { userId: actor.id, ...data },
       update: data,
     });
-    return success("Search preferences saved.");
+    return success("Search preferences saved.", actor.id);
   } catch (error) {
     return formError(error);
   }
@@ -384,7 +393,7 @@ export async function saveWorkAuthorization(
         source: "USER_ENTERED",
       },
     });
-    return success("Work authorization saved.");
+    return success("Work authorization saved.", actor.id);
   } catch (error) {
     return formError(error);
   }
@@ -417,7 +426,10 @@ export async function deleteCandidateEntity(
               ? await database.project.deleteMany({ where })
               : await database.credential.deleteMany({ where });
   requireOwnedMutation(result.count);
+  await invalidateReadyApplicationPackets(database, actor.id);
   revalidatePath("/profile");
+  revalidatePath("/applications");
+  revalidatePath("/dashboard");
 }
 
 export async function editCandidateFact(
@@ -456,6 +468,7 @@ export async function editCandidateFact(
     });
     return success(
       "Verified résumé fact corrected. Its source remains preserved.",
+      actor.id,
     );
   } catch (error) {
     return formError(error);
@@ -464,7 +477,8 @@ export async function editCandidateFact(
 
 export async function removeCandidateFact(id: string): Promise<void> {
   const actor = await requireAuthenticatedActor(currentAuthProvider());
-  await databaseClient().$transaction(async (transaction) => {
+  const database = databaseClient();
+  await database.$transaction(async (transaction) => {
     const current = await transaction.candidateFact.findFirst({
       where: { id, userId: actor.id, status: "ACTIVE" },
       select: { factType: true },
@@ -485,5 +499,8 @@ export async function removeCandidateFact(id: string): Promise<void> {
       },
     });
   });
+  await invalidateReadyApplicationPackets(database, actor.id);
   revalidatePath("/profile");
+  revalidatePath("/applications");
+  revalidatePath("/dashboard");
 }

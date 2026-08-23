@@ -10,11 +10,15 @@ import {
   requireLegitimateDestination,
   type ApplicationSubmissionRecord,
 } from "@/core/domain/applications/submission";
+import { isApplicationPacket } from "@/core/domain/applications/application-packet";
+import { ConflictError } from "@/core/errors/application-errors";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { confirmExternalSubmission } from "@/features/applications/prepare-and-submit-application";
 import { updateApplicationState } from "@/features/applications/update-application-state";
+import { refreshApplicationPacket } from "@/features/applications/refresh-application-packet";
 import { PrismaApplicationSubmissionRepository } from "@/integrations/applications/prisma-application-submission-repository";
 import { PrismaApplicationTrackerRepository } from "@/integrations/applications/prisma-application-tracker-repository";
+import { PrismaApplicationPacketRepository } from "@/integrations/applications/prisma-application-packet-repository";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { PrismaProductAnalyticsProvider } from "@/integrations/analytics/prisma-product-analytics-provider";
 import { databaseClient } from "@/lib/db/client";
@@ -83,17 +87,30 @@ export async function markApplicationReadyAction(formData: FormData) {
   )
     return;
   requireLegitimateDestination(application.submissionDestination);
-  await updateApplicationState({
+  await refreshApplicationPacket({
     applicationId,
+    reviewed: true,
     userId: actor.id,
-    next: "READY",
-    detail: { confirmation: "CANDIDATE_REVIEWED" },
-    repository: new PrismaApplicationTrackerRepository(),
+    repository: new PrismaApplicationPacketRepository(),
   });
   revalidatePath("/applications");
   revalidatePath(`/applications/${applicationId}`);
   revalidatePath("/dashboard");
   revalidatePath("/queue");
+}
+
+export async function refreshApplicationPacketAction(formData: FormData) {
+  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const applicationId = String(formData.get("applicationId") ?? "");
+  if (!applicationId) return;
+  await refreshApplicationPacket({
+    applicationId,
+    repository: new PrismaApplicationPacketRepository(),
+    userId: actor.id,
+  });
+  revalidatePath("/applications");
+  revalidatePath(`/applications/${applicationId}`);
+  revalidatePath("/dashboard");
 }
 
 export async function confirmExternalApplicationAction(formData: FormData) {
@@ -112,6 +129,19 @@ export async function confirmExternalApplicationAction(formData: FormData) {
     },
   });
   if (!application || application.state !== "READY") return;
+  const payload =
+    application.submissionPayloadSnapshot &&
+    typeof application.submissionPayloadSnapshot === "object" &&
+    !Array.isArray(application.submissionPayloadSnapshot)
+      ? application.submissionPayloadSnapshot
+      : null;
+  if (
+    !isApplicationPacket(payload?.packet) ||
+    !payload.packet.completeness.readyForSubmissionHandoff
+  )
+    throw new ConflictError(
+      "Refresh and review the application packet before confirming submission.",
+    );
   const record: ApplicationSubmissionRecord = {
     applicationId: application.id,
     userId: application.userId,
