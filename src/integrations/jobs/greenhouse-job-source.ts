@@ -7,6 +7,7 @@ import type {
   RawSourceJob,
 } from "@/core/contracts/job-source-adapter";
 import { canonicalJobSchema } from "@/core/domain/jobs/job";
+import { readableJobDescription } from "@/core/domain/jobs/job-description";
 import { SourceAdapterError } from "@/core/errors/source-adapter-error";
 import { sourceCapabilities } from "@/core/integrations/capability-registry";
 
@@ -40,24 +41,6 @@ export type JobSourceFetch = (
   input: string,
   init?: RequestInit,
 ) => Promise<Response>;
-
-function plainText(html: string | undefined): string | null {
-  if (!html) return null;
-  const text = html
-    .replace(/<br\s*\/?\s*>/giu, "\n")
-    .replace(/<\/p\s*>/giu, "\n")
-    .replace(/<[^>]*>/gu, " ")
-    .replace(/&nbsp;/giu, " ")
-    .replace(/&amp;/giu, "&")
-    .replace(/&lt;/giu, "<")
-    .replace(/&gt;/giu, ">")
-    .replace(/&quot;/giu, '"')
-    .replace(/&#39;/giu, "'")
-    .replace(/[ \t]+/gu, " ")
-    .replace(/\n\s+/gu, "\n")
-    .trim();
-  return text || null;
-}
 
 function toRawJob(job: GreenhouseJob): RawSourceJob {
   return {
@@ -137,7 +120,7 @@ export class GreenhouseJobSource implements JobSourceAdapter {
     const location = query.location?.trim().toLocaleLowerCase("en-US");
     const jobs = payload.jobs.filter((job) => {
       const searchable =
-        `${job.title} ${plainText(job.content) ?? ""}`.toLocaleLowerCase(
+        `${job.title} ${readableJobDescription(job.content) ?? ""}`.toLocaleLowerCase(
           "en-US",
         );
       const locationName = job.location?.name?.toLocaleLowerCase("en-US") ?? "";
@@ -177,7 +160,7 @@ export class GreenhouseJobSource implements JobSourceAdapter {
       canonical: canonicalJobSchema.parse({
         company: this.configuration.company,
         title: payload.title,
-        description: plainText(payload.content),
+        description: readableJobDescription(payload.content),
         canonicalApplicationUrl: job.applicationUrl,
         locations: location ? [location] : null,
         remoteType: null,

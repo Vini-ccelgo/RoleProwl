@@ -2,6 +2,7 @@ import "server-only";
 import {
   buildApplicationPacket,
   isApplicationPacket,
+  parseApplicationPacketOverrides,
   type ApplicationPacketSource,
 } from "@/core/domain/applications/application-packet";
 import type { ApplicationPacketRepository } from "@/features/applications/refresh-application-packet";
@@ -86,6 +87,9 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
     });
     if (!application) throw new NotFoundError("Application not found.");
     const existingPayload = object(application.submissionPayloadSnapshot);
+    const applicationOverrides = parseApplicationPacketOverrides(
+      existingPayload.overrides,
+    );
     if (application.submittedAt) {
       const packet = existingPayload.packet;
       if (!isApplicationPacket(packet))
@@ -224,6 +228,7 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
           }
         : null,
       verifiedResumeFacts: facts,
+      applicationOverrides,
       experience: experiences.map(experienceLabel),
       education: education.map((item) =>
         [item.credential, item.program, item.institution]

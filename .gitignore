@@ -18,3 +18,4 @@ personal/*
 !personal/README.md
 !personal/*.example.*
 .vercel
+browser-helper/dist/

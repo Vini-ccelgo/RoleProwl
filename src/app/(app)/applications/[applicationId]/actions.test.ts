@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApplicationPacket } from "@/core/domain/applications/application-packet";
 
-const { confirmExternalSubmission, findFirst, refreshApplicationPacket } =
-  vi.hoisted(() => ({
-    confirmExternalSubmission: vi.fn(async () => undefined),
-    findFirst: vi.fn(),
-    refreshApplicationPacket: vi.fn(async () => undefined),
-  }));
+const {
+  confirmExternalSubmission,
+  findFirst,
+  refreshApplicationPacket,
+  saveApplicationOverrides,
+} = vi.hoisted(() => ({
+  confirmExternalSubmission: vi.fn(async () => undefined),
+  findFirst: vi.fn(),
+  refreshApplicationPacket: vi.fn(async () => undefined),
+  saveApplicationOverrides: vi.fn(async () => undefined),
+}));
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -22,12 +27,19 @@ vi.mock("@/lib/db/client", () => ({
 vi.mock("@/features/applications/refresh-application-packet", () => ({
   refreshApplicationPacket,
 }));
+vi.mock("@/features/applications/save-application-overrides", () => ({
+  saveApplicationOverrides,
+}));
 vi.mock("@/features/applications/prepare-and-submit-application", () => ({
   confirmExternalSubmission,
 }));
 vi.mock(
   "@/integrations/applications/prisma-application-packet-repository",
   () => ({ PrismaApplicationPacketRepository: class {} }),
+);
+vi.mock(
+  "@/integrations/applications/prisma-application-override-repository",
+  () => ({ PrismaApplicationOverrideRepository: class {} }),
 );
 vi.mock(
   "@/integrations/applications/prisma-application-submission-repository",
@@ -44,6 +56,7 @@ vi.mock("@/integrations/analytics/prisma-product-analytics-provider", () => ({
 import {
   confirmExternalApplicationAction,
   markApplicationReadyAction,
+  saveApplicationOverridesAction,
 } from "./actions";
 
 function form() {
@@ -137,6 +150,22 @@ describe("application packet actions", () => {
     await confirmExternalApplicationAction(value);
     expect(confirmExternalSubmission).toHaveBeenCalledWith(
       expect.objectContaining({ confirmed: true, userId: "user-1" }),
+    );
+  });
+
+  it("saves only typed application-specific fields for the owner", async () => {
+    const value = form();
+    value.set("identity:phone", "+55 51 5555 0100");
+    value.set("answer:question-42", "Yes");
+    value.set("identity:unsupported", "ignored");
+    await saveApplicationOverridesAction(value);
+    expect(saveApplicationOverrides).toHaveBeenCalledWith(
+      expect.objectContaining({
+        applicationId: "application-1",
+        userId: "user-1",
+        identity: [{ key: "phone", value: "+55 51 5555 0100" }],
+        answers: [{ key: "question-42", value: "Yes" }],
+      }),
     );
   });
 });

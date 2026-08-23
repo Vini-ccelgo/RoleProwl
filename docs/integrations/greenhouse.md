@@ -52,3 +52,24 @@ Fetch the configured board and refresh individual published job identifiers. Mis
 ## Submission status and fallback
 
 Submission is unsupported without an employer-controlled Job Board API key. The fallback is the public Greenhouse hosted job/application page, a candidate-reviewed RoleProwl Application Packet with copy/download assistance, human completion of unsupported or verification controls, and explicit candidate submission confirmation.
+
+## Chromium assisted transfer
+
+RP-033C1 adds a developer-mode Manifest V3 helper under `browser-helper/` for
+the two official Greenhouse job-board domains. The candidate explicitly
+prepares a five-minute packet on an authenticated Application page, opens the
+extension action, and grants one-time `activeTab` access to capture only that
+prepared payload. No persistent RoleProwl host permission or public packet URL
+is required.
+
+The helper fills only uniquely matched supported controls, reads values back
+when safe, and distinguishes `VERIFIED`, `TRANSFERRED`, `UNSUPPORTED`,
+`HUMAN_REQUIRED`, and `FAILED`. It consumes the packet from Chromium session
+storage after one authorized attempt. Résumé file inputs, CAPTCHA, employer
+authentication, unsupported widgets, final review, and final Submit remain
+candidate actions. Assisted transfer never changes an Application to
+`SUBMITTED`; explicit candidate confirmation remains the durable boundary.
+
+Build with `pnpm browser-helper:build`, then load `browser-helper/dist` through
+Chromium's developer-mode **Load unpacked** control. No public extension-store
+publication is required for alpha qualification.

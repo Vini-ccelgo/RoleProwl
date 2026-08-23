@@ -16,6 +16,7 @@ export type ApplicationTransferStatus =
   | "FAILED";
 
 export type ApplicationPacketProvenanceSource =
+  | "APPLICATION_OVERRIDE"
   | "CANDIDATE_PROFILE"
   | "VERIFIED_RESUME_FACT"
   | "ACCOUNT_IDENTITY"
@@ -53,6 +54,67 @@ export interface ApplicationPacketDocument {
 export interface ApplicationPacketAnswer extends ApplicationPacketField {
   readonly questionId: string;
   readonly classification: string;
+  readonly fieldNames: readonly string[];
+  readonly fieldTypes: readonly string[];
+  readonly options: readonly string[];
+}
+
+export const APPLICATION_IDENTITY_KEYS = [
+  "firstName",
+  "lastName",
+  "email",
+  "phone",
+  "location",
+  "country",
+] as const;
+export type ApplicationIdentityKey = (typeof APPLICATION_IDENTITY_KEYS)[number];
+
+export function isApplicationIdentityKey(
+  value: string,
+): value is ApplicationIdentityKey {
+  return (APPLICATION_IDENTITY_KEYS as readonly string[]).includes(value);
+}
+
+export interface ApplicationPacketOverrides {
+  readonly identity: Readonly<Partial<Record<ApplicationIdentityKey, string>>>;
+  readonly answers: Readonly<Record<string, string>>;
+}
+
+export function parseApplicationPacketOverrides(
+  value: unknown,
+): ApplicationPacketOverrides {
+  const root =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const identityValue =
+    root.identity &&
+    typeof root.identity === "object" &&
+    !Array.isArray(root.identity)
+      ? (root.identity as Record<string, unknown>)
+      : {};
+  const answerValue =
+    root.answers &&
+    typeof root.answers === "object" &&
+    !Array.isArray(root.answers)
+      ? (root.answers as Record<string, unknown>)
+      : {};
+  const identity = Object.fromEntries(
+    APPLICATION_IDENTITY_KEYS.flatMap((key) => {
+      const candidate = identityValue[key];
+      return typeof candidate === "string" && candidate.trim()
+        ? [[key, candidate.trim().slice(0, 4_000)]]
+        : [];
+    }),
+  ) as Partial<Record<ApplicationIdentityKey, string>>;
+  const answers = Object.fromEntries(
+    Object.entries(answerValue).flatMap(([key, candidate]) =>
+      key.length <= 500 && typeof candidate === "string" && candidate.trim()
+        ? [[key, candidate.trim().slice(0, 4_000)]]
+        : [],
+    ),
+  );
+  return { identity, answers };
 }
 
 export interface ApplicationFieldTransfer {
@@ -118,6 +180,7 @@ export interface ApplicationPacketSource {
     readonly factType: string;
     readonly text: string;
   }[];
+  readonly applicationOverrides?: ApplicationPacketOverrides;
   readonly experience: readonly string[];
   readonly education: readonly string[];
   readonly credentials: readonly string[];
@@ -181,6 +244,9 @@ function field(
 }
 
 function emailField(source: ApplicationPacketSource) {
+  const applicationSpecific = clean(
+    source.applicationOverrides?.identity.email,
+  );
   const explicit = clean(source.profile?.applicationEmail);
   const resumeEmails = [
     ...new Set(
@@ -190,6 +256,27 @@ function emailField(source: ApplicationPacketSource) {
         .filter((value): value is string => Boolean(value)),
     ),
   ];
+  if (applicationSpecific)
+    return field(
+      "email",
+      "Email",
+      true,
+      applicationSpecific,
+      [
+        {
+          source: "APPLICATION_OVERRIDE",
+          label: "Application-specific candidate answer",
+        },
+      ],
+      [explicit, ...resumeEmails, clean(source.accountEmail)].flatMap(
+        (value) =>
+          value &&
+          value.toLocaleLowerCase("en-US") !==
+            applicationSpecific.toLocaleLowerCase("en-US")
+            ? [value]
+            : [],
+      ),
+    );
   if (explicit)
     return field(
       "email",
@@ -274,6 +361,33 @@ function packetFieldForQuestion(
   reviewed: boolean,
 ): ApplicationPacketAnswer {
   const searchable = `${question.label} ${question.fieldNames.join(" ")}`;
+  const applicationSpecific = clean(
+    source.applicationOverrides?.answers[question.id],
+  );
+  if (applicationSpecific)
+    return {
+      key: `question:${question.id}`,
+      questionId: question.id,
+      label: question.label,
+      required: question.required,
+      status: "RESOLVED",
+      value: applicationSpecific,
+      provenance: [
+        {
+          source: "APPLICATION_OVERRIDE",
+          label: "Application-specific candidate answer",
+        },
+      ],
+      classification:
+        /\b(?:authorized|authorization|sponsor|sponsorship|visa|certif|attest|signature)\b/iu.test(
+          question.label,
+        )
+          ? "LEGAL_OR_CONSEQUENTIAL"
+          : "APPLICATION_SPECIFIC",
+      fieldNames: question.fieldNames,
+      fieldTypes: question.fieldTypes,
+      options: question.options,
+    };
   const direct = [
     [/\bfirst[ _-]?name\b/iu, "firstName"],
     [/\blast[ _-]?name\b/iu, "lastName"],
@@ -302,6 +416,9 @@ function packetFieldForQuestion(
             : "NOT_REQUIRED",
       questionId: question.id,
       classification: "PROFILE_FACT",
+      fieldNames: question.fieldNames,
+      fieldTypes: question.fieldTypes,
+      options: question.options,
     };
 
   if (/\b(?:resume|résumé|cv)\b/iu.test(searchable)) {
@@ -332,6 +449,9 @@ function packetFieldForQuestion(
           ]
         : [],
       classification: "DOCUMENT",
+      fieldNames: question.fieldNames,
+      fieldTypes: question.fieldTypes,
+      options: question.options,
     };
   }
 
@@ -394,6 +514,43 @@ function packetFieldForQuestion(
       : concept
         ? "USER_POLICY"
         : "UNKNOWN",
+    fieldNames: question.fieldNames,
+    fieldTypes: question.fieldTypes,
+    options: question.options,
+  };
+}
+
+function identityValue(
+  source: ApplicationPacketSource,
+  key: ApplicationIdentityKey,
+  profileValue: string | null | undefined,
+) {
+  const applicationSpecific = clean(source.applicationOverrides?.identity[key]);
+  const profile = clean(profileValue);
+  return {
+    value: applicationSpecific ?? profile,
+    provenance: applicationSpecific
+      ? [
+          {
+            source: "APPLICATION_OVERRIDE" as const,
+            label: "Application-specific candidate answer",
+          },
+        ]
+      : profile
+        ? [
+            {
+              source: "CANDIDATE_PROFILE" as const,
+              label: "Career Profile",
+            },
+          ]
+        : [],
+    alternatives:
+      applicationSpecific &&
+      profile &&
+      applicationSpecific.toLocaleLowerCase("en-US") !==
+        profile.toLocaleLowerCase("en-US")
+        ? [profile]
+        : [],
   };
 }
 
@@ -404,33 +561,46 @@ export function buildApplicationPacket(input: {
 }): ApplicationPacket {
   const now = input.now ?? new Date();
   const source = input.source;
+  const firstNameValue = identityValue(
+    source,
+    "firstName",
+    source.profile?.firstName,
+  );
   const firstName = field(
     "firstName",
     "First name",
     true,
-    clean(source.profile?.firstName),
-    source.profile
-      ? [{ source: "CANDIDATE_PROFILE", label: "Career Profile" }]
-      : [],
+    firstNameValue.value,
+    firstNameValue.provenance,
+    firstNameValue.alternatives,
+  );
+  const lastNameValue = identityValue(
+    source,
+    "lastName",
+    source.profile?.lastName,
   );
   const lastName = field(
     "lastName",
     "Last name",
     true,
-    clean(source.profile?.lastName),
-    source.profile
-      ? [{ source: "CANDIDATE_PROFILE", label: "Career Profile" }]
-      : [],
+    lastNameValue.value,
+    lastNameValue.provenance,
+    lastNameValue.alternatives,
   );
   const email = emailField(source);
+  const phoneValue = identityValue(source, "phone", source.profile?.phone);
   const phone = field(
     "phone",
     "Phone",
     requiredByQuestions(source.questions, [/\b(?:phone|telephone)\b/iu]),
-    clean(source.profile?.phone),
-    clean(source.profile?.phone)
-      ? [{ source: "CANDIDATE_PROFILE", label: "Career Profile" }]
-      : [],
+    phoneValue.value,
+    phoneValue.provenance,
+    phoneValue.alternatives,
+  );
+  const locationValue = identityValue(
+    source,
+    "location",
+    source.profile?.location,
   );
   const location = field(
     "location",
@@ -438,19 +608,22 @@ export function buildApplicationPacket(input: {
     requiredByQuestions(source.questions, [
       /\b(?:current[ _-]?)?(?:city|location|address)\b/iu,
     ]),
-    clean(source.profile?.location),
-    clean(source.profile?.location)
-      ? [{ source: "CANDIDATE_PROFILE", label: "Career Profile" }]
-      : [],
+    locationValue.value,
+    locationValue.provenance,
+    locationValue.alternatives,
+  );
+  const countryValue = identityValue(
+    source,
+    "country",
+    source.profile?.countryCode,
   );
   const country = field(
     "country",
     "Country",
     requiredByQuestions(source.questions, [/\b(?:country|country_code)\b/iu]),
-    clean(source.profile?.countryCode),
-    clean(source.profile?.countryCode)
-      ? [{ source: "CANDIDATE_PROFILE", label: "Career Profile" }]
-      : [],
+    countryValue.value,
+    countryValue.provenance,
+    countryValue.alternatives,
   );
   const identity = [firstName, lastName, email, phone, location, country];
   const selectedResume = source.selectedResume;

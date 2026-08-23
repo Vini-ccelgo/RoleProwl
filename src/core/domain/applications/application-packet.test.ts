@@ -187,4 +187,95 @@ describe("application packet", () => {
       ]),
     ).toBe("FAILED");
   });
+
+  it("uses an application-specific contact value without mutating the profile source", () => {
+    const candidate = source({
+      profile: {
+        firstName: "Avery",
+        lastName: "Quill",
+        applicationEmail: "profile@example.test",
+        phone: null,
+        location: "Porto Alegre",
+        countryCode: "BR",
+        professionalTitle: null,
+      },
+      applicationOverrides: {
+        identity: {
+          email: "job-specific@example.test",
+          phone: "+55 51 5555 0100",
+        },
+        answers: {},
+      },
+      questions: [
+        {
+          id: "standard:phone",
+          source: "GREENHOUSE",
+          group: "STANDARD",
+          label: "Phone",
+          required: true,
+          fieldNames: ["phone"],
+          fieldTypes: ["input_text"],
+          options: [],
+        },
+      ],
+    });
+    const packet = buildApplicationPacket({
+      source: candidate,
+      reviewed: false,
+    });
+    expect(
+      packet.identity.find((field) => field.key === "email"),
+    ).toMatchObject({
+      value: "job-specific@example.test",
+      provenance: [expect.objectContaining({ source: "APPLICATION_OVERRIDE" })],
+      alternatives: ["profile@example.test"],
+    });
+    expect(
+      packet.identity.find((field) => field.key === "phone"),
+    ).toMatchObject({ status: "RESOLVED", value: "+55 51 5555 0100" });
+    expect(candidate.profile?.phone).toBeNull();
+    expect(candidate.profile?.applicationEmail).toBe("profile@example.test");
+  });
+
+  it("allows an explicit application answer to resolve a consequential question", () => {
+    const question = {
+      id: "standard:authorization",
+      source: "GREENHOUSE" as const,
+      group: "STANDARD" as const,
+      label: "Are you legally authorized to work in the United States?",
+      required: true,
+      fieldNames: ["question_42"],
+      fieldTypes: ["input_text"],
+      options: ["Yes", "No"],
+    };
+    const unresolved = buildApplicationPacket({
+      reviewed: false,
+      source: source({
+        questions: [question],
+        verifiedResumeFacts: [
+          { factType: "WORK_EXPERIENCE_TEXT", text: "Worked in New York" },
+        ],
+      }),
+    });
+    expect(unresolved.answers[0]).toMatchObject({
+      classification: "LEGAL_OR_CONSEQUENTIAL",
+      status: "UNRESOLVED",
+    });
+    const confirmed = buildApplicationPacket({
+      reviewed: false,
+      source: source({
+        questions: [question],
+        applicationOverrides: {
+          identity: {},
+          answers: { "standard:authorization": "Yes" },
+        },
+      }),
+    });
+    expect(confirmed.answers[0]).toMatchObject({
+      classification: "LEGAL_OR_CONSEQUENTIAL",
+      status: "RESOLVED",
+      value: "Yes",
+      provenance: [expect.objectContaining({ source: "APPLICATION_OVERRIDE" })],
+    });
+  });
 });

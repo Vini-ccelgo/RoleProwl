@@ -1,6 +1,7 @@
 import {
   isApplicationPacket,
   type ApplicationPacket,
+  type ApplicationPacketAnswer,
   type ApplicationPacketField,
 } from "@/core/domain/applications/application-packet";
 import { CopyApplicationValue } from "./copy-application-value";
@@ -16,7 +17,9 @@ function Field({ field }: { readonly field: ApplicationPacketField }) {
     <li className="border-border grid gap-1 border-b pb-3 last:border-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <strong className="text-sm">{field.label}</strong>
-        <Status value={field.status} />
+        {field.status !== "RESOLVED" && field.status !== "NOT_REQUIRED" ? (
+          <Status value={field.status} />
+        ) : null}
       </div>
       {field.value ? (
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
@@ -42,6 +45,71 @@ function Field({ field }: { readonly field: ApplicationPacketField }) {
         </span>
       ) : null}
     </li>
+  );
+}
+
+function OverrideInput({
+  field,
+}: {
+  readonly field: ApplicationPacketField | ApplicationPacketAnswer;
+}) {
+  const answer = "questionId" in field ? field : null;
+  const name = answer ? `answer:${answer.questionId}` : `identity:${field.key}`;
+  const label = `${field.label}${field.required ? " (required)" : ""}`;
+  if (answer?.options.length)
+    return (
+      <label className="field">
+        <span>{label}</span>
+        <select
+          defaultValue={field.value ?? ""}
+          name={name}
+          required={field.required}
+        >
+          <option value="">Choose an answer</option>
+          {answer.options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  const isLongAnswer = answer && !answer.fieldTypes.includes("input_text");
+  if (isLongAnswer)
+    return (
+      <label className="field sm:col-span-2">
+        <span>{label}</span>
+        <textarea
+          defaultValue={field.value ?? ""}
+          maxLength={4_000}
+          name={name}
+          required={field.required}
+          rows={4}
+        />
+      </label>
+    );
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <input
+        defaultValue={field.value ?? ""}
+        maxLength={field.key === "country" ? 2 : 4_000}
+        name={name}
+        required={field.required}
+        type={
+          field.key === "email"
+            ? "email"
+            : field.key === "phone"
+              ? "tel"
+              : "text"
+        }
+      />
+      {field.status === "CONFLICTING" && field.alternatives?.length ? (
+        <small>
+          Confirm one value. Known alternatives: {field.alternatives.join(", ")}
+        </small>
+      ) : null}
+    </label>
   );
 }
 
@@ -71,9 +139,11 @@ function Values({
 export function ApplicationPacketSummary({
   applicationId,
   packet: value,
+  saveAction,
 }: {
   readonly applicationId: string;
   readonly packet: unknown;
+  readonly saveAction: (formData: FormData) => Promise<void>;
 }) {
   if (!isApplicationPacket(value))
     return (
@@ -88,6 +158,34 @@ export function ApplicationPacketSummary({
   const packet: ApplicationPacket = value;
   const needsReview = [...packet.identity, ...packet.answers].filter(
     (field) => field.status === "UNRESOLVED" || field.status === "CONFLICTING",
+  );
+  const editableBlockers = needsReview.filter(
+    (field) =>
+      !(
+        "classification" in field &&
+        typeof field.classification === "string" &&
+        ["DOCUMENT", "PROFILE_FACT"].includes(field.classification)
+      ),
+  );
+  const applicationSpecific = [...packet.identity, ...packet.answers].filter(
+    (field) =>
+      field.provenance.some((item) => item.source === "APPLICATION_OVERRIDE") &&
+      !(
+        "classification" in field &&
+        typeof field.classification === "string" &&
+        ["DOCUMENT", "PROFILE_FACT"].includes(field.classification)
+      ),
+  );
+  const editableFields = [
+    ...new Map(
+      [...editableBlockers, ...applicationSpecific].map((field) => [
+        field.key,
+        field,
+      ]),
+    ).values(),
+  ];
+  const unresolvedResume = packet.documents.find(
+    (document) => document.kind === "RESUME" && !document.fileName,
   );
   return (
     <section className="grid gap-5" aria-label="Application packet">
@@ -124,6 +222,44 @@ export function ApplicationPacketSummary({
           ))}
         </div>
       </div>
+
+      {(editableFields.length > 0 || unresolvedResume) && (
+        <section className="card grid gap-4 border-brand p-5">
+          <div>
+            <h2 className="text-base font-semibold">
+              {editableBlockers.length > 0
+                ? "Needs your input"
+                : "Application-specific values"}
+            </h2>
+            <p className="m-0 text-sm text-foreground-muted">
+              These answers apply only to this Application. They do not change
+              your global Career Profile.
+            </p>
+          </div>
+          {editableFields.length > 0 ? (
+            <form action={saveAction} className="grid gap-4">
+              <input name="applicationId" type="hidden" value={applicationId} />
+              <div className="grid gap-4 sm:grid-cols-2">
+                {editableFields.map((field) => (
+                  <OverrideInput field={field} key={field.key} />
+                ))}
+              </div>
+              <button className="button button-primary w-fit" type="submit">
+                Save and re-check application
+              </button>
+            </form>
+          ) : null}
+          {unresolvedResume ? (
+            <p className="m-0 text-sm">
+              A résumé is still required. Upload a candidate-owned résumé in{" "}
+              <a className="font-semibold text-brand" href="/profile">
+                Career Profile
+              </a>
+              , then refresh this packet.
+            </p>
+          ) : null}
+        </section>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="card p-5">

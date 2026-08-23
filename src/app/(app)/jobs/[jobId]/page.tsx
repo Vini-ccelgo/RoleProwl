@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { MatchAnalysisSummary } from "@/components/jobs/match-analysis-summary";
 import { PageHeader } from "@/components/ui/page-header";
 import { candidateDispositionLabel } from "@/core/domain/jobs/job-disposition";
+import { readableJobDescription } from "@/core/domain/jobs/job-description";
 import { MATCH_SCORING_VERSION } from "@/core/domain/matching/match-job";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
@@ -46,6 +47,7 @@ export default async function JobDetailPage({
   });
   if (!job) notFound();
   const analysis = job.matchAnalyses[0];
+  const description = readableJobDescription(job.description);
 
   return (
     <div className="grid gap-7">
@@ -120,9 +122,9 @@ export default async function JobDetailPage({
         </dl>
         <div>
           <h3 className="text-sm font-semibold">Description</h3>
-          <p className="text-sm whitespace-pre-wrap">
-            <Unknown value={job.description} />
-          </p>
+          <div className="text-sm whitespace-pre-wrap">
+            <Unknown value={description} />
+          </div>
         </div>
       </section>
       <section className="card grid gap-4 p-5">

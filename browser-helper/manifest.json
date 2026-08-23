@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "RoleProwl Greenhouse Helper",
+  "version": "0.1.0",
+  "description": "Candidate-authorized assisted field transfer for official Greenhouse application forms.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "https://boards.greenhouse.io/*",
+    "https://job-boards.greenhouse.io/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "RoleProwl Helper"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://boards.greenhouse.io/*",
+        "https://job-boards.greenhouse.io/*"
+      ],
+      "js": ["src/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

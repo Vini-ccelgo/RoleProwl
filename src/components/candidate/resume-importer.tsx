@@ -60,14 +60,24 @@ export function ResumeImporter({
 
   async function remove(documentId: string) {
     setBusy(true);
-    const response = await fetch(`/api/candidate/documents/${documentId}`, {
-      method: "DELETE",
-    });
-    setMessage(
-      response.ok ? "Document deleted." : "The document could not be deleted.",
-    );
-    setBusy(false);
-    router.refresh();
+    try {
+      const response = await fetch(`/api/candidate/documents/${documentId}`, {
+        method: "DELETE",
+      });
+      const result = response.ok
+        ? null
+        : ((await response.json()) as { error?: string });
+      setMessage(
+        response.ok
+          ? "Document deleted."
+          : (result?.error ?? "The document could not be deleted."),
+      );
+      if (response.ok) router.refresh();
+    } catch {
+      setMessage("The document could not be deleted. Try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

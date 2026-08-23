@@ -179,6 +179,58 @@ describe("Prisma application packet repository", () => {
     );
   });
 
+  it("applies an Application override and invalidates prior READY review", async () => {
+    mocks.applicationFindFirst.mockResolvedValue({
+      ...application,
+      state: "READY",
+      submissionPayloadSnapshot: {
+        overrides: {
+          identity: { phone: "+55 51 5555 0100" },
+          answers: {},
+        },
+      },
+    });
+    mocks.profileFindUnique.mockResolvedValue({
+      firstName: "Avery",
+      lastName: "Quill",
+      applicationEmail: "apply@example.test",
+      phone: null,
+      location: "Porto Alegre",
+      countryCode: "BR",
+      professionalTitle: "Security Analyst",
+    });
+    const packet = await new PrismaApplicationPacketRepository(
+      vi.fn(async () =>
+        Response.json({
+          questions: [
+            {
+              required: true,
+              label: "Phone",
+              fields: [{ name: "phone", type: "input_text" }],
+            },
+          ],
+        }),
+      ),
+    ).refresh({
+      applicationId: "application-1",
+      userId: "user-1",
+      reviewed: false,
+    });
+    expect(
+      packet.identity.find((field) => field.key === "phone"),
+    ).toMatchObject({
+      status: "RESOLVED",
+      value: "+55 51 5555 0100",
+      provenance: [expect.objectContaining({ source: "APPLICATION_OVERRIDE" })],
+    });
+    expect(packet.reviewedAt).toBeNull();
+    expect(mocks.applicationUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ state: "NEEDS_REVIEW" }),
+      }),
+    );
+  });
+
   it("returns a submitted historical packet without rebuilding it", async () => {
     const packet = buildApplicationPacket({
       reviewed: true,

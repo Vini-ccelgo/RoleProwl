@@ -326,6 +326,14 @@ This log records automated implementation gates for RP-002 through RP-031. It do
 - **Migration:** `20260823010000_add_application_contact_fields` adds nullable application-email and country-code fields to the existing Candidate Profile without altering historical Application snapshots.
 - **Known limitations:** RoleProwl does not yet transfer values directly into an employer form. Mapped values remain `NOT_ATTEMPTED` until a future authorized or verifiable transfer adapter exists.
 
+### RP-033C1 — Application completion and Greenhouse assisted transfer
+
+- **Status:** Implemented locally; hosted authenticated and live Greenhouse acceptance remain operator-required.
+- **Major implementation:** Application-specific identity and employer-answer overrides in existing snapshots; deterministic application-only precedence; immediate packet refresh and review invalidation; actionable blocking-field forms; Greenhouse-only Chromium assisted transfer using explicit `activeTab` capture, five-minute session payloads, exact-job validation, deterministic field matching, read-back verification, and no Submit automation; coherent résumé deletion reference checks and storage/database ordering; and safe readable employer-description normalization.
+- **Browser boundary:** Persistent extension host permission is limited to official Greenhouse job-board domains. The packet is consumed from Chromium session storage after one attempt. Résumé attachment, CAPTCHA, employer authentication, unsupported controls, final review, and final submission remain candidate actions.
+- **Schema:** No RP-033C1 migration. Existing Application snapshot JSON holds application-specific overrides and transfer DTO data is browser-session-only.
+- **Known limitations:** File inputs cannot be populated by ordinary browser script security rules; the candidate downloads and attaches the approved résumé. The helper is developer-mode Chromium alpha software and has not been published to an extension store or exercised against a live employer form by Codex.
+
 ### RP-031A — Gemini free-tier AI provider
 
 - **Status:** Pass

@@ -10,15 +10,20 @@ import {
   requireLegitimateDestination,
   type ApplicationSubmissionRecord,
 } from "@/core/domain/applications/submission";
-import { isApplicationPacket } from "@/core/domain/applications/application-packet";
+import {
+  isApplicationIdentityKey,
+  isApplicationPacket,
+} from "@/core/domain/applications/application-packet";
 import { ConflictError } from "@/core/errors/application-errors";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { confirmExternalSubmission } from "@/features/applications/prepare-and-submit-application";
 import { updateApplicationState } from "@/features/applications/update-application-state";
 import { refreshApplicationPacket } from "@/features/applications/refresh-application-packet";
+import { saveApplicationOverrides } from "@/features/applications/save-application-overrides";
 import { PrismaApplicationSubmissionRepository } from "@/integrations/applications/prisma-application-submission-repository";
 import { PrismaApplicationTrackerRepository } from "@/integrations/applications/prisma-application-tracker-repository";
 import { PrismaApplicationPacketRepository } from "@/integrations/applications/prisma-application-packet-repository";
+import { PrismaApplicationOverrideRepository } from "@/integrations/applications/prisma-application-override-repository";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { PrismaProductAnalyticsProvider } from "@/integrations/analytics/prisma-product-analytics-provider";
 import { databaseClient } from "@/lib/db/client";
@@ -107,6 +112,35 @@ export async function refreshApplicationPacketAction(formData: FormData) {
     applicationId,
     repository: new PrismaApplicationPacketRepository(),
     userId: actor.id,
+  });
+  revalidatePath("/applications");
+  revalidatePath(`/applications/${applicationId}`);
+  revalidatePath("/dashboard");
+}
+
+export async function saveApplicationOverridesAction(formData: FormData) {
+  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const applicationId = String(formData.get("applicationId") ?? "");
+  if (!applicationId) return;
+  const identity = [...formData.entries()].flatMap(([name, candidate]) => {
+    if (!name.startsWith("identity:") || typeof candidate !== "string")
+      return [];
+    const key = name.slice("identity:".length);
+    return isApplicationIdentityKey(key)
+      ? [{ key, value: candidate || null }]
+      : [];
+  });
+  const answers = [...formData.entries()].flatMap(([name, candidate]) =>
+    name.startsWith("answer:") && typeof candidate === "string"
+      ? [{ key: name.slice("answer:".length), value: candidate || null }]
+      : [],
+  );
+  await saveApplicationOverrides({
+    applicationId,
+    userId: actor.id,
+    identity,
+    answers,
+    repository: new PrismaApplicationOverrideRepository(),
   });
   revalidatePath("/applications");
   revalidatePath(`/applications/${applicationId}`);

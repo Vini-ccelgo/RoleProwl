@@ -29,6 +29,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:hosted": "ROLEPROWL_HOSTED_TEST=true playwright test e2e/hosted-smoke.spec.ts",
+    "browser-helper:build": "node browser-helper/scripts/build.mjs",
+    "browser-helper:test": "playwright test --config browser-helper/playwright.config.ts",
     "test:storage:live": "ROLEPROWL_STORAGE_LIVE_TEST=true vitest run src/integrations/storage/s3-object-storage.live.test.ts",
     "alpha:doctor": "JITI_TSCONFIG_PATHS=true jiti scripts/alpha-doctor.ts",
     "security:check": "pnpm audit --prod --audit-level high",

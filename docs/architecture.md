@@ -122,6 +122,27 @@ RP-033C projects existing account identity, structured Career Profile data, acce
 
 `READY` now requires a freshly rebuilt, candidate-reviewed packet with a selected résumé and no unresolved/conflicting supported required fields. Public Greenhouse question inspection enriches that gate, but unavailable employer widgets and CAPTCHA remain explicit human handoffs. A provider-neutral transfer plan records mapped fields separately from transfer status; mapping, opening a page, or an attempted fill never implies verified transfer or submission. Pre-submission packets can be rebuilt from current candidate sources and return to review when those sources change. A submitted packet is historical and cannot be rebuilt from later profile edits. Owner-scoped no-store document retrieval lets the candidate use the selected résumé without exposing private object keys or storage credentials.
 
+Application-specific identity and employer answers are bounded overrides inside
+the existing pre-submission payload snapshot. They outrank global profile data
+for that Application only, do not mutate Career Profile, and invalidate
+candidate review before the packet can return to READY.
+
+Greenhouse assisted transfer is a separate candidate-side boundary. An
+authenticated page produces an explicit short-lived DTO without storage keys;
+the Chromium helper captures it through one-time `activeTab`, validates the
+exact Greenhouse job destination, fills deterministic fields, and retains only
+a bounded session result. The helper has no final-submission capability.
+
+Candidate-document deletion preflights accepted-fact provenance and Application
+snapshot references. Active provenance, pending packet references, and
+submitted historical references block destructive deletion. An unused document
+and its private object are deleted through the server-side storage provider;
+storage credentials never reach the browser.
+
+Employer descriptions are rendered as normalized plain text. Entity decoding
+is bounded, structural blocks become readable line breaks, and all executable
+or remote-loading markup is discarded rather than passed to raw HTML rendering.
+
 ## Application tracker
 
 RP-024 exposes owner-scoped `/applications` and `/applications/[applicationId]` views over the durable application record. The detail route shows job identity, fit/policy snapshots, exact generated text and answers, document metadata, exact résumé version, submission mechanism/receipt, timestamps, and ordered history. Private storage keys and credential-shaped fields are excluded from rendering even when retained server-side.

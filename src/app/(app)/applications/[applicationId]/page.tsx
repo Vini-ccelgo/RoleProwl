@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { ApplicationPreparationSummary } from "@/components/applications/application-preparation-summary";
 import { ApplicationPacketSummary } from "@/components/applications/application-packet-summary";
+import { GreenhouseAssistedApply } from "@/components/applications/greenhouse-assisted-apply";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   applicationTransitionsFrom,
@@ -17,6 +18,7 @@ import {
   applicationPacketCanBeReviewed,
   isApplicationPacket,
 } from "@/core/domain/applications/application-packet";
+import { buildGreenhouseTransferDraft } from "@/core/domain/applications/greenhouse-transfer";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
@@ -24,6 +26,7 @@ import {
   confirmExternalApplicationAction,
   markApplicationReadyAction,
   refreshApplicationPacketAction,
+  saveApplicationOverridesAction,
   updateApplicationStateAction,
 } from "./actions";
 
@@ -44,6 +47,18 @@ function object(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function assistedTransferDraft(
+  packet: Parameters<typeof buildGreenhouseTransferDraft>[0]["packet"] | null,
+  destination: string | null,
+) {
+  if (!packet || !destination) return null;
+  try {
+    return buildGreenhouseTransferDraft({ packet, destination });
+  } catch {
+    return null;
+  }
 }
 
 export default async function ApplicationDetailPage({
@@ -109,6 +124,10 @@ export default async function ApplicationDetailPage({
     packet?.completeness.readyForSubmissionHandoff !== true
       ? "Packet refresh required"
       : applicationStateLabel(application.state);
+  const greenhouseTransfer = assistedTransferDraft(
+    canConfirmExternal ? packet : null,
+    application.submissionDestination,
+  );
 
   return (
     <div className="grid gap-7">
@@ -295,9 +314,17 @@ export default async function ApplicationDetailPage({
         </section>
       )}
 
+      {greenhouseTransfer ? (
+        <GreenhouseAssistedApply
+          draft={greenhouseTransfer}
+          resumeDownloadUrl={`/api/applications/${application.id}/resume`}
+        />
+      ) : null}
+
       <ApplicationPacketSummary
         applicationId={application.id}
         packet={packetValue}
+        saveAction={saveApplicationOverridesAction}
       />
 
       <ApplicationPreparationSummary

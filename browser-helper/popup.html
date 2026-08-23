@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RoleProwl Helper</title>
+    <style>
+      body {
+        font:
+          14px system-ui,
+          sans-serif;
+        margin: 0;
+        padding: 16px;
+        width: 320px;
+        color: #15211e;
+      }
+      h1 {
+        font-size: 17px;
+        margin: 0 0 8px;
+      }
+      p {
+        line-height: 1.45;
+      }
+      button {
+        background: #006b59;
+        border: 0;
+        border-radius: 7px;
+        color: white;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 700;
+        padding: 10px 13px;
+        width: 100%;
+      }
+      #status {
+        background: #eef8f5;
+        border-radius: 7px;
+        margin-top: 12px;
+        padding: 10px;
+        white-space: pre-line;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>RoleProwl Helper</h1>
+    <p>
+      Prepare assisted transfer on the RoleProwl Application page, then capture
+      it here.
+    </p>
+    <button id="capture" type="button">
+      Capture packet and open Greenhouse
+    </button>
+    <p id="status" role="status">
+      No transfer captured in this browser session.
+    </p>
+    <script src="src/popup.js"></script>
+  </body>
+</html>
