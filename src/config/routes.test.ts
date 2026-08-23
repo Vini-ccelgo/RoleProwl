@@ -10,6 +10,10 @@ describe("route configuration", () => {
 
   it("resolves a configured route without guessing unknown paths", () => {
     expect(routeForPath("/applications")?.label).toBe("Applications");
+    expect(routeForPath("/profile")).toMatchObject({
+      href: "/profile",
+      label: "Career Profile",
+    });
     expect(routeForPath("/unknown")).toBeUndefined();
   });
 

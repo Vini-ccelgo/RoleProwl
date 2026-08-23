@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { JobSourceAdapter } from "@/core/contracts/job-source-adapter";
 import type { SourceCapability } from "@/core/types/capabilities";
 import {
+  isGreenhouseConfigurationFailure,
   parseGreenhouseBoards,
   runManualDiscovery,
   searchRunIsActive,
@@ -60,9 +61,20 @@ describe("manual public job discovery", () => {
       ),
     ).toEqual([{ boardToken: "synthetic_board", company: "Synthetic Co" }]);
     expect(parseGreenhouseBoards(undefined)).toEqual([]);
-    expect(() =>
-      parseGreenhouseBoards('[{"boardToken":"bad token","company":"X"}]'),
-    ).toThrow();
+    let malformed: unknown;
+    try {
+      parseGreenhouseBoards('[{"boardToken":"bad token","company":"X"}]');
+    } catch (error) {
+      malformed = error;
+    }
+    expect(malformed).toBeDefined();
+    expect(isGreenhouseConfigurationFailure(malformed)).toBe(true);
+    expect(
+      isGreenhouseConfigurationFailure(new SyntaxError("invalid JSON")),
+    ).toBe(true);
+    expect(
+      isGreenhouseConfigurationFailure(new Error("source unavailable")),
+    ).toBe(false);
   });
 
   it("treats only a recent running state as an active duplicate", () => {
@@ -94,6 +106,36 @@ describe("manual public job discovery", () => {
     });
     expect(createCanonicalWithSource).toHaveBeenCalledOnce();
     expect(result).toEqual({
+      discoveredCount: 1,
+      newCount: 1,
+      sourceFailureCount: 0,
+      discoveryDurationMs: expect.any(Number),
+      ingestionDurationMs: expect.any(Number),
+    });
+  });
+
+  it("fails safely when every configured source is unavailable and can retry", async () => {
+    let fail = true;
+    const retryable = adapter();
+    retryable.discover = async () => {
+      if (fail) throw new Error("temporary source failure");
+      return adapter().discover({ query: "" });
+    };
+    const input = {
+      adapters: [retryable],
+      health: { report: async () => undefined },
+      repository: {
+        findDeduplicationCandidates: async () => [],
+        createCanonicalWithSource: async () => "canonical-1",
+        mergeSourceAssociation: async () => undefined,
+      },
+    };
+
+    await expect(runManualDiscovery(input)).rejects.toThrow(
+      "All configured public job sources were unavailable.",
+    );
+    fail = false;
+    await expect(runManualDiscovery(input)).resolves.toMatchObject({
       discoveredCount: 1,
       newCount: 1,
       sourceFailureCount: 0,

@@ -25,6 +25,14 @@ export function parseGreenhouseBoards(value: string | undefined) {
   return greenhouseBoardsSchema.parse(JSON.parse(value));
 }
 
+export function isGreenhouseConfigurationFailure(error: unknown) {
+  return (
+    error instanceof SyntaxError ||
+    error instanceof z.ZodError ||
+    (error instanceof Error && error.message.includes("configured"))
+  );
+}
+
 export function searchRunIsActive(
   state: { status: string; startedAt: Date } | null,
   now = new Date(),
@@ -40,6 +48,7 @@ export async function runManualDiscovery(input: {
   repository: JobIngestionRepository;
   query?: { query: string; location?: string };
 }) {
+  const discoveryStartedAt = performance.now();
   const discovery = await discoverAcrossSources(
     input.adapters,
     {
@@ -49,10 +58,12 @@ export async function runManualDiscovery(input: {
     },
     input.health,
   );
+  const discoveryCompletedAt = performance.now();
   if (discovery.jobs.length === 0 && discovery.failures.length > 0) {
     throw new Error("All configured public job sources were unavailable.");
   }
 
+  const ingestionStartedAt = performance.now();
   let created = 0;
   for (let offset = 0; offset < discovery.jobs.length; offset += 8) {
     const batch = discovery.jobs.slice(offset, offset + 8);
@@ -68,5 +79,7 @@ export async function runManualDiscovery(input: {
     discoveredCount: discovery.jobs.length,
     newCount: created,
     sourceFailureCount: discovery.failures.length,
+    discoveryDurationMs: Math.round(discoveryCompletedAt - discoveryStartedAt),
+    ingestionDurationMs: Math.round(performance.now() - ingestionStartedAt),
   };
 }

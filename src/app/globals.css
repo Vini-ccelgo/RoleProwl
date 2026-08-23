@@ -1299,6 +1299,7 @@ p {
   }
   .mobile-actions {
     display: flex;
+    margin-left: auto;
   }
   .mobile-actions > .button {
     display: inline-flex;

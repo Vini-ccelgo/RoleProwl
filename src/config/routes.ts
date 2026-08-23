@@ -20,7 +20,7 @@ export const HOME_ROUTE = {
 export const APP_ROUTES = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/onboarding", label: "Onboarding", icon: FileText },
-  { href: "/profile", label: "Profile", icon: UserRound },
+  { href: "/profile", label: "Career Profile", icon: UserRound },
   { href: "/jobs", label: "Jobs", icon: BriefcaseBusiness },
   { href: "/queue", label: "Queue", icon: ClipboardList },
   { href: "/applications", label: "Applications", icon: FileText },

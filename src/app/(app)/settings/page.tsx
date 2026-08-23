@@ -109,7 +109,7 @@ export default async function SettingsPage() {
           <p className="m-0 text-sm">
             Manage Clerk-owned identity, sign-in methods, password, and active
             sessions under Account identity. Your RoleProwl candidate profile
-            and Truth Vault remain separate under Profile in the main
+            and Truth Vault remain separate under Career Profile in the main
             navigation.
           </p>
         </div>

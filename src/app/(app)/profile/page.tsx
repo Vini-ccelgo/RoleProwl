@@ -23,7 +23,7 @@ export default async function ProfilePage() {
   return (
     <div className="app-page profile-page">
       <PageHeader
-        title="Candidate Truth Vault"
+        title="Career Profile"
         description="Your canonical factual profile. AI interpretations and generated claims remain outside this record until you explicitly verify them."
       />
       <ProfileSectionNavigation />

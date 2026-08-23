@@ -74,4 +74,28 @@ describe("Greenhouse job source", () => {
       sourceCode: "INVALID_RESPONSE",
     });
   });
+
+  it("bounds aborts and ordinary HTTP failures as safe source errors", async () => {
+    const timedOut = new GreenhouseJobSource(
+      { boardToken: "acme", company: "Acme" },
+      async (_input, init) => {
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
+        const error = new Error("request aborted");
+        error.name = "AbortError";
+        throw error;
+      },
+    );
+    await expect(timedOut.discover({ query: "" })).rejects.toMatchObject({
+      sourceCode: "TIMEOUT",
+      message: "Greenhouse job data is temporarily unavailable.",
+    });
+
+    const unavailable = new GreenhouseJobSource(
+      { boardToken: "acme", company: "Acme" },
+      async () => new Response(null, { status: 503 }),
+    );
+    await expect(unavailable.discover({ query: "" })).rejects.toMatchObject({
+      sourceCode: "HTTP_503",
+    });
+  });
 });

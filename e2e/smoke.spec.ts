@@ -118,12 +118,31 @@ test("mobile homepage has no horizontal overflow and exposes menu", async ({
 test("navigation remains reachable through intermediate widths", async ({
   page,
 }) => {
-  for (const width of [1199, 1024, 900, 769]) {
+  for (const width of [1199, 1024, 900, 769, 600, 375]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/");
     await expect(
       page.getByRole("button", { name: "Open navigation" }),
     ).toBeVisible();
+
+    const inner = await page.locator(".header-inner").boundingBox();
+    const logo = await page.locator(".header-inner > a").first().boundingBox();
+    const mobileActions = await page.locator(".mobile-actions").boundingBox();
+    expect(inner).not.toBeNull();
+    expect(logo).not.toBeNull();
+    expect(mobileActions).not.toBeNull();
+    expect(Math.abs(logo!.x - inner!.x)).toBeLessThanOrEqual(2);
+    expect(
+      Math.abs(
+        mobileActions!.x + mobileActions!.width - (inner!.x + inner!.width),
+      ),
+    ).toBeLessThanOrEqual(2);
+
+    if (width <= 768) {
+      await expect(
+        page.getByRole("link", { name: "Get Started" }),
+      ).toBeVisible();
+    }
   }
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/");

@@ -36,7 +36,7 @@ export function ProfileSectionNavigation() {
     <>
       <nav
         className="vault-jump-nav vault-jump-nav-desktop"
-        aria-label="Profile sections"
+        aria-label="Career Profile sections"
       >
         {PROFILE_SECTIONS.map((section) => (
           <a
@@ -51,9 +51,9 @@ export function ProfileSectionNavigation() {
         ))}
       </nav>
       <label className="vault-jump-select">
-        <span>Profile section</span>
+        <span>Career Profile section</span>
         <select
-          aria-label="Profile section"
+          aria-label="Career Profile section"
           value={currentSection}
           onChange={(event) => {
             window.location.hash = event.target.value;

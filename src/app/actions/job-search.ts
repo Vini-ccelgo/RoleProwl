@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import {
+  isGreenhouseConfigurationFailure,
   parseGreenhouseBoards,
   runManualDiscovery,
   searchRunIsActive,
@@ -13,6 +14,7 @@ import { GreenhouseJobSource } from "@/integrations/jobs/greenhouse-job-source";
 import { PrismaJobIngestionRepository } from "@/integrations/jobs/prisma-job-ingestion-repository";
 import { PrismaSourceHealthReporter } from "@/integrations/jobs/prisma-source-health-reporter";
 import { databaseClient } from "@/lib/db/client";
+import { logger } from "@/lib/logging/logger";
 
 export interface JobSearchActionState {
   status: "idle" | "running" | "success" | "error";
@@ -22,6 +24,7 @@ export interface JobSearchActionState {
 }
 
 export async function runJobSearchAction(): Promise<JobSearchActionState> {
+  const actionStartedAt = performance.now();
   const actor = await requireAuthenticatedActor(currentAuthProvider());
   const database = databaseClient();
   const startedAt = new Date();
@@ -49,6 +52,9 @@ export async function runJobSearchAction(): Promise<JobSearchActionState> {
   });
 
   if (!claimed) {
+    logger.log("info", "manual_job_search_duplicate_blocked", {
+      durationMs: Math.round(performance.now() - actionStartedAt),
+    });
     return {
       status: "error",
       message:
@@ -84,6 +90,15 @@ export async function runJobSearchAction(): Promise<JobSearchActionState> {
         newCount: result.newCount,
       },
     });
+    logger.log("info", "manual_job_search_completed", {
+      boardCount: boards.length,
+      discoveredCount: result.discoveredCount,
+      newCount: result.newCount,
+      sourceFailureCount: result.sourceFailureCount,
+      discoveryDurationMs: result.discoveryDurationMs,
+      ingestionDurationMs: result.ingestionDurationMs,
+      durationMs: Math.round(performance.now() - actionStartedAt),
+    });
     revalidatePath("/");
     revalidatePath("/jobs");
     return {
@@ -93,9 +108,7 @@ export async function runJobSearchAction(): Promise<JobSearchActionState> {
       newCount: result.newCount,
     };
   } catch (error) {
-    const configurationFailure =
-      error instanceof Error &&
-      (error.message.includes("configured") || error.name === "SyntaxError");
+    const configurationFailure = isGreenhouseConfigurationFailure(error);
     const message = configurationFailure
       ? "Job search is not configured yet. Add a valid GREENHOUSE_BOARDS_JSON setting."
       : "The public job search could not finish. No applications were submitted; retry when the source is available.";
@@ -109,6 +122,12 @@ export async function runJobSearchAction(): Promise<JobSearchActionState> {
           : "DISCOVERY_FAILED",
         failureMessage: message,
       },
+    });
+    logger.log("warn", "manual_job_search_failed", {
+      failureCode: configurationFailure
+        ? "SOURCE_CONFIGURATION_MISSING"
+        : "DISCOVERY_FAILED",
+      durationMs: Math.round(performance.now() - actionStartedAt),
     });
     revalidatePath("/");
     return { status: "error", message };

@@ -21,7 +21,7 @@ describe("RP-032A profile and form contracts", () => {
       previousIndex = sectionIndex;
     }
 
-    expect(markup).toContain('aria-label="Profile section"');
+    expect(markup).toContain('aria-label="Career Profile section"');
     expect(markup).toContain('aria-current="location"');
 
     const css = readFileSync("src/app/globals.css", "utf8");
@@ -80,6 +80,7 @@ describe("RP-032A profile and form contracts", () => {
     expect(layout).toContain('account: "Account identity"');
     expect(settings).toContain("sessions under Account identity");
     expect(settings).toContain("RoleProwl candidate profile");
+    expect(settings).toContain("under Career Profile");
     expect(home).toContain("What’s next");
     expect(home).not.toContain("Your next useful action");
   });

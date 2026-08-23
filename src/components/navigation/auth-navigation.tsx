@@ -1,4 +1,5 @@
 import { Show, UserButton } from "@clerk/nextjs";
+import { MobileMenu } from "@/components/navigation/mobile-menu";
 import { Button } from "@/components/ui/button";
 import { isClerkConfigured } from "@/lib/auth/config";
 
@@ -33,6 +34,28 @@ export function AuthNavigation() {
         </Button>
         <UserButton />
       </Show>
+    </div>
+  );
+}
+
+export function MobileAuthNavigation() {
+  const configured = isClerkConfigured();
+  return (
+    <div className="mobile-actions">
+      {!configured && <Button href="/onboarding">Get Started</Button>}
+      {configured && (
+        <>
+          <Show when="signed-out">
+            <Button href="/onboarding">Get Started</Button>
+          </Show>
+          <Show when="signed-in">
+            <Button href="/dashboard" variant="secondary">
+              Workspace
+            </Button>
+          </Show>
+        </>
+      )}
+      <MobileMenu />
     </div>
   );
 }
