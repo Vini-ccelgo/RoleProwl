@@ -169,6 +169,118 @@
     );
   }
 
+  function readinessControls(document) {
+    return [
+      ...document.querySelectorAll(
+        "input, select, textarea, candidate-location",
+      ),
+    ].filter((element) => {
+      if (element.disabled) return false;
+      const type = element.getAttribute("type")?.toLocaleLowerCase("en-US");
+      if (["hidden", "password", "submit", "button"].includes(type ?? ""))
+        return false;
+      const identity = [
+        element.id,
+        element.getAttribute("name"),
+        element.getAttribute("aria-label"),
+        element.localName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase("en-US");
+      return /(?:^|[^a-z])(?:first[_ -]?name|last[_ -]?name|email|phone|candidate[_ -]?location|question[_ -]?\d+)(?:$|[^a-z])/u.test(
+        identity,
+      );
+    });
+  }
+
+  function readinessSnapshot(document) {
+    const controls = readinessControls(document);
+    const identityCount = controls.filter((element) =>
+      /(?:first[_ -]?name|last[_ -]?name|email|phone)/u.test(
+        [
+          element.id,
+          element.getAttribute("name"),
+          element.getAttribute("aria-label"),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLocaleLowerCase("en-US"),
+      ),
+    ).length;
+    if (controls.length < 3 || identityCount < 2) return null;
+    return controls
+      .map((element) =>
+        [
+          element.localName,
+          element.getAttribute("type"),
+          element.id,
+          element.getAttribute("name"),
+          element.getAttribute("aria-label"),
+        ]
+          .filter(Boolean)
+          .join(":"),
+      )
+      .sort()
+      .join("|");
+  }
+
+  function waitForFormReadiness(
+    document,
+    { timeoutMs = 15_000, stableMs = 750 } = {},
+  ) {
+    return new Promise((resolve) => {
+      const view = document.defaultView;
+      let stableTimer;
+      let signature = null;
+      let finished = false;
+      const observer = new view.MutationObserver(check);
+      const timeout = view.setTimeout(
+        () => finish({ ready: false, reason: "FORM_READINESS_TIMEOUT" }),
+        timeoutMs,
+      );
+
+      function finish(result) {
+        if (finished) return;
+        finished = true;
+        observer.disconnect();
+        view.clearTimeout(timeout);
+        if (stableTimer) view.clearTimeout(stableTimer);
+        resolve(result);
+      }
+
+      function check() {
+        const current = readinessSnapshot(document);
+        if (!current) {
+          signature = null;
+          if (stableTimer) view.clearTimeout(stableTimer);
+          stableTimer = undefined;
+          return;
+        }
+        if (current === signature && stableTimer) return;
+        signature = current;
+        if (stableTimer) view.clearTimeout(stableTimer);
+        stableTimer = view.setTimeout(() => {
+          const stable = readinessSnapshot(document);
+          if (stable && stable === signature)
+            finish({
+              ready: true,
+              controls: readinessControls(document).length,
+            });
+          else check();
+        }, stableMs);
+      }
+
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["aria-label", "disabled", "id", "name", "type"],
+        childList: true,
+        subtree: true,
+      });
+      check();
+    });
+  }
+
   function transfer(document, packet, currentUrl) {
     if (
       !packet ||
@@ -221,17 +333,41 @@
     document.body.append(banner);
   }
 
-  const engine = { destinationMatches, normalize, summary, transfer };
+  function showReadinessTimeout(document) {
+    const banner = document.createElement("aside");
+    banner.setAttribute("role", "status");
+    banner.style.cssText =
+      "position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:360px;padding:14px;border:2px solid #b98516;border-radius:8px;background:white;color:#15211e;font:14px system-ui,sans-serif;box-shadow:0 8px 28px #0003";
+    banner.textContent =
+      "RoleProwl Helper did not find a ready Greenhouse application form. The prepared packet was not consumed. Reload this job page to retry, or prepare another packet if needed.";
+    document.body.append(banner);
+  }
+
+  const engine = {
+    destinationMatches,
+    normalize,
+    readinessControls,
+    readinessSnapshot,
+    summary,
+    transfer,
+    waitForFormReadiness,
+  };
   globalThis.RoleProwlGreenhouseTransfer = engine;
 
   const extension = globalThis.chrome;
   if (!extension?.runtime?.sendMessage || !globalThis.document) return;
-  void extension.runtime
-    .sendMessage({
-      type: "REQUEST_TRANSFER_PACKET",
-      currentUrl: globalThis.location.href,
-    })
-    .then(async (response) => {
+  const readinessOptions =
+    globalThis.RoleProwlGreenhouseReadinessTestOptions ?? undefined;
+  void waitForFormReadiness(globalThis.document, readinessOptions).then(
+    async (readiness) => {
+      if (!readiness.ready) {
+        showReadinessTimeout(globalThis.document);
+        return;
+      }
+      const response = await extension.runtime.sendMessage({
+        type: "REQUEST_TRANSFER_PACKET",
+        currentUrl: globalThis.location.href,
+      });
       if (!response?.ok || !response.packet) return;
       const packet = response.packet;
       const result = transfer(
@@ -247,5 +383,6 @@
         result: bounded,
       });
       showResult(globalThis.document, bounded);
-    });
+    },
+  );
 })();

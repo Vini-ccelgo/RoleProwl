@@ -33,6 +33,9 @@ describe("RoleProwl Greenhouse browser helper security contract", () => {
       "utf8",
     );
     expect(content).not.toContain("storage.session");
+    expect(content).toContain("MutationObserver");
+    expect(content).toContain("FORM_READINESS_TIMEOUT");
+    expect(content).toContain("waitForFormReadiness");
     expect(content).toContain('type: "REQUEST_TRANSFER_PACKET"');
     expect(content).toContain('type: "STORE_TRANSFER_RESULT"');
     expect(background).toContain("storage.session");

@@ -1,9 +1,64 @@
 import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const helper = path.resolve("browser-helper/src/content.js");
 const bridge = path.resolve("browser-helper/src/background.js");
 const popup = path.resolve("browser-helper/src/popup.js");
+
+async function installBridgeHarness(
+  page: Page,
+  readiness: { stableMs: number; timeoutMs: number },
+) {
+  await page.addInitScript((options) => {
+    const session: Record<string, unknown> = {};
+    const messages: unknown[] = [];
+    const listeners: Array<
+      (
+        message: unknown,
+        sender: { tab: { url: string } },
+        sendResponse: (response: unknown) => void,
+      ) => boolean | void
+    > = [];
+    const storage = {
+      async get(key: string | string[]) {
+        return Object.fromEntries(
+          (Array.isArray(key) ? key : [key]).map((candidate) => [
+            candidate,
+            session[candidate],
+          ]),
+        );
+      },
+      async remove(key: string | string[]) {
+        for (const candidate of Array.isArray(key) ? key : [key])
+          delete session[candidate];
+      },
+      async set(values: Record<string, unknown>) {
+        Object.assign(session, values);
+      },
+    };
+    const runtime = {
+      onMessage: {
+        addListener(listener: (typeof listeners)[number]) {
+          listeners.push(listener);
+        },
+      },
+      async sendMessage(message: unknown) {
+        messages.push(message);
+        return new Promise((resolve) => {
+          const listener = listeners[0];
+          if (!listener) return resolve(undefined);
+          listener(message, { tab: { url: location.href } }, resolve);
+        });
+      },
+    };
+    Object.assign(globalThis, {
+      chrome: { runtime, storage: { session: storage } },
+      RoleProwlGreenhouseReadinessTestOptions: options,
+      roleprowlTestMessages: messages,
+      roleprowlTestSession: session,
+    });
+  }, readiness);
+}
 
 test("helper popup distinguishes neutral, captured, pending, and completed states", async ({
   context,
@@ -298,6 +353,223 @@ test("popup packet reaches the Greenhouse content script through the trusted bri
   expect(JSON.stringify(state.session.roleprowlTransferResult)).not.toContain(
     "private candidate value",
   );
+});
+
+test("Greenhouse packet waits for a stable dynamically mounted application form", async ({
+  page,
+}) => {
+  const destination = "https://job-boards.greenhouse.io/acme/jobs/420";
+  await installBridgeHarness(page, { stableMs: 120, timeoutMs: 2_000 });
+  await page.route(`${destination}**`, async (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `
+        <main id="application-root"></main>
+        <button id="submit" type="submit">Submit application</button>
+        <script>
+          window.submitClicks = 0;
+          document.querySelector('#submit').addEventListener('click', event => {
+            event.preventDefault();
+            window.submitClicks += 1;
+          });
+        </script>
+      `,
+    }),
+  );
+  await page.goto(destination);
+  await page.addScriptTag({ path: bridge });
+  await page.evaluate(async (authorizedDestination) => {
+    const extension = globalThis as unknown as {
+      chrome: {
+        storage: {
+          session: { set(value: Record<string, unknown>): Promise<void> };
+        };
+      };
+    };
+    await extension.chrome.storage.session.set({
+      roleprowlTransferPacket: {
+        version: "greenhouse-assisted-v1",
+        transferId: "transfer-dynamic-1",
+        destination: authorizedDestination,
+        issuedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+        fields: [
+          {
+            id: "first",
+            label: "First name",
+            value: "Avery",
+            fieldNames: ["first_name"],
+            kind: "TEXT",
+          },
+          {
+            id: "last",
+            label: "Last name",
+            value: "Quill",
+            fieldNames: ["last_name"],
+            kind: "TEXT",
+          },
+          {
+            id: "email",
+            label: "Email",
+            value: "avery@example.test",
+            fieldNames: ["email"],
+            kind: "TEXT",
+          },
+          {
+            id: "employer",
+            label: "Employer question",
+            value: "Authorized answer",
+            fieldNames: ["question_42"],
+            kind: "TEXT",
+          },
+        ],
+      },
+    });
+    setTimeout(() => {
+      document.querySelector("#application-root")!.innerHTML = `
+        <label>First name <input id="first_name" name="first_name" aria-label="First Name"></label>
+        <label>Last name <input id="last_name" name="last_name" aria-label="Last Name"></label>
+        <label>Email <input id="email" name="email" aria-label="Email"></label>
+      `;
+    }, 250);
+    setTimeout(() => {
+      document
+        .querySelector("#application-root")!
+        .insertAdjacentHTML(
+          "beforeend",
+          '<label>Employer question <input id="question_42" name="question_42"></label>',
+        );
+    }, 350);
+  }, destination);
+  await page.addScriptTag({ path: helper });
+
+  await page.waitForTimeout(150);
+  const beforeMount = await page.evaluate(() => {
+    const test = globalThis as unknown as {
+      roleprowlTestMessages: Array<{ type?: string }>;
+      roleprowlTestSession: Record<string, unknown>;
+    };
+    return {
+      packetPresent: Boolean(test.roleprowlTestSession.roleprowlTransferPacket),
+      requests: test.roleprowlTestMessages.filter(
+        (message) => message.type === "REQUEST_TRANSFER_PACKET",
+      ).length,
+    };
+  });
+  expect(beforeMount).toEqual({ packetPresent: true, requests: 0 });
+
+  await expect(page.locator("#first_name")).toHaveValue("Avery");
+  await expect(page.locator("#last_name")).toHaveValue("Quill");
+  await expect(page.locator("#email")).toHaveValue("avery@example.test");
+  await expect(page.locator("#question_42")).toHaveValue("Authorized answer");
+  await expect(page.getByRole("status")).toContainText(
+    "RoleProwl transfer: 4 verified, 0 transferred",
+  );
+
+  const completed = await page.evaluate(async () => {
+    const test = globalThis as unknown as {
+      chrome: { runtime: { sendMessage(value: unknown): Promise<unknown> } };
+      roleprowlTestMessages: Array<{ type?: string }>;
+      roleprowlTestSession: Record<string, unknown>;
+      submitClicks: number;
+    };
+    const repeated = await test.chrome.runtime.sendMessage({
+      type: "REQUEST_TRANSFER_PACKET",
+      currentUrl: location.href,
+    });
+    return {
+      repeated,
+      requestCount: test.roleprowlTestMessages.filter(
+        (message) => message.type === "REQUEST_TRANSFER_PACKET",
+      ).length,
+      result: test.roleprowlTestSession.roleprowlTransferResult,
+      packetPresent: Boolean(test.roleprowlTestSession.roleprowlTransferPacket),
+      submitClicks: test.submitClicks,
+    };
+  });
+  expect(completed.submitClicks).toBe(0);
+  expect(completed.packetPresent).toBe(false);
+  expect(completed.requestCount).toBe(2);
+  expect(completed.repeated).toEqual(expect.objectContaining({ ok: false }));
+  expect(completed.result).toEqual(
+    expect.objectContaining({
+      verified: 4,
+      transferred: 0,
+      unsupported: 0,
+      failed: 0,
+    }),
+  );
+});
+
+test("Greenhouse readiness timeout leaves the packet unconsumed and undisclosed", async ({
+  page,
+}) => {
+  const destination = "https://job-boards.greenhouse.io/acme/jobs/421";
+  const privateValue = "candidate-timeout-secret@example.test";
+  await installBridgeHarness(page, { stableMs: 50, timeoutMs: 250 });
+  await page.route(`${destination}**`, async (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: '<main id="application-root">Application loading</main>',
+    }),
+  );
+  await page.goto(destination);
+  await page.addScriptTag({ path: bridge });
+  await page.evaluate(
+    async ({ authorizedDestination, candidateValue }) => {
+      const extension = globalThis as unknown as {
+        chrome: {
+          storage: {
+            session: { set(value: Record<string, unknown>): Promise<void> };
+          };
+        };
+      };
+      await extension.chrome.storage.session.set({
+        roleprowlTransferPacket: {
+          version: "greenhouse-assisted-v1",
+          transferId: "transfer-timeout-1",
+          destination: authorizedDestination,
+          issuedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+          fields: [
+            {
+              id: "email",
+              label: "Email",
+              value: candidateValue,
+              fieldNames: ["email"],
+              kind: "TEXT",
+            },
+          ],
+        },
+      });
+    },
+    { authorizedDestination: destination, candidateValue: privateValue },
+  );
+  await page.addScriptTag({ path: helper });
+
+  await expect(page.getByRole("status")).toContainText(
+    "prepared packet was not consumed",
+  );
+  const timedOut = await page.evaluate(() => {
+    const test = globalThis as unknown as {
+      roleprowlTestMessages: Array<{ type?: string }>;
+      roleprowlTestSession: Record<string, unknown>;
+    };
+    return {
+      html: document.documentElement.textContent,
+      packet: test.roleprowlTestSession.roleprowlTransferPacket,
+      requests: test.roleprowlTestMessages.filter(
+        (message) => message.type === "REQUEST_TRANSFER_PACKET",
+      ).length,
+      result: test.roleprowlTestSession.roleprowlTransferResult,
+    };
+  });
+  expect(timedOut.requests).toBe(0);
+  expect(timedOut.packet).toEqual(
+    expect.objectContaining({ transferId: "transfer-timeout-1" }),
+  );
+  expect(timedOut.result).toBeUndefined();
+  expect(timedOut.html).not.toContain(privateValue);
 });
 
 test("Greenhouse helper fills exact fields, reports boundaries, and never submits", async ({
