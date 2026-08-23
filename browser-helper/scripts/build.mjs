@@ -4,7 +4,7 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
 const output = path.join(root, "dist");
-for (const file of ["src/content.js", "src/popup.js"]) {
+for (const file of ["src/background.js", "src/content.js", "src/popup.js"]) {
   const checked = spawnSync(
     process.execPath,
     ["--check", path.join(root, file)],
@@ -18,6 +18,10 @@ for (const file of ["src/content.js", "src/popup.js"]) {
 await mkdir(path.join(output, "src"), { recursive: true });
 await cp(path.join(root, "manifest.json"), path.join(output, "manifest.json"));
 await cp(path.join(root, "popup.html"), path.join(output, "popup.html"));
+await cp(
+  path.join(root, "src/background.js"),
+  path.join(output, "src/background.js"),
+);
 await cp(
   path.join(root, "src/content.js"),
   path.join(output, "src/content.js"),

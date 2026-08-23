@@ -121,6 +121,11 @@ p {
 .button:hover {
   transform: translateY(-1px);
 }
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
 .button-primary {
   background: linear-gradient(135deg, var(--brand), var(--brand-hover));
   color: #fff;
@@ -128,6 +133,9 @@ p {
 }
 .button-primary:hover {
   background: var(--brand-hover);
+}
+.button-primary:disabled:hover {
+  background: linear-gradient(135deg, var(--brand), var(--brand-hover));
 }
 .button-secondary {
   border-color: var(--border-strong);

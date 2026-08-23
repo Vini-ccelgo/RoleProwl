@@ -225,11 +225,15 @@
   globalThis.RoleProwlGreenhouseTransfer = engine;
 
   const extension = globalThis.chrome;
-  if (!extension?.storage?.session || !globalThis.document) return;
-  void extension.storage.session
-    .get("roleprowlTransferPacket")
-    .then(async (stored) => {
-      const packet = stored.roleprowlTransferPacket;
+  if (!extension?.runtime?.sendMessage || !globalThis.document) return;
+  void extension.runtime
+    .sendMessage({
+      type: "REQUEST_TRANSFER_PACKET",
+      currentUrl: globalThis.location.href,
+    })
+    .then(async (response) => {
+      if (!response?.ok || !response.packet) return;
+      const packet = response.packet;
       const result = transfer(
         globalThis.document,
         packet,
@@ -237,8 +241,11 @@
       );
       if (!result.authorized) return;
       const bounded = summary({ ...result, transferId: packet.transferId });
-      await extension.storage.session.remove("roleprowlTransferPacket");
-      await extension.storage.session.set({ roleprowlTransferResult: bounded });
+      await extension.runtime.sendMessage({
+        type: "STORE_TRANSFER_RESULT",
+        currentUrl: globalThis.location.href,
+        result: bounded,
+      });
       showResult(globalThis.document, bounded);
     });
 })();

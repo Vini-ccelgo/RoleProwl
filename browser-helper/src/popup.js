@@ -29,14 +29,27 @@
   }
 
   async function currentResult() {
-    const stored = await extension.storage.session.get(
+    const stored = await extension.storage.session.get([
+      "roleprowlTransferPacket",
+      "roleprowlTransferAuthorization",
       "roleprowlTransferResult",
-    );
+    ]);
     const result = stored.roleprowlTransferResult;
-    if (!result) return;
-    message(
-      `Last transfer\nVerified: ${result.verified}\nTransferred: ${result.transferred}\nHuman required: ${result.humanRequired}\nUnsupported: ${result.unsupported}\nFailed: ${result.failed}`,
-    );
+    if (result) {
+      message(
+        `Transfer completed.\nVerified: ${result.verified}\nTransferred: ${result.transferred}\nHuman required: ${result.humanRequired}\nUnsupported: ${result.unsupported}\nFailed: ${result.failed}`,
+      );
+      return;
+    }
+    if (stored.roleprowlTransferAuthorization) {
+      message("Greenhouse opened. Waiting for the transfer result.");
+      return;
+    }
+    if (stored.roleprowlTransferPacket) {
+      message("Packet captured. Waiting for the matching Greenhouse form.");
+      return;
+    }
+    message("No prepared packet or transfer result in this browser session.");
   }
 
   capture.addEventListener("click", async () => {
@@ -67,10 +80,14 @@
       );
       return;
     }
+    await extension.storage.session.remove([
+      "roleprowlTransferAuthorization",
+      "roleprowlTransferResult",
+    ]);
     await extension.storage.session.set({ roleprowlTransferPacket: packet });
     await extension.tabs.create({ url: packet.destination });
     message(
-      "Greenhouse opened. The packet will be consumed once on that exact job form.",
+      "Packet captured. Greenhouse opened. Waiting for the transfer result.",
     );
   });
 

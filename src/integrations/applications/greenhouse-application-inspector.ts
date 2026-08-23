@@ -30,11 +30,16 @@ function parseOptions(fields: readonly GreenhouseField[]) {
   return fields.flatMap((field) =>
     Array.isArray(field.values)
       ? field.values.flatMap((value) => {
+          if (typeof value === "string" && value.trim()) return [value.trim()];
           if (!value || typeof value !== "object") return [];
-          const label = (value as Record<string, unknown>).label;
-          return typeof label === "string" && label.trim()
-            ? [label.trim()]
-            : [];
+          const option = value as Record<string, unknown>;
+          const label =
+            typeof option.label === "string" && option.label.trim()
+              ? option.label
+              : typeof option.value === "string" && option.value.trim()
+                ? option.value
+                : null;
+          return label ? [label.trim()] : [];
         })
       : [],
   );

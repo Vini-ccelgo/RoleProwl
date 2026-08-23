@@ -18,3 +18,7 @@ This Manifest V3 Chromium helper performs one candidate-authorized, Greenhouse-o
 5. Return to RoleProwl and explicitly confirm submission only after it actually occurred.
 
 The helper has persistent host permission only for the two official Greenhouse job-board domains. It reads the RoleProwl page solely through Chromium's one-time `activeTab` permission after the candidate clicks the extension action.
+
+## Pre-live distribution requirement
+
+The current unpacked Developer Mode installation is for alpha operator testing only. Before public launch, RoleProwl Helper must use a signed/published ordinary browser-extension distribution path that requires no repository access, package tooling, Developer Mode, or Load unpacked step.

@@ -283,4 +283,71 @@ describe("application packet summary", () => {
     expect(markup).toContain("Option A");
     expect(markup).toContain("Option B");
   });
+
+  it("renders known select and radio metadata on the first packet inspection", () => {
+    const packet = buildApplicationPacket({
+      reviewed: false,
+      source: {
+        accountEmail: "candidate@example.test",
+        profile: {
+          firstName: "Avery",
+          lastName: "Quill",
+          applicationEmail: null,
+          phone: null,
+          location: null,
+          countryCode: null,
+          professionalTitle: null,
+        },
+        verifiedResumeFacts: [],
+        experience: [],
+        education: [],
+        credentials: [],
+        skills: [],
+        languages: [],
+        workAuthorization: null,
+        sponsorshipRequired: null,
+        answerMemories: [],
+        selectedResume: null,
+        coverLetter: null,
+        questions: [
+          {
+            id: "standard:question_42",
+            source: "GREENHOUSE",
+            group: "STANDARD",
+            label: "Preferred shift",
+            required: true,
+            fieldNames: ["question_42"],
+            fieldTypes: ["multi_value_single_select"],
+            options: ["Day", "Night"],
+          },
+          {
+            id: "standard:question_43",
+            source: "GREENHOUSE",
+            group: "STANDARD",
+            label: "Work arrangement",
+            required: true,
+            fieldNames: ["question_43"],
+            fieldTypes: ["input_radio"],
+            options: ["Remote", "Hybrid"],
+          },
+        ],
+        questionInspection: "AVAILABLE",
+        sourceName: "GREENHOUSE",
+        targetRole: "Analyst",
+      },
+    });
+    const markup = renderToStaticMarkup(
+      createElement(ApplicationPacketSummary, {
+        applicationId: "application-1",
+        packet,
+        saveAction: async () => undefined,
+      }),
+    );
+    expect(markup).toContain("<select");
+    expect(markup).toContain('name="answer:standard:question_42"');
+    expect(markup).toContain('type="radio"');
+    expect(markup).toContain('name="answer:standard:question_43"');
+    expect(markup).toContain('data-dirty="false"');
+    expect(markup).toContain("disabled");
+  });
 });

@@ -20,6 +20,28 @@ const payload = {
       label: "Résumé/CV",
       fields: [{ name: "resume", type: "input_file" }],
     },
+    {
+      required: true,
+      label: "Preferred shift",
+      fields: [
+        {
+          name: "question_42",
+          type: "multi_value_single_select",
+          values: [{ label: "Day" }, { value: "Night" }],
+        },
+      ],
+    },
+    {
+      required: false,
+      label: "Work arrangement",
+      fields: [
+        {
+          name: "question_43",
+          type: "input_radio",
+          values: ["Remote", "Hybrid"],
+        },
+      ],
+    },
   ],
   compliance: [
     {
@@ -44,6 +66,16 @@ describe("Greenhouse application inspector", () => {
           fieldNames: ["first_name"],
         }),
         expect.objectContaining({ group: "COMPLIANCE" }),
+        expect.objectContaining({
+          id: "standard:question_42",
+          fieldTypes: ["multi_value_single_select"],
+          options: ["Day", "Night"],
+        }),
+        expect.objectContaining({
+          id: "standard:question_43",
+          fieldTypes: ["input_radio"],
+          options: ["Remote", "Hybrid"],
+        }),
       ]),
     );
   });
@@ -71,7 +103,7 @@ describe("Greenhouse application inspector", () => {
       { source: "GREENHOUSE", boardToken: "acme", jobId: "42" },
       request,
     );
-    expect(questions).toHaveLength(3);
+    expect(questions).toHaveLength(5);
     expect(request).toHaveBeenCalledWith(
       "https://boards-api.greenhouse.io/v1/boards/acme/jobs/42?questions=true",
       expect.objectContaining({ headers: { accept: "application/json" } }),

@@ -10,12 +10,19 @@ import type {
 type EditableField = ApplicationPacketField | ApplicationPacketAnswer;
 
 export function applicationOverridesAreDirty(
-  initial: Readonly<Record<string, string>>,
+  initial: Readonly<Record<string, unknown>>,
   current: FormData,
 ) {
   return Object.entries(initial).some(
-    ([name, value]) => String(current.get(name) ?? "") !== value,
+    ([name, value]) =>
+      normalizeEditableValue(current.get(name)) !==
+      normalizeEditableValue(value),
   );
+}
+
+export function normalizeEditableValue(value: unknown) {
+  if (value == null) return "";
+  return String(value).replace(/\r\n?/gu, "\n");
 }
 
 function fieldName(field: EditableField) {
@@ -41,6 +48,34 @@ function OverrideInput({ field }: { readonly field: EditableField }) {
   const answerOptions = answer?.options ?? [];
   if (answerOptions.length) {
     const mismatch = requiresChoiceReview(field);
+    const useRadio = (answer?.fieldTypes ?? []).some((type) =>
+      type.toLocaleLowerCase("en-US").includes("radio"),
+    );
+    if (useRadio)
+      return (
+        <fieldset className="field">
+          <legend>{label}</legend>
+          {mismatch ? (
+            <small>
+              Current answer: <strong>{field.value}</strong>. Your previous
+              answer does not match the employer&apos;s available choices.
+              Choose a replacement explicitly.
+            </small>
+          ) : null}
+          {answerOptions.map((option) => (
+            <label className="flex items-center gap-2" key={option}>
+              <input
+                defaultChecked={!mismatch && field.value === option}
+                name={name}
+                required={field.required || mismatch}
+                type="radio"
+                value={option}
+              />
+              <span>{option}</span>
+            </label>
+          ))}
+        </fieldset>
+      );
     return (
       <label className="field">
         <span>{label}</span>
@@ -111,6 +146,8 @@ function SaveButton({ dirty }: { readonly dirty: boolean }) {
   return (
     <button
       className="button button-primary w-fit"
+      aria-disabled={!dirty || pending}
+      data-dirty={dirty ? "true" : "false"}
       disabled={!dirty || pending}
       type="submit"
     >

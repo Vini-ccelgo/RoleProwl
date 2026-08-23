@@ -2,6 +2,303 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 const helper = path.resolve("browser-helper/src/content.js");
+const bridge = path.resolve("browser-helper/src/background.js");
+const popup = path.resolve("browser-helper/src/popup.js");
+
+test("helper popup distinguishes neutral, captured, pending, and completed states", async ({
+  context,
+}) => {
+  const cases = [
+    [{}, "No prepared packet or transfer result"],
+    [
+      { roleprowlTransferPacket: { transferId: "transfer-1" } },
+      "Packet captured. Waiting for the matching Greenhouse form.",
+    ],
+    [
+      { roleprowlTransferAuthorization: { transferId: "transfer-1" } },
+      "Greenhouse opened. Waiting for the transfer result.",
+    ],
+    [
+      {
+        roleprowlTransferResult: {
+          verified: 3,
+          transferred: 0,
+          humanRequired: 1,
+          unsupported: 2,
+          failed: 0,
+        },
+      },
+      "Transfer completed.",
+    ],
+  ] as const;
+
+  for (const [stored, expected] of cases) {
+    const candidate = await context.newPage();
+    await candidate.setContent(`
+      <button id="capture" type="button">Capture</button>
+      <p id="status" role="status"></p>
+    `);
+    await candidate.evaluate((values) => {
+      const session = { ...values } as Record<string, unknown>;
+      Object.assign(globalThis, {
+        chrome: {
+          scripting: { executeScript: async () => [{ result: null }] },
+          storage: {
+            session: {
+              async get(keys: string | string[]) {
+                return Object.fromEntries(
+                  (Array.isArray(keys) ? keys : [keys]).map((key) => [
+                    key,
+                    session[key],
+                  ]),
+                );
+              },
+              async remove() {},
+              async set() {},
+            },
+          },
+          tabs: {
+            create: async () => undefined,
+            query: async () => [],
+          },
+        },
+      });
+    }, stored);
+    await candidate.addScriptTag({ path: popup });
+    await expect(candidate.getByRole("status")).toContainText(expected);
+    await candidate.close();
+  }
+});
+
+test("helper popup reports capture immediately before a transfer result exists", async ({
+  page,
+}) => {
+  await page.setContent(`
+    <button id="capture" type="button">Capture</button>
+    <p id="status" role="status"></p>
+  `);
+  await page.evaluate(() => {
+    const session: Record<string, unknown> = {};
+    const packet = {
+      version: "greenhouse-assisted-v1",
+      transferId: "transfer-popup-1",
+      destination: "https://job-boards.greenhouse.io/acme/jobs/42",
+      expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+      fields: [],
+    };
+    Object.assign(globalThis, {
+      chrome: {
+        scripting: {
+          executeScript: async () => [{ result: JSON.stringify(packet) }],
+        },
+        storage: {
+          session: {
+            async get(keys: string | string[]) {
+              return Object.fromEntries(
+                (Array.isArray(keys) ? keys : [keys]).map((key) => [
+                  key,
+                  session[key],
+                ]),
+              );
+            },
+            async remove(keys: string | string[]) {
+              for (const key of Array.isArray(keys) ? keys : [keys])
+                delete session[key];
+            },
+            async set(values: Record<string, unknown>) {
+              Object.assign(session, values);
+            },
+          },
+        },
+        tabs: {
+          create: async () => undefined,
+          query: async () => [{ id: 1 }],
+        },
+      },
+      roleprowlPopupSession: session,
+    });
+  });
+  await page.addScriptTag({ path: popup });
+  await page.getByRole("button", { name: "Capture" }).click();
+  await expect(page.getByRole("status")).toHaveText(
+    "Packet captured. Greenhouse opened. Waiting for the transfer result.",
+  );
+  const stored = await page.evaluate(
+    () =>
+      (
+        globalThis as unknown as {
+          roleprowlPopupSession: Record<string, unknown>;
+        }
+      ).roleprowlPopupSession,
+  );
+  expect(stored.roleprowlTransferPacket).toEqual(
+    expect.objectContaining({ transferId: "transfer-popup-1" }),
+  );
+  expect(stored.roleprowlTransferResult).toBeUndefined();
+});
+
+test("popup packet reaches the Greenhouse content script through the trusted bridge", async ({
+  page,
+}) => {
+  const destination = "https://job-boards.greenhouse.io/acme/jobs/42";
+  await page.route(`${destination}**`, async (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `
+        <form>
+          <label for="first_name">First name</label><input id="first_name" name="first_name">
+          <label for="last_name">Last name</label><input id="last_name" name="last_name">
+          <label for="email">Email</label><input id="email" name="email">
+          <label>Unsupported <input name="unrelated"></label>
+          <input name="resume" type="file">
+          <button id="submit" type="submit">Submit application</button>
+        </form>
+        <script>window.submitClicks = 0; document.querySelector('form').addEventListener('submit', event => { event.preventDefault(); window.submitClicks += 1; });</script>
+      `,
+    }),
+  );
+  await page.addInitScript(() => {
+    const session: Record<string, unknown> = {};
+    const listeners: Array<
+      (
+        message: unknown,
+        sender: { tab: { url: string } },
+        sendResponse: (response: unknown) => void,
+      ) => boolean | void
+    > = [];
+    const storage = {
+      async get(key: string | string[]) {
+        return Object.fromEntries(
+          (Array.isArray(key) ? key : [key]).map((candidate) => [
+            candidate,
+            session[candidate],
+          ]),
+        );
+      },
+      async remove(key: string | string[]) {
+        for (const candidate of Array.isArray(key) ? key : [key])
+          delete session[candidate];
+      },
+      async set(values: Record<string, unknown>) {
+        Object.assign(session, values);
+      },
+    };
+    const runtime = {
+      onMessage: {
+        addListener(listener: (typeof listeners)[number]) {
+          listeners.push(listener);
+        },
+      },
+      async sendMessage(message: unknown) {
+        return new Promise((resolve) => {
+          const listener = listeners[0];
+          if (!listener) return resolve(undefined);
+          listener(message, { tab: { url: location.href } }, resolve);
+        });
+      },
+    };
+    Object.assign(globalThis, {
+      chrome: { runtime, storage: { session: storage } },
+      roleprowlTestSession: session,
+    });
+  });
+  await page.goto(destination);
+  await page.addScriptTag({ path: bridge });
+  await page.evaluate(async (authorizedDestination) => {
+    const extension = globalThis as unknown as {
+      chrome: {
+        storage: {
+          session: { set(value: Record<string, unknown>): Promise<void> };
+        };
+      };
+    };
+    await extension.chrome.storage.session.set({
+      roleprowlTransferPacket: {
+        version: "greenhouse-assisted-v1",
+        transferId: "transfer-runtime-1",
+        destination: authorizedDestination,
+        issuedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+        resumeFileName: "resume.pdf",
+        fields: [
+          {
+            id: "first",
+            label: "First name",
+            value: "Avery",
+            fieldNames: ["first_name"],
+            fieldTypes: ["input_text"],
+            options: [],
+            kind: "TEXT",
+          },
+          {
+            id: "last",
+            label: "Last name",
+            value: "Quill",
+            fieldNames: ["last_name"],
+            fieldTypes: ["input_text"],
+            options: [],
+            kind: "TEXT",
+          },
+          {
+            id: "email",
+            label: "Email",
+            value: "avery@example.test",
+            fieldNames: ["email"],
+            fieldTypes: ["input_text"],
+            options: [],
+            kind: "TEXT",
+          },
+          {
+            id: "unsupported",
+            label: "Portfolio",
+            value: "private candidate value",
+            fieldNames: ["missing_portfolio"],
+            fieldTypes: ["input_text"],
+            options: [],
+            kind: "TEXT",
+          },
+        ],
+      },
+    });
+  }, destination);
+  await page.addScriptTag({ path: helper });
+
+  await expect(page.locator("#first_name")).toHaveValue("Avery");
+  await expect(page.locator("#last_name")).toHaveValue("Quill");
+  await expect(page.locator("#email")).toHaveValue("avery@example.test");
+  await expect(page.locator('[name="unrelated"]')).toHaveValue("");
+  await expect(page.getByRole("status")).toContainText(
+    "RoleProwl transfer: 3 verified",
+  );
+  const state = await page.evaluate(async () => {
+    const runtime = globalThis as unknown as {
+      chrome: { runtime: { sendMessage(value: unknown): Promise<unknown> } };
+      roleprowlTestSession: Record<string, unknown>;
+      submitClicks: number;
+    };
+    const repeated = await runtime.chrome.runtime.sendMessage({
+      type: "REQUEST_TRANSFER_PACKET",
+      currentUrl: location.href,
+    });
+    return {
+      repeated,
+      session: runtime.roleprowlTestSession,
+      submitClicks: runtime.submitClicks,
+    };
+  });
+  expect(state.submitClicks).toBe(0);
+  expect(state.repeated).toEqual(expect.objectContaining({ ok: false }));
+  expect(state.session.roleprowlTransferPacket).toBeUndefined();
+  expect(state.session.roleprowlTransferResult).toEqual(
+    expect.objectContaining({ verified: 3, unsupported: 1, humanRequired: 1 }),
+  );
+  expect(JSON.stringify(state.session.roleprowlTransferResult)).not.toContain(
+    "avery@example.test",
+  );
+  expect(JSON.stringify(state.session.roleprowlTransferResult)).not.toContain(
+    "private candidate value",
+  );
+});
 
 test("Greenhouse helper fills exact fields, reports boundaries, and never submits", async ({
   page,

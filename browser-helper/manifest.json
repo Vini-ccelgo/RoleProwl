@@ -12,6 +12,9 @@
     "default_popup": "popup.html",
     "default_title": "RoleProwl Helper"
   },
+  "background": {
+    "service_worker": "src/background.js"
+  },
   "content_scripts": [
     {
       "matches": [
