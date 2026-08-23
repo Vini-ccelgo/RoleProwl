@@ -1,10 +1,10 @@
 import {
   isApplicationPacket,
   type ApplicationPacket,
-  type ApplicationPacketAnswer,
   type ApplicationPacketField,
 } from "@/core/domain/applications/application-packet";
 import { CopyApplicationValue } from "./copy-application-value";
+import { ApplicationOverridesForm } from "./application-overrides-form";
 
 function Status({ value }: { readonly value: string }) {
   return (
@@ -46,73 +46,6 @@ function Field({ field }: { readonly field: ApplicationPacketField }) {
         </span>
       ) : null}
     </li>
-  );
-}
-
-function OverrideInput({
-  field,
-}: {
-  readonly field: ApplicationPacketField | ApplicationPacketAnswer;
-}) {
-  const answer = "questionId" in field ? field : null;
-  const name = answer ? `answer:${answer.questionId}` : `identity:${field.key}`;
-  const label = `${field.label}${field.required ? " (required)" : ""}`;
-  const answerOptions = answer?.options ?? [];
-  if (answerOptions.length)
-    return (
-      <label className="field">
-        <span>{label}</span>
-        <select
-          defaultValue={field.value ?? ""}
-          name={name}
-          required={field.required}
-        >
-          <option value="">Choose an answer</option>
-          {answerOptions.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </label>
-    );
-  const isLongAnswer =
-    answer && !(answer.fieldTypes ?? []).includes("input_text");
-  if (isLongAnswer)
-    return (
-      <label className="field sm:col-span-2">
-        <span>{label}</span>
-        <textarea
-          defaultValue={field.value ?? ""}
-          maxLength={4_000}
-          name={name}
-          required={field.required}
-          rows={4}
-        />
-      </label>
-    );
-  return (
-    <label className="field">
-      <span>{label}</span>
-      <input
-        defaultValue={field.value ?? ""}
-        maxLength={field.key === "country" ? 2 : 4_000}
-        name={name}
-        required={field.required}
-        type={
-          field.key === "email"
-            ? "email"
-            : field.key === "phone"
-              ? "tel"
-              : "text"
-        }
-      />
-      {field.status === "CONFLICTING" && field.alternatives?.length ? (
-        <small>
-          Confirm one value. Known alternatives: {field.alternatives.join(", ")}
-        </small>
-      ) : null}
-    </label>
   );
 }
 
@@ -159,7 +92,8 @@ export function ApplicationPacketSummary({
       </section>
     );
   const packet: ApplicationPacket = value;
-  const needsReview = [...packet.identity, ...packet.answers].filter(
+  const answers = packet.answers ?? [];
+  const needsReview = [...packet.identity, ...answers].filter(
     (field) => field.status === "UNRESOLVED" || field.status === "CONFLICTING",
   );
   const editableBlockers = needsReview.filter(
@@ -170,9 +104,11 @@ export function ApplicationPacketSummary({
         ["DOCUMENT", "PROFILE_FACT"].includes(field.classification)
       ),
   );
-  const applicationSpecific = [...packet.identity, ...packet.answers].filter(
+  const applicationSpecific = [...packet.identity, ...answers].filter(
     (field) =>
-      field.provenance.some((item) => item.source === "APPLICATION_OVERRIDE") &&
+      (field.provenance ?? []).some(
+        (item) => item.source === "APPLICATION_OVERRIDE",
+      ) &&
       !(
         "classification" in field &&
         typeof field.classification === "string" &&
@@ -240,17 +176,12 @@ export function ApplicationPacketSummary({
             </p>
           </div>
           {editableFields.length > 0 ? (
-            <form action={saveAction} className="grid gap-4">
-              <input name="applicationId" type="hidden" value={applicationId} />
-              <div className="grid gap-4 sm:grid-cols-2">
-                {editableFields.map((field) => (
-                  <OverrideInput field={field} key={field.key} />
-                ))}
-              </div>
-              <button className="button button-primary w-fit" type="submit">
-                Save and re-check application
-              </button>
-            </form>
+            <ApplicationOverridesForm
+              applicationId={applicationId}
+              fields={editableFields}
+              key={packet.builtAt}
+              saveAction={saveAction}
+            />
           ) : null}
           {unresolvedResume ? (
             <p className="m-0 text-sm">
@@ -331,9 +262,9 @@ export function ApplicationPacketSummary({
 
         <section className="card p-5">
           <h2 className="text-base font-semibold">Application answers</h2>
-          {(packet.answers ?? []).length ? (
+          {answers.length ? (
             <ul className="m-0 grid list-none gap-3 p-0">
-              {(packet.answers ?? []).map((answer) => (
+              {answers.map((answer) => (
                 <Field field={answer} key={answer.questionId} />
               ))}
             </ul>

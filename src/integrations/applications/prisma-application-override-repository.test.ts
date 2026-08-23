@@ -115,4 +115,29 @@ describe("Prisma application override repository", () => {
     ).rejects.toThrow("Application not found");
     expect(mocks.updateMany).not.toHaveBeenCalled();
   });
+
+  it("does not mutate or rebuild when submitted values are unchanged", async () => {
+    const currentPacket = packet();
+    mocks.findFirst.mockResolvedValue({
+      id: "application-1",
+      state: "READY",
+      updatedAt: new Date("2026-08-23T12:00:00Z"),
+      submissionPayloadSnapshot: {
+        packet: currentPacket,
+        overrides: { identity: { phone: "+55 51 5555 0100" }, answers: {} },
+      },
+    });
+    const refresh = vi.fn(async () => currentPacket);
+    const result = await new PrismaApplicationOverrideRepository({
+      refresh,
+    }).save({
+      applicationId: "application-1",
+      userId: "user-1",
+      identity: [{ key: "phone", value: "+55 51 5555 0100" }],
+      answers: [],
+    });
+    expect(result).toBe(currentPacket);
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
 });

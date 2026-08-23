@@ -12,6 +12,7 @@ import {
 import {
   APPLICATION_OUTCOME_POLICY_COPY,
   applicationEventLabel,
+  applicationOutcomeActionLabel,
   applicationStateLabel,
 } from "@/features/applications/application-presentation";
 import {
@@ -159,14 +160,9 @@ export default async function ApplicationDetailPage({
               <dt className="font-semibold">Destination</dt>
               <dd className="m-0 break-all">
                 {application.submissionDestination ? (
-                  <a
-                    className="font-semibold text-brand"
-                    href={application.submissionDestination}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    Open employer application
-                  </a>
+                  <span className="break-all">
+                    {application.submissionDestination}
+                  </span>
                 ) : (
                   <Unknown>Unknown</Unknown>
                 )}
@@ -275,14 +271,26 @@ export default async function ApplicationDetailPage({
           </section>
         )}
 
+      <ApplicationPacketSummary
+        applicationId={application.id}
+        packet={packetValue}
+        saveAction={saveApplicationOverridesAction}
+      />
+
+      {greenhouseTransfer ? (
+        <GreenhouseAssistedApply
+          draft={greenhouseTransfer}
+          resumeDownloadUrl={`/api/applications/${application.id}/resume`}
+        />
+      ) : null}
+
       {canConfirmExternal && (
         <section className="card grid gap-3 border-brand p-5">
-          <h2 className="text-base font-semibold">
-            External application ready
-          </h2>
+          <h2 className="text-base font-semibold">Continue manually</h2>
           <p className="m-0 text-sm">
-            Open the official destination, submit there, then confirm here. This
-            record will not claim submission before you confirm it.
+            Open the employer&apos;s site and complete the application yourself.
+            RoleProwl will not mark it submitted until you confirm that you
+            submitted it.
           </p>
           <div className="flex flex-wrap gap-2">
             {application.submissionDestination && (
@@ -292,7 +300,7 @@ export default async function ApplicationDetailPage({
                 rel="noreferrer"
                 target="_blank"
               >
-                Open application
+                Continue on employer site
               </a>
             )}
             <form action={confirmExternalApplicationAction}>
@@ -307,25 +315,12 @@ export default async function ApplicationDetailPage({
                 type="submit"
                 value="yes"
               >
-                I submitted this externally
+                Confirm I submitted it
               </button>
             </form>
           </div>
         </section>
       )}
-
-      {greenhouseTransfer ? (
-        <GreenhouseAssistedApply
-          draft={greenhouseTransfer}
-          resumeDownloadUrl={`/api/applications/${application.id}/resume`}
-        />
-      ) : null}
-
-      <ApplicationPacketSummary
-        applicationId={application.id}
-        packet={packetValue}
-        saveAction={saveApplicationOverridesAction}
-      />
 
       <ApplicationPreparationSummary
         answers={application.answersSnapshot}
@@ -378,7 +373,7 @@ export default async function ApplicationDetailPage({
             <input name="applicationId" type="hidden" value={application.id} />
             <label className="field max-w-xl">
               <span>Optional note</span>
-              <input name="note" placeholder="What changed?" />
+              <input name="note" placeholder="Add a note about this update" />
             </label>
             <div className="flex flex-wrap gap-2">
               {nextStates.map((state) => (
@@ -389,7 +384,7 @@ export default async function ApplicationDetailPage({
                   type="submit"
                   value={state}
                 >
-                  {applicationStateLabel(state)}
+                  {applicationOutcomeActionLabel(state)}
                 </button>
               ))}
             </div>

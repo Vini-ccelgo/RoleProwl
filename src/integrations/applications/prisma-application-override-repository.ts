@@ -32,6 +32,14 @@ function applyChanges(
   return next;
 }
 
+function sameRecord(
+  left: Readonly<Record<string, string>>,
+  right: Readonly<Record<string, string>>,
+) {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return [...keys].every((key) => left[key] === right[key]);
+}
+
 export class PrismaApplicationOverrideRepository implements ApplicationOverrideRepository {
   constructor(
     private readonly packetRepository: Pick<
@@ -84,6 +92,11 @@ export class PrismaApplicationOverrideRepository implements ApplicationOverrideR
       identity: applyChanges(current.identity, input.identity),
       answers: applyChanges(current.answers, input.answers),
     };
+    if (
+      sameRecord(current.identity, overrides.identity) &&
+      sameRecord(current.answers, overrides.answers)
+    )
+      return payload.packet;
     const updated = await database.application.updateMany({
       where: {
         id: application.id,

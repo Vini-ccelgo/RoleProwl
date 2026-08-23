@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applicationTransferStatus,
   buildApplicationPacket,
+  reconcileApplicationQuestionOverrides,
   type ApplicationPacketSource,
 } from "./application-packet";
 
@@ -276,6 +277,92 @@ describe("application packet", () => {
       status: "RESOLVED",
       value: "Yes",
       provenance: [expect.objectContaining({ source: "APPLICATION_OVERRIDE" })],
+    });
+  });
+
+  it("preserves an explicit answer across stable logical question metadata changes", () => {
+    const previous = buildApplicationPacket({
+      reviewed: false,
+      source: source({
+        applicationOverrides: {
+          identity: {},
+          answers: { "standard:1": "Kubernetes, AWS, Docker" },
+        },
+        questions: [
+          {
+            id: "standard:1",
+            source: "GREENHOUSE",
+            group: "STANDARD",
+            label: "Which technologies have you used professionally?",
+            required: true,
+            fieldNames: [],
+            fieldTypes: ["input_text"],
+            options: [],
+          },
+        ],
+      }),
+    });
+    const refreshedQuestion = {
+      id: "standard:question_42",
+      source: "GREENHOUSE" as const,
+      group: "STANDARD" as const,
+      label: "Which technologies have you used professionally?",
+      required: true,
+      fieldNames: ["question_42"],
+      fieldTypes: ["multi_value_single_select"],
+      options: ["Option A", "Option B", "Option C"],
+    };
+    const overrides = reconcileApplicationQuestionOverrides({
+      overrides: {
+        identity: {},
+        answers: { "standard:1": "Kubernetes, AWS, Docker" },
+      },
+      previousAnswers: previous.answers,
+      questions: [refreshedQuestion],
+    });
+    expect(overrides.answers).toEqual({
+      "standard:question_42": "Kubernetes, AWS, Docker",
+    });
+    const refreshed = buildApplicationPacket({
+      reviewed: false,
+      source: source({
+        applicationOverrides: overrides,
+        questions: [refreshedQuestion],
+      }),
+    });
+    expect(refreshed.answers[0]).toMatchObject({
+      status: "CONFLICTING",
+      value: "Kubernetes, AWS, Docker",
+      options: ["Option A", "Option B", "Option C"],
+    });
+    expect(refreshed.completeness.needsReview).toBeGreaterThan(0);
+  });
+
+  it("keeps an exact candidate answer selected when choice metadata appears", () => {
+    const packet = buildApplicationPacket({
+      reviewed: false,
+      source: source({
+        applicationOverrides: {
+          identity: {},
+          answers: { "standard:question_42": "Option B" },
+        },
+        questions: [
+          {
+            id: "standard:question_42",
+            source: "GREENHOUSE",
+            group: "STANDARD",
+            label: "Preferred shift",
+            required: true,
+            fieldNames: ["question_42"],
+            fieldTypes: ["multi_value_single_select"],
+            options: ["Option A", "Option B"],
+          },
+        ],
+      }),
+    });
+    expect(packet.answers[0]).toMatchObject({
+      status: "RESOLVED",
+      value: "Option B",
     });
   });
 });

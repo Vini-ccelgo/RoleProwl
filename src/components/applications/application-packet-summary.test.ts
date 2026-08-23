@@ -177,5 +177,110 @@ describe("application packet summary", () => {
     expect(markup).toContain("Application-specific values");
     expect(markup).toContain('name="identity:phone"');
     expect(markup).toContain('value="+55 51 5555 0100"');
+    expect(markup).toContain("disabled");
+  });
+
+  it("renders a legacy packet with absent answer arrays and provenance", () => {
+    const packet = buildApplicationPacket({
+      reviewed: false,
+      source: {
+        accountEmail: "candidate@example.test",
+        profile: null,
+        verifiedResumeFacts: [],
+        experience: [],
+        education: [],
+        credentials: [],
+        skills: [],
+        languages: [],
+        workAuthorization: null,
+        sponsorshipRequired: null,
+        answerMemories: [],
+        selectedResume: null,
+        coverLetter: null,
+        questions: [],
+        questionInspection: "UNAVAILABLE",
+        sourceName: "GREENHOUSE",
+        targetRole: "Analyst",
+      },
+    });
+    const legacy = {
+      ...packet,
+      identity: packet.identity.map((field) => ({
+        ...field,
+        provenance: undefined,
+      })),
+      answers: undefined,
+    };
+    const markup = renderToStaticMarkup(
+      createElement(ApplicationPacketSummary, {
+        applicationId: "application-1",
+        packet: legacy,
+        saveAction: async () => undefined,
+      }),
+    );
+    expect(markup).toContain("No public employer questions were represented");
+    expect(markup).toContain("Application packet");
+  });
+
+  it("surfaces a preserved non-matching answer beside newly discovered choices", () => {
+    const packet = buildApplicationPacket({
+      reviewed: false,
+      source: {
+        accountEmail: "candidate@example.test",
+        profile: {
+          firstName: "Avery",
+          lastName: "Quill",
+          applicationEmail: null,
+          phone: null,
+          location: null,
+          countryCode: null,
+          professionalTitle: null,
+        },
+        applicationOverrides: {
+          identity: {},
+          answers: {
+            "standard:question_42": "Kubernetes, AWS, Docker",
+          },
+        },
+        verifiedResumeFacts: [],
+        experience: [],
+        education: [],
+        credentials: [],
+        skills: [],
+        languages: [],
+        workAuthorization: null,
+        sponsorshipRequired: null,
+        answerMemories: [],
+        selectedResume: null,
+        coverLetter: null,
+        questions: [
+          {
+            id: "standard:question_42",
+            source: "GREENHOUSE",
+            group: "STANDARD",
+            label: "Which technologies have you used professionally?",
+            required: true,
+            fieldNames: ["question_42"],
+            fieldTypes: ["multi_value_single_select"],
+            options: ["Option A", "Option B"],
+          },
+        ],
+        questionInspection: "AVAILABLE",
+        sourceName: "GREENHOUSE",
+        targetRole: "Analyst",
+      },
+    });
+    const markup = renderToStaticMarkup(
+      createElement(ApplicationPacketSummary, {
+        applicationId: "application-1",
+        packet,
+        saveAction: async () => undefined,
+      }),
+    );
+    expect(markup).toContain("Current answer:");
+    expect(markup).toContain("Kubernetes, AWS, Docker");
+    expect(markup).toContain("Choose a replacement explicitly");
+    expect(markup).toContain("Option A");
+    expect(markup).toContain("Option B");
   });
 });

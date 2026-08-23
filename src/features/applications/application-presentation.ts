@@ -26,11 +26,23 @@ export function applicationStateLabel(state: ApplicationState) {
 export function applicationNextAction(state: ApplicationState) {
   if (state === "PREPARING" || state === "NEEDS_REVIEW")
     return "Review preparation";
-  if (state === "READY") return "Open employer application";
+  if (state === "READY") return "Continue on employer site";
   if (state === "SUBMITTED" || state === "RESPONSE" || state === "INTERVIEW")
     return "Record a confirmed outcome";
   if (state === "FAILED") return "Review preparation failure";
   return "View durable record";
+}
+
+export function applicationOutcomeActionLabel(state: ApplicationState) {
+  const labels: Partial<Record<ApplicationState, string>> = {
+    RESPONSE: "Record response",
+    INTERVIEW: "Record interview",
+    OFFER: "Record offer",
+    REJECTED: "Record employer rejection",
+    WITHDRAWN: "Withdraw application",
+    CLOSED: "Close application",
+  };
+  return labels[state] ?? applicationStateLabel(state);
 }
 
 export function applicationEventLabel(type: string) {

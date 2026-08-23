@@ -270,6 +270,99 @@ describe("Prisma application packet repository", () => {
     expect(mocks.applicationUpdateMany).not.toHaveBeenCalled();
   });
 
+  it("reconciles a stored answer when refreshed question metadata changes its id", async () => {
+    const previousPacket = buildApplicationPacket({
+      reviewed: false,
+      source: {
+        accountEmail: null,
+        profile: null,
+        applicationOverrides: {
+          identity: {},
+          answers: { "standard:1": "Kubernetes, AWS, Docker" },
+        },
+        verifiedResumeFacts: [],
+        experience: [],
+        education: [],
+        credentials: [],
+        skills: [],
+        languages: [],
+        workAuthorization: null,
+        sponsorshipRequired: null,
+        answerMemories: [],
+        selectedResume: null,
+        coverLetter: null,
+        questions: [
+          {
+            id: "standard:1",
+            source: "GREENHOUSE",
+            group: "STANDARD",
+            label: "Which technologies have you used professionally?",
+            required: true,
+            fieldNames: [],
+            fieldTypes: ["input_text"],
+            options: [],
+          },
+        ],
+        questionInspection: "AVAILABLE",
+        sourceName: "GREENHOUSE",
+        targetRole: "Security Analyst",
+      },
+    });
+    mocks.applicationFindFirst.mockResolvedValue({
+      ...application,
+      submissionPayloadSnapshot: {
+        packet: previousPacket,
+        overrides: {
+          identity: {},
+          answers: { "standard:1": "Kubernetes, AWS, Docker" },
+        },
+      },
+    });
+    const packet = await new PrismaApplicationPacketRepository(
+      vi.fn(async () =>
+        Response.json({
+          questions: [
+            {
+              required: true,
+              label: "Which technologies have you used professionally?",
+              fields: [
+                {
+                  name: "question_42",
+                  type: "multi_value_single_select",
+                  values: [{ label: "Option A" }, { label: "Option B" }],
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    ).refresh({
+      applicationId: "application-1",
+      userId: "user-1",
+      reviewed: false,
+    });
+    expect(packet.answers[0]).toMatchObject({
+      questionId: "standard:question_42",
+      status: "CONFLICTING",
+      value: "Kubernetes, AWS, Docker",
+      options: ["Option A", "Option B"],
+    });
+    expect(mocks.applicationUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          submissionPayloadSnapshot: expect.objectContaining({
+            overrides: {
+              identity: {},
+              answers: {
+                "standard:question_42": "Kubernetes, AWS, Docker",
+              },
+            },
+          }),
+        }),
+      }),
+    );
+  });
+
   it("conceals another candidate's application", async () => {
     mocks.applicationFindFirst.mockResolvedValue(null);
     await expect(

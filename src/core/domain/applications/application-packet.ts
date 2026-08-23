@@ -53,6 +53,7 @@ export interface ApplicationPacketDocument {
 
 export interface ApplicationPacketAnswer extends ApplicationPacketField {
   readonly questionId: string;
+  readonly questionGroup?: PublicApplicationQuestion["group"];
   readonly classification: string;
   readonly fieldNames: readonly string[];
   readonly fieldTypes: readonly string[];
@@ -219,6 +220,39 @@ export interface ApplicationPacketSource {
   readonly targetRole: string;
 }
 
+function normalizedQuestionLabel(value: string) {
+  return value.normalize("NFKC").replace(/\s+/gu, " ").trim().toLowerCase();
+}
+
+export function reconcileApplicationQuestionOverrides(input: {
+  readonly overrides: ApplicationPacketOverrides;
+  readonly previousAnswers: readonly ApplicationPacketAnswer[];
+  readonly questions: readonly PublicApplicationQuestion[];
+}): ApplicationPacketOverrides {
+  const nextAnswers = { ...input.overrides.answers };
+  const currentIds = new Set(input.questions.map((question) => question.id));
+
+  for (const [previousId, value] of Object.entries(input.overrides.answers)) {
+    if (currentIds.has(previousId)) continue;
+    const previous = input.previousAnswers.find(
+      (answer) => answer.questionId === previousId,
+    );
+    if (!previous) continue;
+    const candidates = input.questions.filter(
+      (question) =>
+        normalizedQuestionLabel(question.label) ===
+          normalizedQuestionLabel(previous.label) &&
+        (!previous.questionGroup || question.group === previous.questionGroup),
+    );
+    if (candidates.length !== 1) continue;
+    const currentId = candidates[0]!.id;
+    if (!(currentId in nextAnswers)) nextAnswers[currentId] = value;
+    delete nextAnswers[previousId];
+  }
+
+  return { identity: input.overrides.identity, answers: nextAnswers };
+}
+
 function clean(value: string | null | undefined) {
   const normalized = value?.normalize("NFKC").replace(/\s+/gu, " ").trim();
   return normalized || null;
@@ -368,9 +402,14 @@ function packetFieldForQuestion(
     return {
       key: `question:${question.id}`,
       questionId: question.id,
+      questionGroup: question.group,
       label: question.label,
       required: question.required,
-      status: "RESOLVED",
+      status:
+        question.options.length > 0 &&
+        !question.options.includes(applicationSpecific)
+          ? "CONFLICTING"
+          : "RESOLVED",
       value: applicationSpecific,
       provenance: [
         {
@@ -387,6 +426,10 @@ function packetFieldForQuestion(
       fieldNames: question.fieldNames,
       fieldTypes: question.fieldTypes,
       options: question.options,
+      ...(question.options.length > 0 &&
+      !question.options.includes(applicationSpecific)
+        ? { alternatives: question.options }
+        : {}),
     };
   const direct = [
     [/\bfirst[ _-]?name\b/iu, "firstName"],
@@ -415,6 +458,7 @@ function packetFieldForQuestion(
               : "UNRESOLVED"
             : "NOT_REQUIRED",
       questionId: question.id,
+      questionGroup: question.group,
       classification: "PROFILE_FACT",
       fieldNames: question.fieldNames,
       fieldTypes: question.fieldTypes,
@@ -426,6 +470,7 @@ function packetFieldForQuestion(
     return {
       key: `question:${question.id}`,
       questionId: question.id,
+      questionGroup: question.group,
       label: question.label,
       required: question.required,
       status: selected
@@ -486,6 +531,7 @@ function packetFieldForQuestion(
   return {
     key: `question:${question.id}`,
     questionId: question.id,
+    questionGroup: question.group,
     label: question.label,
     required: question.required,
     status: resolvedValue
@@ -672,7 +718,13 @@ export function buildApplicationPacket(input: {
     resume,
     ...answers.filter((answer) => answer.required),
   ];
-  const needsReview = requiredFields.filter(
+  const reviewFields = [
+    ...requiredFields,
+    ...answers.filter(
+      (answer) => answer.status === "CONFLICTING" && !answer.required,
+    ),
+  ];
+  const needsReview = reviewFields.filter(
     (candidate) =>
       candidate.status === "UNRESOLVED" || candidate.status === "CONFLICTING",
   ).length;

@@ -3,6 +3,7 @@ import {
   buildApplicationPacket,
   isApplicationPacket,
   parseApplicationPacketOverrides,
+  reconcileApplicationQuestionOverrides,
   type ApplicationPacketSource,
 } from "@/core/domain/applications/application-packet";
 import type { ApplicationPacketRepository } from "@/features/applications/refresh-application-packet";
@@ -87,7 +88,7 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
     });
     if (!application) throw new NotFoundError("Application not found.");
     const existingPayload = object(application.submissionPayloadSnapshot);
-    const applicationOverrides = parseApplicationPacketOverrides(
+    const storedApplicationOverrides = parseApplicationPacketOverrides(
       existingPayload.overrides,
     );
     if (application.submittedAt) {
@@ -127,6 +128,14 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
         questionInspection = "UNAVAILABLE";
       }
     }
+    const previousPacket = isApplicationPacket(existingPayload.packet)
+      ? existingPayload.packet
+      : null;
+    const applicationOverrides = reconcileApplicationQuestionOverrides({
+      overrides: storedApplicationOverrides,
+      previousAnswers: previousPacket?.answers ?? [],
+      questions,
+    });
 
     const [
       user,
@@ -312,6 +321,7 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
       destinationUrl: application.submissionDestination,
       documents,
       generatedText,
+      overrides: applicationOverrides,
       packet,
       resumeVersionId: tailoredResume?.id ?? null,
     };
