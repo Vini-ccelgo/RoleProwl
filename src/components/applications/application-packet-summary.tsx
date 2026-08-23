@@ -39,9 +39,10 @@ function Field({ field }: { readonly field: ApplicationPacketField }) {
           {field.alternatives.join(", ")}
         </span>
       ) : null}
-      {field.provenance.length ? (
+      {(field.provenance ?? []).length ? (
         <span className="text-xs text-foreground-muted">
-          Source: {field.provenance.map((item) => item.label).join(", ")}
+          Source:{" "}
+          {(field.provenance ?? []).map((item) => item.label).join(", ")}
         </span>
       ) : null}
     </li>
@@ -56,7 +57,8 @@ function OverrideInput({
   const answer = "questionId" in field ? field : null;
   const name = answer ? `answer:${answer.questionId}` : `identity:${field.key}`;
   const label = `${field.label}${field.required ? " (required)" : ""}`;
-  if (answer?.options.length)
+  const answerOptions = answer?.options ?? [];
+  if (answerOptions.length)
     return (
       <label className="field">
         <span>{label}</span>
@@ -66,7 +68,7 @@ function OverrideInput({
           required={field.required}
         >
           <option value="">Choose an answer</option>
-          {answer.options.map((option) => (
+          {answerOptions.map((option) => (
             <option key={option} value={option}>
               {option}
             </option>
@@ -74,7 +76,8 @@ function OverrideInput({
         </select>
       </label>
     );
-  const isLongAnswer = answer && !answer.fieldTypes.includes("input_text");
+  const isLongAnswer =
+    answer && !(answer.fieldTypes ?? []).includes("input_text");
   if (isLongAnswer)
     return (
       <label className="field sm:col-span-2">
@@ -328,9 +331,9 @@ export function ApplicationPacketSummary({
 
         <section className="card p-5">
           <h2 className="text-base font-semibold">Application answers</h2>
-          {packet.answers.length ? (
+          {(packet.answers ?? []).length ? (
             <ul className="m-0 grid list-none gap-3 p-0">
-              {packet.answers.map((answer) => (
+              {(packet.answers ?? []).map((answer) => (
                 <Field field={answer} key={answer.questionId} />
               ))}
             </ul>
