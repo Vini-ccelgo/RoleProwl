@@ -6,12 +6,14 @@ import type { Prisma } from "@/generated/prisma/client";
 import { requireLegitimateDestination } from "@/core/domain/applications/submission";
 import { matchCandidateToJob } from "@/core/domain/matching/match-job";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
+import { startApplication } from "@/features/applications/start-application";
 import {
   buildCandidateMatchSnapshot,
   buildJobMatchSnapshot,
 } from "@/features/jobs/build-match-snapshots";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { PrismaProductAnalyticsProvider } from "@/integrations/analytics/prisma-product-analytics-provider";
+import { PrismaApplicationStartRepository } from "@/integrations/applications/prisma-application-start-repository";
 import { trackProductEvent } from "@/features/analytics/track-product-event";
 import { databaseClient } from "@/lib/db/client";
 
@@ -185,6 +187,20 @@ export async function setJobDispositionAction(formData: FormData) {
   revalidatePath("/jobs");
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/dashboard");
+}
+
+export async function startApplicationAction(formData: FormData) {
+  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const jobId = String(formData.get("jobId") ?? "");
+  if (!jobId) return;
+  const application = await startApplication({
+    jobId,
+    repository: new PrismaApplicationStartRepository(),
+    userId: actor.id,
+  });
+  revalidatePath("/applications");
+  revalidatePath("/dashboard");
+  redirect(`/applications/${application.applicationId}`);
 }
 
 export async function openEmployerPostingAction(formData: FormData) {

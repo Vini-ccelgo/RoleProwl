@@ -34,4 +34,9 @@ describe("application tracker", () => {
     expect(trackerOutcome("INTERVIEW")).toBeNull();
     expect(trackerOutcome("REJECTED")).toBe("REJECTED");
   });
+
+  it("does not infer rejection from a submitted application without evidence", () => {
+    expect(trackerOutcome("SUBMITTED")).toBeNull();
+    expect(trackerOutcome("RESPONSE")).toBeNull();
+  });
 });

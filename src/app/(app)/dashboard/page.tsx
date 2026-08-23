@@ -7,6 +7,10 @@ import {
 } from "@/core/domain/matching/match-job";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import {
+  preparedApplicationsWhere,
+  submittedApplicationsWhere,
+} from "@/features/applications/application-metrics";
+import {
   activeEvidenceAwareMatchWhere,
   confirmedHighFitWhere,
 } from "@/features/jobs/match-query-policy";
@@ -54,18 +58,13 @@ export default async function DashboardPage() {
       where: confirmedHighFitWhere(actor.id, highFitThreshold),
     }),
     database.application.count({
-      where: { userId: actor.id, state: { in: ["PREPARING", "READY"] } },
+      where: preparedApplicationsWhere(actor.id),
     }),
     database.reviewQueueItem.count({
       where: { userId: actor.id, status: { in: ["PENDING", "DEFERRED"] } },
     }),
     database.application.count({
-      where: {
-        userId: actor.id,
-        state: {
-          in: ["SUBMITTED", "RESPONSE", "INTERVIEW", "REJECTED", "OFFER"],
-        },
-      },
+      where: submittedApplicationsWhere(actor.id),
     }),
     database.application.count({
       where: { userId: actor.id, state: "RESPONSE" },

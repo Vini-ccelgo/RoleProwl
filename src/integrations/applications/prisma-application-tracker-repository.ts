@@ -37,7 +37,10 @@ export class PrismaApplicationTrackerRepository implements ApplicationTrackerRep
         data: {
           applicationId: input.applicationId,
           actorUserId: input.userId,
-          type: "STATE_CHANGED",
+          type:
+            input.to === "READY"
+              ? "READY_FOR_EXTERNAL_SUBMISSION"
+              : "STATE_CHANGED",
           fromState: input.from,
           toState: input.to,
           detail: input.detail ? json(input.detail) : undefined,

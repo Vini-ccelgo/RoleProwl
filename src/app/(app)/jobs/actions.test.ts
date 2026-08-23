@@ -3,22 +3,26 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   deleteMany,
   findUnique,
+  redirect,
   requireAuthenticatedActor,
   revalidatePath,
+  startApplication,
   trackProductEvent,
   upsert,
 } = vi.hoisted(() => ({
   deleteMany: vi.fn(async () => ({ count: 1 })),
   findUnique: vi.fn(),
+  redirect: vi.fn(),
   requireAuthenticatedActor: vi.fn(async () => ({ id: "user-1" })),
   revalidatePath: vi.fn(),
+  startApplication: vi.fn(),
   trackProductEvent: vi.fn(async () => undefined),
   upsert: vi.fn(async () => undefined),
 }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath }));
-vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
+vi.mock("next/navigation", () => ({ redirect }));
 vi.mock("@/features/accounts/require-authenticated-actor", () => ({
   requireAuthenticatedActor,
 }));
@@ -28,6 +32,13 @@ vi.mock("@/integrations/auth/clerk-auth-provider", () => ({
 vi.mock("@/features/analytics/track-product-event", () => ({
   trackProductEvent,
 }));
+vi.mock("@/features/applications/start-application", () => ({
+  startApplication,
+}));
+vi.mock(
+  "@/integrations/applications/prisma-application-start-repository",
+  () => ({ PrismaApplicationStartRepository: class {} }),
+);
 vi.mock("@/integrations/analytics/prisma-product-analytics-provider", () => ({
   PrismaProductAnalyticsProvider: class {},
 }));
@@ -38,7 +49,7 @@ vi.mock("@/lib/db/client", () => ({
   })),
 }));
 
-import { setJobDispositionAction } from "./actions";
+import { setJobDispositionAction, startApplicationAction } from "./actions";
 
 function dispositionForm(status: string) {
   const form = new FormData();
@@ -51,6 +62,21 @@ describe("candidate job disposition action", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     findUnique.mockResolvedValue({ applications: [], id: "job-1" });
+    startApplication.mockResolvedValue({
+      applicationId: "application-1",
+      created: true,
+      state: "PREPARING",
+    });
+  });
+
+  it("opens the durable application returned by an idempotent start", async () => {
+    const form = new FormData();
+    form.set("jobId", "job-1");
+    await startApplicationAction(form);
+    expect(startApplication).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: "job-1", userId: "user-1" }),
+    );
+    expect(redirect).toHaveBeenCalledWith("/applications/application-1");
   });
 
   it("persists an owner-scoped shortlist and refreshes relevant views", async () => {

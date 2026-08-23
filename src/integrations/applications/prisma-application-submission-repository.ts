@@ -3,6 +3,7 @@ import type {
   ApplicationSubmissionRecord,
   ApplicationSubmissionRepository,
 } from "@/core/domain/applications/submission";
+import { ConflictError } from "@/core/errors/application-errors";
 import type { Prisma } from "@/generated/prisma/client";
 import { databaseClient } from "@/lib/db/client";
 import { notificationAllowed } from "@/features/notifications/notification-preferences";
@@ -108,10 +109,22 @@ export class PrismaApplicationSubmissionRepository implements ApplicationSubmiss
     return databaseClient().$transaction(async (transaction) => {
       const current = await transaction.application.findFirstOrThrow({
         where: { id: applicationId, userId },
-        select: { state: true, userId: true },
+        select: {
+          id: true,
+          state: true,
+          userId: true,
+          submissionDestination: true,
+          submissionMechanism: true,
+          submissionPayloadSnapshot: true,
+        },
       });
-      const application = await transaction.application.update({
-        where: { id: applicationId },
+      if (current.state === "SUBMITTED") return recordFrom(current);
+      if (current.state !== "READY" && current.state !== "SUBMITTING")
+        throw new ConflictError(
+          "The application is not eligible for submission confirmation.",
+        );
+      const updated = await transaction.application.updateMany({
+        where: { id: applicationId, userId, state: current.state },
         data: {
           state: "SUBMITTED",
           externalSubmissionId: receipt.externalId,
@@ -121,6 +134,26 @@ export class PrismaApplicationSubmissionRepository implements ApplicationSubmiss
               ? receipt.submittedAt
               : null,
         },
+      });
+      if (updated.count !== 1) {
+        const latest = await transaction.application.findFirstOrThrow({
+          where: { id: applicationId, userId },
+          select: {
+            id: true,
+            state: true,
+            userId: true,
+            submissionDestination: true,
+            submissionMechanism: true,
+            submissionPayloadSnapshot: true,
+          },
+        });
+        if (latest.state === "SUBMITTED") return recordFrom(latest);
+        throw new ConflictError(
+          "The application changed before submission was confirmed.",
+        );
+      }
+      const application = await transaction.application.findUniqueOrThrow({
+        where: { id: applicationId },
       });
       await transaction.applicationEvent.create({
         data: {

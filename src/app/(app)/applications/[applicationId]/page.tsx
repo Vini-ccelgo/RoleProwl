@@ -1,17 +1,23 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { JsonSnapshot } from "@/components/applications/json-snapshot";
+import { ApplicationPreparationSummary } from "@/components/applications/application-preparation-summary";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   applicationTransitionsFrom,
   type ApplicationState,
 } from "@/core/domain/applications/application-tracker";
+import {
+  APPLICATION_OUTCOME_POLICY_COPY,
+  applicationEventLabel,
+  applicationStateLabel,
+} from "@/features/applications/application-presentation";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 import {
   confirmExternalApplicationAction,
+  markApplicationReadyAction,
   updateApplicationStateAction,
 } from "./actions";
 
@@ -23,10 +29,6 @@ const USER_OUTCOME_STATES = new Set<ApplicationState>([
   "OFFER",
   "CLOSED",
 ]);
-
-function label(value: string) {
-  return value.replaceAll("_", " ").toLowerCase();
-}
 
 function Unknown({ children }: { children: React.ReactNode }) {
   return <span className="text-foreground-muted">{children || "Unknown"}</span>;
@@ -43,7 +45,18 @@ export default async function ApplicationDetailPage({
   const application = await databaseClient().application.findFirst({
     where: { id: applicationId, userId: actor.id },
     include: {
-      job: true,
+      job: {
+        include: {
+          reviewQueueItems: {
+            where: {
+              userId: actor.id,
+              status: { in: ["PENDING", "DEFERRED"] },
+            },
+            select: { id: true, status: true },
+            take: 1,
+          },
+        },
+      },
       resumeVersion: {
         select: {
           id: true,
@@ -65,6 +78,10 @@ export default async function ApplicationDetailPage({
     ["EXTERNAL_APPLICATION", "MANUAL_EXTERNAL"].includes(
       application.submissionMechanism,
     );
+  const pendingReview = application.job.reviewQueueItems[0] ?? null;
+  const canMarkReady =
+    !pendingReview &&
+    (application.state === "PREPARING" || application.state === "NEEDS_REVIEW");
 
   return (
     <div className="grid gap-7">
@@ -73,7 +90,7 @@ export default async function ApplicationDetailPage({
       </Link>
       <PageHeader
         title={application.job.title}
-        description={`${application.job.company} · ${label(application.state)}`}
+        description={`${application.job.company} · ${applicationStateLabel(application.state)}`}
       />
 
       <section className="card grid gap-4 p-5 md:grid-cols-2">
@@ -82,16 +99,33 @@ export default async function ApplicationDetailPage({
           <dl className="grid gap-2 text-sm">
             <div>
               <dt className="font-semibold">State</dt>
-              <dd className="m-0">{label(application.state)}</dd>
+              <dd className="m-0">
+                {applicationStateLabel(application.state)}
+              </dd>
             </div>
             <div>
               <dt className="font-semibold">Mechanism</dt>
-              <dd className="m-0">{label(application.submissionMechanism)}</dd>
+              <dd className="m-0">
+                {application.submissionMechanism
+                  .replaceAll("_", " ")
+                  .toLowerCase()}
+              </dd>
             </div>
             <div>
               <dt className="font-semibold">Destination</dt>
               <dd className="m-0 break-all">
-                <Unknown>{application.submissionDestination}</Unknown>
+                {application.submissionDestination ? (
+                  <a
+                    className="font-semibold text-brand"
+                    href={application.submissionDestination}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Open employer application
+                  </a>
+                ) : (
+                  <Unknown>Unknown</Unknown>
+                )}
               </dd>
             </div>
             <div>
@@ -130,6 +164,40 @@ export default async function ApplicationDetailPage({
           </dl>
         </div>
       </section>
+
+      <section className="card grid gap-2 p-5">
+        <h2 className="text-base font-semibold">Outcome policy</h2>
+        <p className="m-0 text-sm">{APPLICATION_OUTCOME_POLICY_COPY}</p>
+      </section>
+
+      {pendingReview && (
+        <section className="card grid gap-3 border-brand p-5">
+          <h2 className="text-base font-semibold">Review required</h2>
+          <p className="m-0 text-sm">
+            Resolve the pending review item before marking this application
+            ready for employer submission.
+          </p>
+          <Link className="font-semibold text-brand" href="/queue">
+            Open review queue →
+          </Link>
+        </section>
+      )}
+
+      {canMarkReady && (
+        <section className="card grid gap-3 border-brand p-5">
+          <h2 className="text-base font-semibold">Review preparation</h2>
+          <p className="m-0 text-sm">
+            Review the attached résumé, writing, answers, and warnings below.
+            Marking ready does not submit anything.
+          </p>
+          <form action={markApplicationReadyAction}>
+            <input name="applicationId" type="hidden" value={application.id} />
+            <button className="button button-primary" type="submit">
+              I reviewed this — mark ready
+            </button>
+          </form>
+        </section>
+      )}
 
       {canConfirmExternal && (
         <section className="card grid gap-3 border-brand p-5">
@@ -170,29 +238,17 @@ export default async function ApplicationDetailPage({
         </section>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <ApplicationPreparationSummary
+        answers={application.answersSnapshot}
+        documents={application.documentsSnapshot}
+        fit={application.fitSnapshot}
+        generatedText={application.generatedTextSnapshot}
+        policy={application.policyResultSnapshot}
+      />
+
+      <div className="grid gap-5">
         <section className="card p-5">
-          <h2 className="text-base font-semibold">Fit at application time</h2>
-          <JsonSnapshot value={application.fitSnapshot} />
-        </section>
-        <section className="card p-5">
-          <h2 className="text-base font-semibold">Policy result</h2>
-          <JsonSnapshot value={application.policyResultSnapshot} />
-        </section>
-        <section className="card p-5">
-          <h2 className="text-base font-semibold">Exact generated text</h2>
-          <JsonSnapshot value={application.generatedTextSnapshot} />
-        </section>
-        <section className="card p-5">
-          <h2 className="text-base font-semibold">Exact answers</h2>
-          <JsonSnapshot value={application.answersSnapshot} />
-        </section>
-        <section className="card p-5">
-          <h2 className="text-base font-semibold">Documents sent</h2>
-          <JsonSnapshot value={application.documentsSnapshot} />
-        </section>
-        <section className="card p-5">
-          <h2 className="text-base font-semibold">Exact résumé version</h2>
+          <h2 className="text-base font-semibold">Résumé version</h2>
           {application.resumeVersion ? (
             <dl className="grid gap-2 text-sm">
               <div>
@@ -244,7 +300,7 @@ export default async function ApplicationDetailPage({
                   type="submit"
                   value={state}
                 >
-                  {label(state)}
+                  {applicationStateLabel(state)}
                 </button>
               ))}
             </div>
@@ -260,18 +316,15 @@ export default async function ApplicationDetailPage({
           <ol className="grid gap-3 pl-5 text-sm">
             {application.events.map((event) => (
               <li key={event.id}>
-                <strong>{label(event.type)}</strong> ·{" "}
+                <strong>{applicationEventLabel(event.type)}</strong> ·{" "}
                 {event.createdAt.toLocaleString()}
                 <br />
                 <span className="text-foreground-muted">
-                  {event.fromState ? `${label(event.fromState)} → ` : ""}
-                  {label(event.toState)}
+                  {event.fromState
+                    ? `${applicationStateLabel(event.fromState)} → `
+                    : ""}
+                  {applicationStateLabel(event.toState)}
                 </span>
-                {event.detail && (
-                  <div className="mt-1">
-                    <JsonSnapshot value={event.detail} />
-                  </div>
-                )}
               </li>
             ))}
           </ol>

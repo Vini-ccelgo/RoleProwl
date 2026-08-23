@@ -6,7 +6,10 @@ import {
   isApplicationState,
   type ApplicationState,
 } from "@/core/domain/applications/application-tracker";
-import type { ApplicationSubmissionRecord } from "@/core/domain/applications/submission";
+import {
+  requireLegitimateDestination,
+  type ApplicationSubmissionRecord,
+} from "@/core/domain/applications/submission";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { confirmExternalSubmission } from "@/features/applications/prepare-and-submit-application";
 import { updateApplicationState } from "@/features/applications/update-application-state";
@@ -45,6 +48,52 @@ export async function updateApplicationStateAction(formData: FormData) {
   });
   revalidatePath("/applications");
   revalidatePath(`/applications/${applicationId}`);
+  revalidatePath("/dashboard");
+}
+
+export async function markApplicationReadyAction(formData: FormData) {
+  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const applicationId = String(formData.get("applicationId") ?? "");
+  if (!applicationId) return;
+  const application = await databaseClient().application.findFirst({
+    where: { id: applicationId, userId: actor.id },
+    select: {
+      jobId: true,
+      state: true,
+      submissionDestination: true,
+      job: {
+        select: {
+          reviewQueueItems: {
+            where: {
+              userId: actor.id,
+              status: { in: ["PENDING", "DEFERRED"] },
+            },
+            select: { id: true },
+            take: 1,
+          },
+        },
+      },
+    },
+  });
+  if (
+    !application ||
+    (application.state !== "PREPARING" &&
+      application.state !== "NEEDS_REVIEW") ||
+    application.job.reviewQueueItems.length > 0
+  )
+    return;
+  requireLegitimateDestination(application.submissionDestination);
+  await updateApplicationState({
+    applicationId,
+    userId: actor.id,
+    next: "READY",
+    detail: { confirmation: "CANDIDATE_REVIEWED" },
+    repository: new PrismaApplicationTrackerRepository(),
+  });
+  revalidatePath("/applications");
+  revalidatePath(`/applications/${applicationId}`);
+  revalidatePath("/dashboard");
+  revalidatePath("/queue");
 }
 
 export async function confirmExternalApplicationAction(formData: FormData) {
@@ -82,4 +131,6 @@ export async function confirmExternalApplicationAction(formData: FormData) {
   });
   revalidatePath("/applications");
   revalidatePath(`/applications/${applicationId}`);
+  revalidatePath("/dashboard");
+  revalidatePath("/queue");
 }

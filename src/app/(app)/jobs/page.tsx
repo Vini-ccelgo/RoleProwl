@@ -15,6 +15,7 @@ import {
   openEmployerPostingAction,
   recordMatchFeedbackAction,
   setJobDispositionAction,
+  startApplicationAction,
 } from "./actions";
 
 const FILTERS = [
@@ -247,6 +248,16 @@ export default async function JobsPage({
                       </form>
                     </>
                   )}
+                  {disposition !== "REJECTED" &&
+                    !application &&
+                    source?.applicationUrl && (
+                      <form action={startApplicationAction}>
+                        <input name="jobId" type="hidden" value={job.id} />
+                        <button className="button button-primary" type="submit">
+                          Prepare application
+                        </button>
+                      </form>
+                    )}
                   {application && (
                     <Link
                       className="button button-secondary"
