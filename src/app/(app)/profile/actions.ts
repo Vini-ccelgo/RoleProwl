@@ -419,3 +419,71 @@ export async function deleteCandidateEntity(
   requireOwnedMutation(result.count);
   revalidatePath("/profile");
 }
+
+export async function editCandidateFact(
+  _state: CandidateFormState,
+  formData: FormData,
+): Promise<CandidateFormState> {
+  try {
+    const actor = await requireAuthenticatedActor(currentAuthProvider());
+    const id = value(formData, "id");
+    const factValue = z
+      .string()
+      .trim()
+      .min(1)
+      .max(10_000)
+      .parse(value(formData, "factValue"));
+    await databaseClient().$transaction(async (transaction) => {
+      const current = await transaction.candidateFact.findFirst({
+        where: { id, userId: actor.id, status: "ACTIVE" },
+        select: { factType: true },
+      });
+      if (!current) requireOwnedMutation(0);
+      const updated = await transaction.candidateFact.updateMany({
+        where: { id, userId: actor.id, status: "ACTIVE" },
+        data: { value: { text: factValue } },
+      });
+      requireOwnedMutation(updated.count);
+      await transaction.auditEvent.create({
+        data: {
+          actorUserId: actor.id,
+          action: "CANDIDATE_FACT_CHANGED",
+          entityType: "candidateFact",
+          entityId: id,
+          metadata: { factType: current!.factType, changedFields: ["value"] },
+        },
+      });
+    });
+    return success(
+      "Verified résumé fact corrected. Its source remains preserved.",
+    );
+  } catch (error) {
+    return formError(error);
+  }
+}
+
+export async function removeCandidateFact(id: string): Promise<void> {
+  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  await databaseClient().$transaction(async (transaction) => {
+    const current = await transaction.candidateFact.findFirst({
+      where: { id, userId: actor.id, status: "ACTIVE" },
+      select: { factType: true },
+    });
+    if (!current) requireOwnedMutation(0);
+    const removed = await transaction.candidateFact.updateMany({
+      where: { id, userId: actor.id, status: "ACTIVE" },
+      data: { status: "REMOVED", removedAt: new Date() },
+    });
+    requireOwnedMutation(removed.count);
+    await transaction.auditEvent.create({
+      data: {
+        actorUserId: actor.id,
+        action: "CANDIDATE_FACT_REMOVED",
+        entityType: "candidateFact",
+        entityId: id,
+        metadata: { factType: current!.factType, reason: "USER_REVOCATION" },
+      },
+    });
+  });
+  revalidatePath("/profile");
+}

@@ -3,6 +3,7 @@ import { ValidationError } from "@/core/errors/application-errors";
 export const AUDIT_ACTIONS = [
   "CANDIDATE_FACT_VERIFIED",
   "CANDIDATE_FACT_CHANGED",
+  "CANDIDATE_FACT_REMOVED",
   "POLICY_CHANGED",
   "APPLICATION_GENERATED",
   "CLAIM_BLOCKED",
@@ -19,6 +20,7 @@ export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 const SAFE_METADATA_KEYS: Readonly<Record<AuditAction, readonly string[]>> = {
   CANDIDATE_FACT_VERIFIED: ["factType", "source"],
   CANDIDATE_FACT_CHANGED: ["factType", "changedFields"],
+  CANDIDATE_FACT_REMOVED: ["factType", "reason"],
   POLICY_CHANGED: ["policyVersion", "changedFields"],
   APPLICATION_GENERATED: ["mechanism", "decisionVersion"],
   CLAIM_BLOCKED: ["classification", "reasonCode", "generator"],

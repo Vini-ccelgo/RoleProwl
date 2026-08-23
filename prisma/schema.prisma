@@ -43,6 +43,8 @@ model User {
   applications             Application[]
   applicationEvents        ApplicationEvent[]
   notifications            Notification[]
+  notificationPreferences  NotificationPreferences?
+  jobSearchState           JobSearchState?
   auditEvents              AuditEvent[]
   productEvents            ProductEvent[]
   jobDispositions          CandidateJobDisposition[]
@@ -363,12 +365,19 @@ model CandidateFact {
   verificationState VerificationState     @default(VERIFIED)
   source            FactSource            @default(RESUME_EXTRACTED)
   sourceProposalId  String                @unique
+  status            CandidateFactStatus   @default(ACTIVE)
+  removedAt         DateTime?
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
   user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   sourceProposal    CandidateFactProposal @relation(fields: [sourceProposalId], references: [id], onDelete: Restrict)
 
   @@index([userId, factType])
+}
+
+enum CandidateFactStatus {
+  ACTIVE
+  REMOVED
 }
 
 model GeneratedClaim {
@@ -710,9 +719,45 @@ model Notification {
   @@index([userId, readAt, createdAt])
 }
 
+model NotificationPreferences {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  applicationUpdates Boolean  @default(true)
+  jobUpdates         Boolean  @default(true)
+  reviewRequired     Boolean  @default(true)
+  workflowFailures   Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum JobSearchStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model JobSearchState {
+  id              String          @id @default(cuid())
+  userId          String          @unique
+  status          JobSearchStatus
+  startedAt       DateTime
+  completedAt     DateTime?
+  discoveredCount Int             @default(0)
+  newCount        Int             @default(0)
+  failureCode     String?
+  failureMessage  String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, startedAt])
+}
+
 enum AuditAction {
   CANDIDATE_FACT_VERIFIED
   CANDIDATE_FACT_CHANGED
+  CANDIDATE_FACT_REMOVED
   POLICY_CHANGED
   APPLICATION_GENERATED
   CLAIM_BLOCKED

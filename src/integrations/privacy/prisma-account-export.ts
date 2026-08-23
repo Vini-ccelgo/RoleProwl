@@ -40,6 +40,8 @@ export async function exportAccountData(userId: string) {
         candidatePreferences: true,
         workAuthorizationProfile: true,
         candidateFacts: true,
+        notificationPreferences: true,
+        jobSearchState: true,
         jobDispositions: {
           select: {
             status: true,

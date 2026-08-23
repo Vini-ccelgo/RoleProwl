@@ -37,7 +37,7 @@ export async function getCandidateTruthVault(userId: string) {
       orderBy: { issuedAt: "desc" },
     }),
     database.candidateFact.findMany({
-      where: { userId },
+      where: { userId, status: "ACTIVE" },
       include: {
         sourceProposal: {
           select: {

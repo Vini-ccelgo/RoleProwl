@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
+import Script from "next/script";
 import { isClerkConfigured } from "@/lib/auth/config";
 import "./globals.css";
 
@@ -14,7 +15,10 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const document = (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <Script src="/theme-init.js" strategy="beforeInteractive" />
+      </head>
       <body>{children}</body>
     </html>
   );

@@ -35,6 +35,9 @@ describe("verified résumé facts rendering", () => {
     expect(markup).toContain("jordan-mercer-synthetic.pdf");
     expect(markup).toContain("Original synthetic contact line");
     expect(markup).toContain("EDITED AND ACCEPTED");
+    expect(markup).toContain("Edit active value");
+    expect(markup).toContain("Save correction");
+    expect(markup).toContain("Remove from active facts");
   });
 
   it("renders a clear empty state", () => {

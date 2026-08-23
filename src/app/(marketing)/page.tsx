@@ -3,9 +3,72 @@ import { Button } from "@/components/ui/button";
 import { Container } from "@/components/layout/container";
 import { Section } from "@/components/layout/section";
 import { ProductPreview } from "@/components/marketing/product-preview";
+import { SearchControl } from "@/components/jobs/search-control";
 import { features, principles, workflowSteps } from "@/config/marketing";
+import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
+import { databaseClient } from "@/lib/db/client";
+import { searchRunIsActive } from "@/features/jobs/manual-discovery";
 
-export default function HomePage() {
+export default async function HomePage() {
+  const actor = await currentAuthProvider().currentActor();
+  if (actor) {
+    const database = databaseClient();
+    const [searchState, activeJobs, pendingReviews, unreadNotifications] =
+      await Promise.all([
+        database.jobSearchState.findUnique({ where: { userId: actor.id } }),
+        database.job.count({ where: { status: "ACTIVE" } }),
+        database.reviewQueueItem.count({
+          where: { userId: actor.id, status: { in: ["PENDING", "DEFERRED"] } },
+        }),
+        database.notification.count({
+          where: { userId: actor.id, readAt: null },
+        }),
+      ]);
+    return (
+      <Section className="authenticated-home">
+        <Container>
+          <header className="page-header">
+            <p className="eyebrow">RoleProwl Home</p>
+            <h1>Your next useful action</h1>
+            <p>
+              Start discovery, then review the real opportunities and decisions
+              already waiting in your workspace.
+            </p>
+          </header>
+          <SearchControl
+            active={searchRunIsActive(searchState)}
+            lastRun={
+              searchState
+                ? {
+                    status: searchState.status,
+                    startedAt: searchState.startedAt.toISOString(),
+                    completedAt: searchState.completedAt?.toISOString() ?? null,
+                    discoveredCount: searchState.discoveredCount,
+                    newCount: searchState.newCount,
+                    failureMessage: searchState.failureMessage,
+                  }
+                : null
+            }
+          />
+          <section className="home-next-actions" aria-label="Current workspace">
+            <Button href="/jobs" variant="secondary">
+              <strong>{activeJobs}</strong> active jobs
+            </Button>
+            <Button href="/queue" variant="secondary">
+              <strong>{pendingReviews}</strong> reviews need attention
+            </Button>
+            <Button href="/notifications" variant="secondary">
+              <strong>{unreadNotifications}</strong> unread notifications
+            </Button>
+            <Button href="/profile" variant="secondary">
+              Review your Truth Vault
+            </Button>
+          </section>
+        </Container>
+      </Section>
+    );
+  }
+
   return (
     <>
       <Section className="hero">

@@ -33,4 +33,23 @@ describe("safe audit events", () => {
       }).metadata,
     ).toEqual({ toState: "INTERVIEW" });
   });
+
+  it("records fact revocation without copying private fact content", () => {
+    expect(
+      buildSafeAuditEvent({
+        actorUserId: "user-1",
+        action: "CANDIDATE_FACT_REMOVED",
+        entityType: "candidateFact",
+        entityId: "fact-1",
+        metadata: {
+          factType: "PROFILE_SUMMARY",
+          reason: "USER_REVOCATION",
+          value: "private résumé content",
+        },
+      }).metadata,
+    ).toEqual({
+      factType: "PROFILE_SUMMARY",
+      reason: "USER_REVOCATION",
+    });
+  });
 });

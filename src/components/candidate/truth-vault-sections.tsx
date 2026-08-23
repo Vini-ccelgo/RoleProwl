@@ -1,6 +1,8 @@
 import { Trash2 } from "lucide-react";
 import {
   deleteCandidateEntity,
+  editCandidateFact,
+  removeCandidateFact,
   saveCandidatePreferences,
   saveCandidateProfile,
   saveCredential,
@@ -50,6 +52,7 @@ function sourceRegionText(value: unknown) {
 
 function VerifiedResumeFactRecord({ item }: { item: VerifiedResumeFact }) {
   const destination = getProposalDestination(item.factType);
+  const removeAction = removeCandidateFact.bind(null, item.id);
   return (
     <article className="vault-record">
       <div className="vault-record-heading">
@@ -73,6 +76,23 @@ function VerifiedResumeFactRecord({ item }: { item: VerifiedResumeFact }) {
           </p>
         </div>
       </details>
+      <details>
+        <summary>Edit active value</summary>
+        <VaultForm action={editCandidateFact} submitLabel="Save correction">
+          <input name="id" type="hidden" value={item.id} />
+          <TextAreaField
+            name="factValue"
+            label="Active verified value"
+            defaultValue={factText(item.value)}
+            wide
+          />
+        </VaultForm>
+      </details>
+      <form action={removeAction}>
+        <button className="record-delete" type="submit">
+          <Trash2 size={15} /> Remove from active facts
+        </button>
+      </form>
     </article>
   );
 }
@@ -312,7 +332,7 @@ export function ExperienceSection({ vault }: { vault: CandidateTruthVault }) {
         </Record>
       ))}
       <details className="add-record" open={vault.experiences.length === 0}>
-        <summary>Add experience</summary>
+        <summary>+ Add another experience</summary>
         <ExperienceForm />
       </details>
     </VaultSection>
@@ -381,7 +401,7 @@ export function EducationSection({ vault }: { vault: CandidateTruthVault }) {
         </Record>
       ))}
       <details className="add-record" open={vault.education.length === 0}>
-        <summary>Add education</summary>
+        <summary>+ Add another education</summary>
         <EducationForm />
       </details>
     </VaultSection>
@@ -487,7 +507,7 @@ export function SkillsSection({ vault }: { vault: CandidateTruthVault }) {
         </Record>
       ))}
       <details className="add-record" open={vault.skills.length === 0}>
-        <summary>Add skill</summary>
+        <summary>+ Add another skill</summary>
         <SkillForm />
       </details>
     </VaultSection>
@@ -613,7 +633,7 @@ export function ProjectsCredentialsSection({
         </Record>
       ))}
       <details className="add-record">
-        <summary>Add project</summary>
+        <summary>+ Add another project</summary>
         <ProjectForm />
       </details>
       {vault.credentials.map((item) => (
@@ -628,7 +648,7 @@ export function ProjectsCredentialsSection({
         </Record>
       ))}
       <details className="add-record">
-        <summary>Add credential</summary>
+        <summary>+ Add another credential</summary>
         <CredentialForm />
       </details>
     </VaultSection>

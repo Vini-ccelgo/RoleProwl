@@ -41,7 +41,7 @@ describe("Prisma Truth Vault projection", () => {
 
     expect(findManyFact).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { userId: "user-1" },
+        where: { userId: "user-1", status: "ACTIVE" },
         include: expect.objectContaining({
           sourceProposal: expect.any(Object),
         }),

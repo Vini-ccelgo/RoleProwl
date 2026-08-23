@@ -13,6 +13,7 @@ import { ClerkIdentityManager } from "@/integrations/auth/clerk-identity-manager
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { PrismaAccountDeletionRepository } from "@/integrations/privacy/prisma-account-deletion-repository";
 import { documentStorage } from "@/integrations/storage/document-storage";
+import { databaseClient } from "@/lib/db/client";
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "");
@@ -70,4 +71,31 @@ export async function deleteAccountAction(formData: FormData) {
       ? "/?account_deleted=1"
       : "/?account_deletion_pending=1",
   );
+}
+
+export async function saveNotificationPreferencesAction(
+  _state: CandidateFormState,
+  formData: FormData,
+): Promise<CandidateFormState> {
+  try {
+    const actor = await requireAuthenticatedActor(currentAuthProvider());
+    const preferences = {
+      applicationUpdates: formData.get("applicationUpdates") === "on",
+      jobUpdates: formData.get("jobUpdates") === "on",
+      reviewRequired: formData.get("reviewRequired") === "on",
+      workflowFailures: formData.get("workflowFailures") === "on",
+    };
+    await databaseClient().notificationPreferences.upsert({
+      where: { userId: actor.id },
+      create: { userId: actor.id, ...preferences },
+      update: preferences,
+    });
+    revalidatePath("/settings");
+    return { status: "success", message: "Notification preferences saved." };
+  } catch {
+    return {
+      status: "error",
+      message: "Notification preferences could not be saved. Please retry.",
+    };
+  }
 }

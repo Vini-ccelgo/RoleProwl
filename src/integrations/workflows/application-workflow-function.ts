@@ -2,6 +2,7 @@ import "server-only";
 import { NonRetriableError } from "inngest";
 import { workflowOutcomeForDecision } from "@/core/domain/applications/application-workflow";
 import { databaseClient } from "@/lib/db/client";
+import { notificationAllowed } from "@/features/notifications/notification-preferences";
 import { inngest } from "./inngest-client";
 
 export const applicationWorkflowFunction = inngest.createFunction(
@@ -29,24 +30,27 @@ export const applicationWorkflowFunction = inngest.createFunction(
             lastErrorAt: new Date(),
           },
         });
-        await transaction.notification.upsert({
-          where: {
-            userId_dedupeKey: {
+        if (
+          await notificationAllowed(transaction, run.userId, "WORKFLOW_FAILED")
+        )
+          await transaction.notification.upsert({
+            where: {
+              userId_dedupeKey: {
+                userId: run.userId,
+                dedupeKey: `workflow-failed:${workflowRunId}`,
+              },
+            },
+            create: {
               userId: run.userId,
+              type: "WORKFLOW_FAILED",
+              title: "Application workflow failed",
+              body: "A workflow stopped after its safe retries were exhausted. Review the application before continuing.",
+              entityType: "applicationWorkflowRun",
+              entityId: workflowRunId,
               dedupeKey: `workflow-failed:${workflowRunId}`,
             },
-          },
-          create: {
-            userId: run.userId,
-            type: "WORKFLOW_FAILED",
-            title: "Application workflow failed",
-            body: "A workflow stopped after its safe retries were exhausted. Review the application before continuing.",
-            entityType: "applicationWorkflowRun",
-            entityId: workflowRunId,
-            dedupeKey: `workflow-failed:${workflowRunId}`,
-          },
-          update: {},
-        });
+            update: {},
+          });
         await transaction.auditEvent.create({
           data: {
             actorUserId: run.userId,

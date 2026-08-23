@@ -4,6 +4,7 @@ import type { ReviewQueueAction } from "@/core/domain/applications/review-queue"
 import { buildAuditedReviewMutation } from "@/core/domain/applications/review-queue";
 import { ConflictError, NotFoundError } from "@/core/errors/application-errors";
 import { databaseClient } from "@/lib/db/client";
+import { notificationAllowed } from "@/features/notifications/notification-preferences";
 
 function json(value: unknown) {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
@@ -45,17 +46,24 @@ export async function createReviewQueueItem(input: {
         after: json({ status: item.status, reasonCodes: item.reasonCodes }),
       },
     });
-    await transaction.notification.create({
-      data: {
-        userId: input.userId,
-        type: "APPLICATION_NEEDS_REVIEW",
-        title: "Application needs review",
-        body: "An application has unresolved questions or policy decisions.",
-        entityType: "reviewQueueItem",
-        entityId: item.id,
-        dedupeKey: `review:${item.id}`,
-      },
-    });
+    if (
+      await notificationAllowed(
+        transaction,
+        input.userId,
+        "APPLICATION_NEEDS_REVIEW",
+      )
+    )
+      await transaction.notification.create({
+        data: {
+          userId: input.userId,
+          type: "APPLICATION_NEEDS_REVIEW",
+          title: "Application needs review",
+          body: "An application has unresolved questions or policy decisions.",
+          entityType: "reviewQueueItem",
+          entityId: item.id,
+          dedupeKey: `review:${item.id}`,
+        },
+      });
     return item;
   });
 }

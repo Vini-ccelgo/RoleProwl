@@ -14,38 +14,50 @@ import { requireAuthenticatedActor } from "@/features/accounts/require-authentic
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 import { deleteAccountAction } from "./actions";
+import { NotificationPreferencesForm } from "./notification-preferences-form";
+import { ThemeSelector } from "./theme-selector";
+import { UserProfile } from "@clerk/nextjs";
+import { isClerkConfigured } from "@/lib/auth/config";
 
 export default async function SettingsPage() {
   await connection();
   const actor = await requireAuthenticatedActor(currentAuthProvider());
-  const [auditEvents, productEventCounts, storedPolicy, answerMemories] =
-    await Promise.all([
-      databaseClient().auditEvent.findMany({
-        where: { actorUserId: actor.id },
-        orderBy: { createdAt: "desc" },
-        take: 100,
-      }),
-      databaseClient().productEvent.groupBy({
-        by: ["eventType"],
-        where: { userId: actor.id },
-        _count: { _all: true },
-        orderBy: { eventType: "asc" },
-      }),
-      databaseClient().applicationPolicy.findUnique({
-        where: { userId: actor.id },
-      }),
-      databaseClient().answerMemory.findMany({
-        where: { userId: actor.id },
-        orderBy: { verifiedAt: "desc" },
-        select: {
-          id: true,
-          concept: true,
-          source: true,
-          verifiedAt: true,
-          autoAnswerAllowed: true,
-        },
-      }),
-    ]);
+  const [
+    auditEvents,
+    productEventCounts,
+    storedPolicy,
+    answerMemories,
+    storedNotificationPreferences,
+  ] = await Promise.all([
+    databaseClient().auditEvent.findMany({
+      where: { actorUserId: actor.id },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    }),
+    databaseClient().productEvent.groupBy({
+      by: ["eventType"],
+      where: { userId: actor.id },
+      _count: { _all: true },
+      orderBy: { eventType: "asc" },
+    }),
+    databaseClient().applicationPolicy.findUnique({
+      where: { userId: actor.id },
+    }),
+    databaseClient().answerMemory.findMany({
+      where: { userId: actor.id },
+      orderBy: { verifiedAt: "desc" },
+      select: {
+        id: true,
+        concept: true,
+        source: true,
+        verifiedAt: true,
+        autoAnswerAllowed: true,
+      },
+    }),
+    databaseClient().notificationPreferences.findUnique({
+      where: { userId: actor.id },
+    }),
+  ]);
   const policy: ApplicationPolicyFormValue = storedPolicy ?? {
     allowedEmploymentTypes: [],
     allowedLocations: [],
@@ -59,12 +71,58 @@ export default async function SettingsPage() {
     requireRemote: false,
     salaryMinimum: null,
   };
+  const notificationPreferences = {
+    applicationUpdates:
+      storedNotificationPreferences?.applicationUpdates ?? true,
+    jobUpdates: storedNotificationPreferences?.jobUpdates ?? true,
+    reviewRequired: storedNotificationPreferences?.reviewRequired ?? true,
+    workflowFailures: storedNotificationPreferences?.workflowFailures ?? true,
+  };
   return (
     <div className="grid gap-7">
       <PageHeader
         title="Settings and accountability"
         description="Application authority, data controls, and a safe history of consequential system behavior."
       />
+      <section className="card grid gap-4 p-5">
+        <div>
+          <h2 className="text-lg font-semibold">Notifications</h2>
+          <p className="m-0 text-sm">
+            Choose which existing in-app operational notifications RoleProwl
+            creates. No email, SMS, or push channel is implied.
+          </p>
+        </div>
+        <NotificationPreferencesForm preferences={notificationPreferences} />
+      </section>
+      <section className="card grid gap-4 p-5">
+        <div>
+          <h2 className="text-lg font-semibold">Appearance</h2>
+          <p className="m-0 text-sm">
+            Choose a persistent light or dark RoleProwl interface.
+          </p>
+        </div>
+        <ThemeSelector />
+      </section>
+      <section className="card grid gap-4 p-5">
+        <div>
+          <h2 className="text-lg font-semibold">Account &amp; security</h2>
+          <p className="m-0 text-sm">
+            Manage Clerk-owned identity, sign-in methods, password, and active
+            sessions. Candidate Profile and Truth Vault data remain separate
+            under Profile.
+          </p>
+        </div>
+        {isClerkConfigured() ? (
+          <div className="clerk-account-panel">
+            <UserProfile routing="hash" />
+          </div>
+        ) : (
+          <p className="m-0 text-sm text-foreground-muted">
+            Account controls become available when Clerk authentication is
+            configured.
+          </p>
+        )}
+      </section>
       <section className="card grid gap-4 p-5">
         <div>
           <h2 className="text-lg font-semibold">Search preferences</h2>
@@ -159,17 +217,6 @@ export default async function SettingsPage() {
         <a className="button button-secondary w-fit" href="/api/account/export">
           Download my data
         </a>
-      </section>
-      <section className="card grid gap-3 p-5">
-        <div>
-          <h2 className="text-lg font-semibold">Account</h2>
-          <p className="m-0 text-sm">
-            Signed in as {actor.email ?? "an identity without an email address"}
-            . Use the account control in the application header to manage the
-            authentication session or sign out. RoleProwl-owned deletion is
-            available below.
-          </p>
-        </div>
       </section>
       <section className="card grid gap-4 p-5">
         <div>

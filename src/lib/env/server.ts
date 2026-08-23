@@ -45,6 +45,7 @@ export const serverEnvironmentSchema = z
     OPENAI_API_KEY: optionalSecret,
     INNGEST_EVENT_KEY: optionalSecret,
     INNGEST_SIGNING_KEY: optionalSecret,
+    GREENHOUSE_BOARDS_JSON: z.string().trim().optional(),
     ROLEPROWL_AI_TIMEOUT_MS: z.coerce
       .number()
       .int()

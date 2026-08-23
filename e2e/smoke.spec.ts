@@ -114,3 +114,27 @@ test("mobile homepage has no horizontal overflow and exposes menu", async ({
     page.getByRole("navigation", { name: "Mobile navigation" }),
   ).toBeVisible();
 });
+
+test("navigation remains reachable through intermediate widths", async ({
+  page,
+}) => {
+  for (const width of [1199, 1024, 900, 769]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    await expect(
+      page.getByRole("button", { name: "Open navigation" }),
+    ).toBeVisible();
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  await expect(
+    page.getByRole("navigation", { name: "Primary navigation" }),
+  ).toBeVisible();
+});
+
+test("dark appearance persists across a reload", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.setItem("roleprowl-theme", "dark"));
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+});
