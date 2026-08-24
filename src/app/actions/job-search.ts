@@ -8,6 +8,7 @@ import {
   runManualDiscovery,
   searchRunIsActive,
 } from "@/features/jobs/manual-discovery";
+import { checkManualJobSearchRateLimit } from "@/features/jobs/job-search-rate-limit";
 import { PrismaProductAnalyticsProvider } from "@/integrations/analytics/prisma-product-analytics-provider";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { GreenhouseJobSource } from "@/integrations/jobs/greenhouse-job-source";
@@ -15,6 +16,9 @@ import { PrismaJobIngestionRepository } from "@/integrations/jobs/prisma-job-ing
 import { PrismaSourceHealthReporter } from "@/integrations/jobs/prisma-source-health-reporter";
 import { databaseClient } from "@/lib/db/client";
 import { logger } from "@/lib/logging/logger";
+import { PrismaRateLimiter } from "@/integrations/security/prisma-rate-limiter";
+
+const searchRateLimiter = new PrismaRateLimiter();
 
 export interface JobSearchActionState {
   status: "idle" | "running" | "success" | "error";
@@ -26,6 +30,15 @@ export interface JobSearchActionState {
 export async function runJobSearchAction(): Promise<JobSearchActionState> {
   const actionStartedAt = performance.now();
   const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const rateLimit = await checkManualJobSearchRateLimit(
+    searchRateLimiter,
+    actor.id,
+  );
+  if (!rateLimit.allowed)
+    return {
+      status: "error",
+      message: `Job search limit reached. Retry in ${Math.max(1, Math.ceil(rateLimit.retryAfterSeconds / 60))} minute(s).`,
+    };
   const database = databaseClient();
   const startedAt = new Date();
   const claimed = await database.$transaction(async (transaction) => {

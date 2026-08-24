@@ -21,6 +21,7 @@ export type AICapacityState =
   | "PROVIDER_UNAVAILABLE";
 
 export interface StructuredAIRequest<T> {
+  readonly dataClassification?: "REAL_CANDIDATE" | "SYNTHETIC";
   readonly allowFlashEscalation?: boolean;
   readonly correlationId: string;
   readonly input: unknown;

@@ -79,7 +79,7 @@ The dependency direction is UI/routes → features/use cases → core domain, wi
 
 Copy `.env.example` to `.env.local`; never commit credentials. Variables are grouped by capability and are not all required at startup. Missing integrations fail closed or remain explicitly unavailable. Prisma validation and generation do not require a live database; migration deployment and authenticated persistence do.
 
-## Alpha boundaries
+## Alpha and private-beta boundaries
 
 - Public Greenhouse and Lever listings are read-capable, but public access never grants submission authority.
 - LinkedIn and Indeed remain manual external sources; RoleProwl does not automate prohibited browser behavior.
@@ -88,3 +88,4 @@ Copy `.env.example` to `.env.local`; never commit credentials. Variables are gro
 - OpenAI remains available through `AI_PROVIDER=openai`; changing providers requires configuration, not a domain or database migration.
 - The development filesystem storage adapter is blocked in production. A private object-storage adapter is required before deployment.
 - Legal pages are visibly marked development placeholders and require qualified legal review before public launch.
+- Invited private-beta admission is optional and server-enforced through `ROLEPROWL_PRIVATE_BETA_ENABLED` plus the server-only exact-email allowlist. Real candidate AI remains fail-closed unless a Preview operator explicitly enables both the provider policy and the separate private-beta real-data gate; Production remains denied. See [the private-beta readiness runbook](docs/private-beta-readiness.md).

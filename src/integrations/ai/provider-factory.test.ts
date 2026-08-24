@@ -37,7 +37,7 @@ describe("AI provider resolution", () => {
         ROLEPROWL_GEMINI_SYNTHETIC_ONLY: "true",
       },
     });
-    expect(provider.constructor.name).toBe("GeminiAIProvider");
+    expect(provider.constructor.name).toBe("PolicyEnforcedAIProvider");
     expect(mocks.googleConstructor).toHaveBeenCalledOnce();
     expect(mocks.openAIConstructor).not.toHaveBeenCalled();
   });
@@ -49,7 +49,7 @@ describe("AI provider resolution", () => {
         OPENAI_API_KEY: "openai-placeholder",
       },
     });
-    expect(provider.constructor.name).toBe("OpenAIProvider");
+    expect(provider.constructor.name).toBe("PolicyEnforcedAIProvider");
     expect(mocks.openAIConstructor).toHaveBeenCalledOnce();
     expect(mocks.googleConstructor).not.toHaveBeenCalled();
   });
@@ -59,7 +59,7 @@ describe("AI provider resolution", () => {
       environment: { AI_PROVIDER: "deterministic" },
       deterministicResolver: () => ({ answer: "fixture" }),
     });
-    expect(provider.constructor.name).toBe("DeterministicAIProvider");
+    expect(provider.constructor.name).toBe("PolicyEnforcedAIProvider");
     expect(mocks.openAIConstructor).not.toHaveBeenCalled();
     expect(mocks.googleConstructor).not.toHaveBeenCalled();
   });
@@ -98,6 +98,7 @@ describe("AI provider resolution", () => {
     await expect(
       provider.generateStructured({
         correlationId: "no-paid-fallback",
+        dataClassification: "SYNTHETIC",
         input: { fixture: "fictional" },
         promptVersion: "test-v1",
         rateLimitSubject: "synthetic-user",

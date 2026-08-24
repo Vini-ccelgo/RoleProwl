@@ -32,6 +32,8 @@ const optionalPositiveInteger = z.coerce
   .max(1_000_000)
   .optional();
 
+const PRIVATE_BETA_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
+
 export const serverEnvironmentSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).optional(),
@@ -62,6 +64,9 @@ export const serverEnvironmentSchema = z
     ROLEPROWL_GEMINI_SYNTHETIC_ONLY: optionalBoolean,
     ROLEPROWL_ALLOW_SYNTHETIC_AI_PREVIEW: optionalBoolean,
     ROLEPROWL_ALLOW_SYNTHETIC_AI_PRODUCTION: optionalBoolean,
+    ROLEPROWL_PRIVATE_BETA_REAL_DATA_AI_ENABLED: optionalBoolean,
+    ROLEPROWL_PRIVATE_BETA_ENABLED: optionalBoolean,
+    ROLEPROWL_PRIVATE_BETA_ALLOWED_EMAILS: z.string().trim().optional(),
     ROLEPROWL_DEPLOYMENT_ENVIRONMENT: z
       .enum(ROLEPROWL_DEPLOYMENT_ENVIRONMENTS)
       .optional(),
@@ -75,6 +80,39 @@ export const serverEnvironmentSchema = z
     ROLEPROWL_LOCAL_STORAGE_PATH: z.string().trim().min(1).optional(),
   })
   .superRefine((environment, context) => {
+    const deployment = resolveDeploymentEnvironment(environment);
+    if (
+      environment.ROLEPROWL_PRIVATE_BETA_ENABLED &&
+      !environment.ROLEPROWL_PRIVATE_BETA_ALLOWED_EMAILS
+    )
+      context.addIssue({
+        code: "custom",
+        message:
+          "ROLEPROWL_PRIVATE_BETA_ALLOWED_EMAILS is required when private-beta admission is enabled.",
+        path: ["ROLEPROWL_PRIVATE_BETA_ALLOWED_EMAILS"],
+      });
+    if (
+      environment.ROLEPROWL_PRIVATE_BETA_ALLOWED_EMAILS?.split(",")
+        .map((email) => email.trim())
+        .filter(Boolean)
+        .some((email) => !PRIVATE_BETA_EMAIL.test(email))
+    )
+      context.addIssue({
+        code: "custom",
+        message:
+          "ROLEPROWL_PRIVATE_BETA_ALLOWED_EMAILS contains an invalid email identifier.",
+        path: ["ROLEPROWL_PRIVATE_BETA_ALLOWED_EMAILS"],
+      });
+    if (
+      environment.ROLEPROWL_PRIVATE_BETA_REAL_DATA_AI_ENABLED &&
+      deployment !== "preview"
+    )
+      context.addIssue({
+        code: "custom",
+        message:
+          "Real-data private-beta AI may be enabled only in a Preview deployment.",
+        path: ["ROLEPROWL_PRIVATE_BETA_REAL_DATA_AI_ENABLED"],
+      });
     const clerkConfigured = Boolean(
       environment.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
       environment.CLERK_SECRET_KEY,
@@ -117,7 +155,6 @@ export const serverEnvironmentSchema = z
         path: ["OPENAI_API_KEY"],
       });
     }
-    const deployment = resolveDeploymentEnvironment(environment);
     const hosted = deployment === "preview" || deployment === "production";
     if (hosted && environment.ROLEPROWL_STORAGE_PROVIDER !== "s3") {
       context.addIssue({

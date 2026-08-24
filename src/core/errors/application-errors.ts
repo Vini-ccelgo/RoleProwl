@@ -30,6 +30,11 @@ export class AuthorizationError extends ApplicationError {
     super(message, "AUTHORIZATION");
   }
 }
+export class PrivateBetaAccessError extends AuthorizationError {
+  constructor() {
+    super("Private beta access is not available for this account.");
+  }
+}
 export class NotFoundError extends ApplicationError {
   constructor(message = "The requested resource was not found") {
     super(message, "NOT_FOUND");

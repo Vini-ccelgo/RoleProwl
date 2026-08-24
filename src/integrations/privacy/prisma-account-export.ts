@@ -2,6 +2,7 @@ import "server-only";
 import {
   ACCOUNT_EXPORT_SCHEMA_VERSION,
   buildPortableAccountExport,
+  sanitizePortableExportValue,
 } from "@/features/privacy/account-export";
 import { databaseClient } from "@/lib/db/client";
 
@@ -40,6 +41,69 @@ export async function exportAccountData(userId: string) {
         candidatePreferences: true,
         workAuthorizationProfile: true,
         candidateFacts: true,
+        candidateDocuments: {
+          select: {
+            id: true,
+            originalFileName: true,
+            format: true,
+            status: true,
+            mimeType: true,
+            sizeBytes: true,
+            createdAt: true,
+            updatedAt: true,
+            extraction: {
+              select: {
+                status: true,
+                extractedText: true,
+                characterCount: true,
+                pageCount: true,
+                errorCode: true,
+              },
+            },
+            proposals: {
+              select: {
+                id: true,
+                factType: true,
+                targetPath: true,
+                proposedValue: true,
+                sourceRegion: true,
+                confidence: true,
+                status: true,
+                acceptedValue: true,
+                canonicalType: true,
+                canonicalId: true,
+                reviewedAt: true,
+              },
+            },
+          },
+        },
+        jobMatchAnalyses: {
+          select: {
+            id: true,
+            jobId: true,
+            qualificationScore: true,
+            preferenceScore: true,
+            overallFit: true,
+            confidence: true,
+            hardConflicts: true,
+            strengths: true,
+            partialMatches: true,
+            gaps: true,
+            unknowns: true,
+            scoringVersion: true,
+            createdAt: true,
+            updatedAt: true,
+            feedback: {
+              select: {
+                signalCode: true,
+                rating: true,
+                note: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
+          },
+        },
         notificationPreferences: true,
         jobSearchState: true,
         jobDispositions: {
@@ -115,6 +179,15 @@ export async function exportAccountData(userId: string) {
     }),
   ]);
   const exportedAt = new Date();
+  const portableApplications = applications.map(
+    ({ documentsSnapshot, submissionPayloadSnapshot, ...application }) => ({
+      ...application,
+      documentsSnapshot: sanitizePortableExportValue(documentsSnapshot),
+      submissionPayloadSnapshot: sanitizePortableExportValue(
+        submissionPayloadSnapshot,
+      ),
+    }),
+  );
   await database.auditEvent.create({
     data: {
       actorUserId: userId,
@@ -134,7 +207,7 @@ export async function exportAccountData(userId: string) {
       candidate,
       policy,
       answers,
-      applications,
+      applications: portableApplications,
       generatedMaterials,
       notifications,
       productEvents,

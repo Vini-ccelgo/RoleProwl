@@ -1,5 +1,8 @@
 import { AppShell } from "@/components/layout/app-shell";
-import { AuthorizationError } from "@/core/errors/application-errors";
+import {
+  AuthorizationError,
+  PrivateBetaAccessError,
+} from "@/core/errors/application-errors";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
@@ -13,10 +16,12 @@ export default async function ApplicationLayout({
 }) {
   const actor = await requireAuthenticatedActor(currentAuthProvider()).catch(
     (error: unknown) => {
+      if (error instanceof PrivateBetaAccessError) return "PRIVATE_BETA_DENIED";
       if (error instanceof AuthorizationError) return null;
       throw error;
     },
   );
+  if (actor === "PRIVATE_BETA_DENIED") redirect("/?private_beta=restricted");
   if (!actor) redirect("/sign-in?redirect_url=/dashboard");
   const unreadNotifications = await databaseClient().notification.count({
     where: { userId: actor.id, readAt: null },

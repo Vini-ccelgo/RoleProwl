@@ -7,6 +7,7 @@ import type {
 } from "@/core/contracts/ai-provider";
 import type { RateLimiter } from "@/core/contracts/rate-limiter";
 import { ConfigurationError } from "@/core/errors/application-errors";
+import { PolicyEnforcedAIProvider } from "@/features/ai/real-data-policy";
 import { PrismaRateLimiter } from "@/integrations/security/prisma-rate-limiter";
 import { geminiEnv, selectedAIProviderEnv } from "@/lib/env/server";
 import type { Logger } from "@/lib/logging/logger";
@@ -38,7 +39,11 @@ export function resolveAIProvider(
       throw new ConfigurationError(
         "The deterministic AI provider requires an explicit test resolver.",
       );
-    return new DeterministicAIProvider(options.deterministicResolver);
+    return new PolicyEnforcedAIProvider(
+      new DeterministicAIProvider(options.deterministicResolver),
+      "deterministic",
+      environment,
+    );
   }
   if (provider === "openai") {
     const apiKey = environment.OPENAI_API_KEY?.trim();
@@ -46,11 +51,15 @@ export function resolveAIProvider(
       throw new ConfigurationError(
         "OPENAI_API_KEY is required when AI_PROVIDER=openai.",
       );
-    return new OpenAIProvider(
-      options.openAIClient ??
-        new OpenAI({ apiKey, ...openAIRequestOptions(environment) }),
-      options.log ?? logger,
-      options.rateLimiter ?? new PrismaRateLimiter(),
+    return new PolicyEnforcedAIProvider(
+      new OpenAIProvider(
+        options.openAIClient ??
+          new OpenAI({ apiKey, ...openAIRequestOptions(environment) }),
+        options.log ?? logger,
+        options.rateLimiter ?? new PrismaRateLimiter(),
+      ),
+      "openai",
+      environment,
     );
   }
   try {
@@ -58,11 +67,15 @@ export function resolveAIProvider(
     const client = options.geminiClient
       ? null
       : new GoogleGenAI({ apiKey: config.GEMINI_API_KEY });
-    return new GeminiAIProvider(
-      options.geminiClient ?? client!.models,
-      geminiModelConfig(config),
-      options.log ?? logger,
-      options.rateLimiter ?? new PrismaRateLimiter(),
+    return new PolicyEnforcedAIProvider(
+      new GeminiAIProvider(
+        options.geminiClient ?? client!.models,
+        geminiModelConfig(config),
+        options.log ?? logger,
+        options.rateLimiter ?? new PrismaRateLimiter(),
+      ),
+      "gemini",
+      environment,
     );
   } catch (error) {
     throw new ConfigurationError(

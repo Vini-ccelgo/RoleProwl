@@ -126,4 +126,25 @@ describe("server environment validation", () => {
       bucket: "roleprowl",
     });
   });
+
+  it("fails closed for incomplete beta admission and Production real-data AI", () => {
+    expect(() =>
+      validateServerEnvironment({
+        ROLEPROWL_PRIVATE_BETA_ENABLED: "true",
+      }),
+    ).toThrow("ROLEPROWL_PRIVATE_BETA_ALLOWED_EMAILS");
+    expect(() =>
+      validateServerEnvironment({
+        ROLEPROWL_PRIVATE_BETA_ENABLED: "true",
+        ROLEPROWL_PRIVATE_BETA_ALLOWED_EMAILS: "not-an-email",
+      }),
+    ).toThrow("invalid email identifier");
+    expect(() =>
+      validateServerEnvironment({
+        ROLEPROWL_DEPLOYMENT_ENVIRONMENT: "production",
+        ROLEPROWL_PRIVATE_BETA_REAL_DATA_AI_ENABLED: "true",
+        ROLEPROWL_STORAGE_PROVIDER: "s3",
+      }),
+    ).toThrow("Preview deployment");
+  });
 });
