@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  dispositionActionIsPending,
   scheduleShortlistRefresh,
   showViewShortlistLink,
   shortlistRemovalLabel,
@@ -38,5 +39,12 @@ describe("shortlist confirmation timer", () => {
   it("offers Undo during transient confirmation", () => {
     expect(shortlistRemovalLabel(true)).toBe("Undo");
     expect(shortlistRemovalLabel(false)).toBe("Remove from shortlist");
+  });
+
+  it("keeps Undo independent from the preceding shortlist transition", () => {
+    expect(dispositionActionIsPending("SHORTLISTED", "SHORTLISTED")).toBe(true);
+    expect(dispositionActionIsPending("UNDECIDED", "SHORTLISTED")).toBe(false);
+    expect(dispositionActionIsPending("UNDECIDED", "UNDECIDED")).toBe(true);
+    expect(dispositionActionIsPending("UNDECIDED", null)).toBe(false);
   });
 });

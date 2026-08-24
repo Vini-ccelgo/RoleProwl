@@ -18,3 +18,15 @@ export function showViewShortlistLink(
 export function shortlistRemovalLabel(transient: boolean) {
   return transient ? "Undo" : "Remove from shortlist";
 }
+
+export type PendingDisposition =
+  "REJECTED" | "SHORTLISTED" | "UNDECIDED" | null;
+
+export function dispositionActionIsPending(
+  status: Exclude<PendingDisposition, null>,
+  pendingDisposition: PendingDisposition,
+) {
+  if (status === "UNDECIDED" && pendingDisposition === "SHORTLISTED")
+    return false;
+  return pendingDisposition !== null;
+}

@@ -37,7 +37,16 @@ describe("application packet summary", () => {
           tailored: false,
         },
         coverLetter: null,
-        questions: [],
+        questions: Array.from({ length: 8 }, (_, index) => ({
+          id: `standard:question_${index + 1}`,
+          source: "GREENHOUSE" as const,
+          group: "STANDARD" as const,
+          label: `Application question ${index + 1}`,
+          required: true,
+          fieldNames: [`question_${index + 1}`],
+          fieldTypes: ["input_text"],
+          options: [],
+        })),
         questionInspection: "AVAILABLE",
         sourceName: "GREENHOUSE",
         targetRole: "Security Analyst",
@@ -52,7 +61,9 @@ describe("application packet summary", () => {
     );
     expect(markup).toContain("Avery");
     expect(markup).toContain("Incident response");
+    expect(markup).toContain("Application question 8");
     expect(markup).toContain("/api/applications/application-1/resume");
+    expect(markup).toContain("card grid gap-3 self-start p-5");
     expect(markup).not.toContain("candidate-documents/private-key");
   });
 

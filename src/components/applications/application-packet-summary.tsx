@@ -234,7 +234,7 @@ export function ApplicationPacketSummary({
           </p>
         </section>
 
-        <section className="card grid gap-3 p-5">
+        <section className="card grid gap-3 self-start p-5">
           <h2 className="text-base font-semibold">Documents</h2>
           {packet.documents.map((document) => (
             <div

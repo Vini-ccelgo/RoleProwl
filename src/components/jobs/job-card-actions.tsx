@@ -13,6 +13,8 @@ import {
   type JobCardAction,
 } from "@/features/jobs/job-action-hierarchy";
 import {
+  dispositionActionIsPending,
+  type PendingDisposition,
   scheduleShortlistRefresh,
   shortlistRemovalLabel,
   showViewShortlistLink,
@@ -34,7 +36,9 @@ export function JobCardActions({
   readonly view: "active" | "all" | "rejected" | "shortlisted";
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
+  const [pendingDisposition, setPendingDisposition] =
+    useState<PendingDisposition>(null);
   const [transientShortlist, setTransientShortlist] = useState(false);
   const shortlisted = disposition === "SHORTLISTED" || transientShortlist;
   const hierarchy = jobActionHierarchy({
@@ -59,6 +63,12 @@ export function JobCardActions({
   ) {
     const undoingTransientShortlist =
       status === "UNDECIDED" && transientShortlist;
+    if (
+      pendingDisposition &&
+      !(undoingTransientShortlist && pendingDisposition === "SHORTLISTED")
+    )
+      return;
+    setPendingDisposition(status);
     if (undoingTransientShortlist) setTransientShortlist(false);
     startTransition(async () => {
       const formData = new FormData();
@@ -67,11 +77,14 @@ export function JobCardActions({
       if (transient) formData.set("feedbackMode", "transient");
       try {
         await setJobDispositionAction(formData);
+        setPendingDisposition(null);
         setTransientShortlist(status === "SHORTLISTED");
         if (status !== "SHORTLISTED") router.refresh();
       } catch {
         if (undoingTransientShortlist) setTransientShortlist(true);
         router.refresh();
+      } finally {
+        setPendingDisposition(null);
       }
     });
   }
@@ -118,7 +131,10 @@ export function JobCardActions({
       return (
         <button
           className={className}
-          disabled={pending}
+          disabled={dispositionActionIsPending(
+            "SHORTLISTED",
+            pendingDisposition,
+          )}
           key={actionId}
           onClick={() => setDisposition("SHORTLISTED", true)}
           type="button"
@@ -130,7 +146,7 @@ export function JobCardActions({
       return (
         <button
           className={className}
-          disabled={pending}
+          disabled={dispositionActionIsPending("REJECTED", pendingDisposition)}
           key={actionId}
           onClick={() => setDisposition("REJECTED")}
           type="button"
@@ -142,7 +158,7 @@ export function JobCardActions({
       return (
         <button
           className={className}
-          disabled={pending}
+          disabled={dispositionActionIsPending("UNDECIDED", pendingDisposition)}
           key={actionId}
           onClick={() => setDisposition("UNDECIDED")}
           type="button"
@@ -154,7 +170,7 @@ export function JobCardActions({
       return (
         <button
           className={className}
-          disabled={pending}
+          disabled={dispositionActionIsPending("UNDECIDED", pendingDisposition)}
           key={actionId}
           onClick={() => setDisposition("UNDECIDED")}
           type="button"
