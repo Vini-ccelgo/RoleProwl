@@ -42,4 +42,19 @@ describe("application preparation summary", () => {
     expect(markup).not.toContain("Prepared writing");
     expect(markup).not.toContain("Application documents");
   });
+
+  it("suppresses document snapshots without candidate-visible information", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ApplicationPreparationSummary, {
+        answers: {},
+        documents: [null, {}, { storageKey: "private/only-a-key.docx" }],
+        fit: {},
+        generatedText: {},
+        policy: {},
+      }),
+    );
+    expect(markup).not.toContain("Application documents");
+    expect(markup).not.toContain("Prepared document");
+    expect(markup).not.toContain("private/only-a-key.docx");
+  });
 });

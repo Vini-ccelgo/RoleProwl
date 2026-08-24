@@ -19,6 +19,11 @@ function title(value: string) {
   return value.replaceAll("_", " ").toLowerCase();
 }
 
+function meaningfulDocument(value: Prisma.JsonValue) {
+  const item = record(value);
+  return Boolean(scalar(item?.fileName) || scalar(item?.contentType));
+}
+
 export function ApplicationPreparationSummary({
   answers,
   documents,
@@ -36,7 +41,9 @@ export function ApplicationPreparationSummary({
   const policyRecord = record(policy);
   const textRecord = record(generatedText);
   const answerRecord = record(answers);
-  const documentList = Array.isArray(documents) ? documents : [];
+  const documentList = Array.isArray(documents)
+    ? documents.filter(meaningfulDocument)
+    : [];
   const hasPreparedWriting = Boolean(
     textRecord && Object.keys(textRecord).length > 0,
   );

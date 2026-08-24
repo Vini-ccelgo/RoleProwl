@@ -114,15 +114,27 @@ p {
   font-size: 0.92rem;
   font-weight: 650;
   transition:
-    background 0.18s,
-    color 0.18s,
-    transform 0.18s;
+    background 0.12s ease-out,
+    border-color 0.12s ease-out,
+    box-shadow 0.12s ease-out,
+    color 0.12s ease-out,
+    opacity 0.12s ease-out,
+    transform 0.12s ease-out;
 }
 .button:hover {
   transform: translateY(-1px);
 }
+.button:active:not(:disabled) {
+  box-shadow: none;
+  transform: translateY(1px) scale(0.98);
+}
+.button:focus-visible {
+  outline: 3px solid var(--brand-accent);
+  outline-offset: 4px;
+}
 .button:disabled {
   cursor: not-allowed;
+  box-shadow: none;
   opacity: 0.55;
   transform: none;
 }

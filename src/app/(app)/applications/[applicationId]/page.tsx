@@ -5,6 +5,7 @@ import { ApplicationPreparationSummary } from "@/components/applications/applica
 import { ApplicationPacketSummary } from "@/components/applications/application-packet-summary";
 import { GreenhouseAssistedApply } from "@/components/applications/greenhouse-assisted-apply";
 import { PageHeader } from "@/components/ui/page-header";
+import { ResumeVersionSummary } from "@/components/applications/resume-version-summary";
 import {
   applicationTransitionsFrom,
   type ApplicationState,
@@ -327,33 +328,7 @@ export default async function ApplicationDetailPage({
         policy={application.policyResultSnapshot}
       />
 
-      {application.resumeVersion && (
-        <section className="card p-5">
-          <h2 className="text-base font-semibold">Résumé version</h2>
-          <dl className="grid gap-2 text-sm">
-            <div>
-              <dt className="font-semibold">Version ID</dt>
-              <dd className="m-0 break-all">{application.resumeVersion.id}</dd>
-            </div>
-            <div>
-              <dt className="font-semibold">File</dt>
-              <dd className="m-0">
-                {application.resumeVersion.renderedFileName}
-              </dd>
-            </div>
-            <div>
-              <dt className="font-semibold">Template</dt>
-              <dd className="m-0">
-                {application.resumeVersion.templateVersion}
-              </dd>
-            </div>
-            <div>
-              <dt className="font-semibold">Prompt</dt>
-              <dd className="m-0">{application.resumeVersion.promptVersion}</dd>
-            </div>
-          </dl>
-        </section>
-      )}
+      <ResumeVersionSummary resumeVersion={application.resumeVersion} />
 
       {nextStates.length > 0 && (
         <section className="card grid gap-3 p-5">

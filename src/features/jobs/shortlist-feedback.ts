@@ -1,4 +1,4 @@
-export const SHORTLIST_CONFIRMATION_MS = 7_000;
+export const SHORTLIST_CONFIRMATION_MS = 15_000;
 
 export function scheduleShortlistRefresh(
   refresh: () => void,

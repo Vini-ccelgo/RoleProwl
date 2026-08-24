@@ -10,6 +10,7 @@ describe("shortlist confirmation timer", () => {
   afterEach(() => vi.useRealTimers());
 
   it("refreshes after the bounded confirmation period", () => {
+    expect(SHORTLIST_CONFIRMATION_MS).toBe(15_000);
     vi.useFakeTimers();
     const refresh = vi.fn();
     scheduleShortlistRefresh(refresh);

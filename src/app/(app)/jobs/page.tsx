@@ -6,6 +6,7 @@ import { JobCardActions } from "@/components/jobs/job-card-actions";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   candidateDispositionLabel,
+  JOB_DISPOSITION_FILTERS,
   parseJobDispositionView,
 } from "@/core/domain/jobs/job-disposition";
 import { MATCH_SCORING_VERSION } from "@/core/domain/matching/match-job";
@@ -16,13 +17,6 @@ import {
   openEmployerPostingAction,
   recordMatchFeedbackAction,
 } from "./actions";
-
-const FILTERS = [
-  ["active", "Active"],
-  ["shortlisted", "Shortlisted"],
-  ["rejected", "Rejected by you"],
-  ["all", "All"],
-] as const;
 
 export default async function JobsPage({
   searchParams,
@@ -84,7 +78,7 @@ export default async function JobsPage({
         aria-label="Job disposition filters"
         className="flex flex-wrap gap-2"
       >
-        {FILTERS.map(([value, label]) => (
+        {JOB_DISPOSITION_FILTERS.map(([value, label]) => (
           <Link
             aria-current={view === value ? "page" : undefined}
             className={

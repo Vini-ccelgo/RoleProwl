@@ -8,7 +8,9 @@ describe("candidate workflow page cleanup", () => {
       path.resolve("src/app/(app)/applications/[applicationId]/page.tsx"),
       "utf8",
     );
-    expect(source).toContain("{application.resumeVersion && (");
+    expect(source).toContain(
+      "<ResumeVersionSummary resumeVersion={application.resumeVersion} />",
+    );
     expect(source).not.toContain("Unknown or no résumé was attached.");
     expect(source).not.toContain("Review preparation");
     expect(source).toContain("Mark application ready");

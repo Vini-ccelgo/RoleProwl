@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   candidateDispositionLabel,
+  JOB_DISPOSITION_FILTERS,
   jobIsVisibleInDispositionView,
   parseJobDispositionView,
 } from "./job-disposition";
@@ -24,5 +25,15 @@ describe("candidate-owned job disposition", () => {
     expect(candidateDispositionLabel("REJECTED")).toBe("Rejected by you");
     expect(candidateDispositionLabel(null)).toBe("Undecided");
     expect(parseJobDispositionView("unexpected")).toBe("active");
+    expect(parseJobDispositionView("all")).toBe("active");
+  });
+
+  it("exposes only the meaningful candidate workflow views", () => {
+    expect(JOB_DISPOSITION_FILTERS).toEqual([
+      ["active", "Active"],
+      ["shortlisted", "Shortlisted"],
+      ["rejected", "Rejected by you"],
+    ]);
+    expect(JOB_DISPOSITION_FILTERS.flat()).not.toContain("All");
   });
 });

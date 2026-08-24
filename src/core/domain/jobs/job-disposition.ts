@@ -3,10 +3,14 @@ import { NotFoundError } from "@/core/errors/application-errors";
 export type CandidateJobDisposition = "SHORTLISTED" | "REJECTED";
 export type JobDispositionView = "active" | "shortlisted" | "rejected" | "all";
 
+export const JOB_DISPOSITION_FILTERS = [
+  ["active", "Active"],
+  ["shortlisted", "Shortlisted"],
+  ["rejected", "Rejected by you"],
+] as const;
+
 export function parseJobDispositionView(value: string | undefined) {
-  return value === "shortlisted" || value === "rejected" || value === "all"
-    ? value
-    : "active";
+  return value === "shortlisted" || value === "rejected" ? value : "active";
 }
 
 export function jobIsVisibleInDispositionView(
