@@ -3,6 +3,7 @@ import * as mammoth from "mammoth";
 import { extractText } from "unpdf";
 import { ExtractionUnsupportedError } from "@/core/errors/application-errors";
 import type { ResumeFormat } from "@/core/domain/candidate/resume-import";
+import { normalizeExtractedResumeText } from "@/core/domain/candidate/resume-text-normalization";
 
 export interface ResumeTextExtraction {
   readonly pageCount: number | null;
@@ -16,7 +17,7 @@ export async function extractResumeText(
   try {
     if (format === "PDF") {
       const result = await extractText(bytes, { mergePages: true });
-      const text = result.text.trim();
+      const text = normalizeExtractedResumeText(result.text).trim();
       if (!text) {
         throw new ExtractionUnsupportedError(
           "This PDF has no machine-readable text. OCR is not supported in the alpha.",
@@ -26,7 +27,7 @@ export async function extractResumeText(
     }
 
     const result = await mammoth.extractRawText({ buffer: Buffer.from(bytes) });
-    const text = result.value.trim();
+    const text = normalizeExtractedResumeText(result.value).trim();
     if (!text) {
       throw new ExtractionUnsupportedError(
         "This DOCX contains no extractable text.",

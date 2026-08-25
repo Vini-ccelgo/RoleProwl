@@ -4,6 +4,7 @@ import {
   NotFoundError,
   ValidationError,
 } from "@/core/errors/application-errors";
+import { normalizeExtractedResumeText } from "./resume-text-normalization";
 import {
   PROPOSAL_DESTINATIONS,
   type SupportedProposalFactType,
@@ -137,7 +138,9 @@ export function proposeFactsFromResumeText(
   text: string,
 ): CandidateFactProposalDraft[] {
   const proposals: CandidateFactProposalDraft[] = [];
-  const lines = text.split(/\r?\n/).map((line) => line.trim());
+  const lines = normalizeExtractedResumeText(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim());
   let activeSection: (typeof SECTION_TARGETS)[string] | undefined;
 
   lines.forEach((line, index) => {

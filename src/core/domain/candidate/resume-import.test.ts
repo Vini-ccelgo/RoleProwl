@@ -82,4 +82,18 @@ describe("resume proposal parsing", () => {
       }),
     ]);
   });
+
+  it("normalizes symbol-font list markers without stripping leading letters", () => {
+    const drafts = proposeFactsFromResumeText(
+      "SKILLS\nl Leadership\nl Linux\nl lifecycle automation",
+    );
+    expect(drafts.map((draft) => draft.proposedValue.text)).toEqual([
+      "Leadership",
+      "Linux",
+      "lifecycle automation",
+    ]);
+    expect(drafts.map((draft) => draft.sourceRegion.lineStart)).toEqual([
+      2, 3, 4,
+    ]);
+  });
 });
