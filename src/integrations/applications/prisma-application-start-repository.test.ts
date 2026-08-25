@@ -1,12 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { applicationCreate, applicationFindFirst, auditCreate, jobFindFirst } =
-  vi.hoisted(() => ({
-    applicationCreate: vi.fn(),
-    applicationFindFirst: vi.fn(),
-    auditCreate: vi.fn(async () => undefined),
-    jobFindFirst: vi.fn(),
-  }));
+const {
+  applicationCreate,
+  applicationFindFirst,
+  auditCreate,
+  candidateDocumentFindFirst,
+  jobFindFirst,
+} = vi.hoisted(() => ({
+  applicationCreate: vi.fn(),
+  applicationFindFirst: vi.fn(),
+  auditCreate: vi.fn(async () => undefined),
+  candidateDocumentFindFirst: vi.fn(),
+  jobFindFirst: vi.fn(),
+}));
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/db/client", () => ({
@@ -18,6 +24,7 @@ vi.mock("@/lib/db/client", () => ({
           findFirst: applicationFindFirst,
         },
         auditEvent: { create: auditCreate },
+        candidateDocument: { findFirst: candidateDocumentFindFirst },
         job: { findFirst: jobFindFirst },
       }),
     ),
@@ -54,6 +61,7 @@ describe("Prisma application start repository", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     jobFindFirst.mockResolvedValue(job);
+    candidateDocumentFindFirst.mockResolvedValue(null);
     applicationCreate.mockResolvedValue({
       id: "application-1",
       state: "PREPARING",
@@ -94,5 +102,100 @@ describe("Prisma application start repository", () => {
       }),
     ).rejects.toThrow("Reconsider this job");
     expect(applicationCreate).not.toHaveBeenCalled();
+  });
+
+  it("snapshots a tailored résumé with its canonical document kind", async () => {
+    applicationFindFirst.mockResolvedValue(null);
+    jobFindFirst.mockResolvedValue({
+      ...job,
+      resumeVersions: [
+        {
+          id: "resume-version-1",
+          renderedFileName: "tailored.docx",
+          renderedContentType:
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          renderedStorageKey: "resume-versions/tailored",
+        },
+      ],
+    });
+    await new PrismaApplicationStartRepository().createOrGet({
+      jobId: "job-1",
+      userId: "user-1",
+    });
+    expect(candidateDocumentFindFirst).not.toHaveBeenCalled();
+    expect(applicationCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          resumeVersionId: "resume-version-1",
+          documentsSnapshot: [
+            {
+              kind: "RESUME",
+              fileName: "tailored.docx",
+              contentType:
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              storageKey: "resume-versions/tailored",
+            },
+          ],
+          submissionPayloadSnapshot: expect.objectContaining({
+            documents: [
+              {
+                kind: "RESUME",
+                fileName: "tailored.docx",
+                contentType:
+                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                storageKey: "resume-versions/tailored",
+              },
+            ],
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("uses the latest extracted CandidateDocument when no tailored résumé exists", async () => {
+    applicationFindFirst.mockResolvedValue(null);
+    candidateDocumentFindFirst.mockResolvedValue({
+      originalFileName: "uploaded.pdf",
+      mimeType: "application/pdf",
+      storageKey: "candidate-documents/uploaded",
+    });
+    await new PrismaApplicationStartRepository().createOrGet({
+      jobId: "job-1",
+      userId: "user-1",
+    });
+    expect(candidateDocumentFindFirst).toHaveBeenCalledWith({
+      where: { userId: "user-1", status: "EXTRACTED" },
+      orderBy: { createdAt: "desc" },
+      select: {
+        originalFileName: true,
+        mimeType: true,
+        storageKey: true,
+      },
+    });
+    expect(applicationCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          resumeVersionId: null,
+          documentsSnapshot: [
+            {
+              kind: "RESUME",
+              fileName: "uploaded.pdf",
+              contentType: "application/pdf",
+              storageKey: "candidate-documents/uploaded",
+            },
+          ],
+          submissionPayloadSnapshot: expect.objectContaining({
+            documents: [
+              {
+                kind: "RESUME",
+                fileName: "uploaded.pdf",
+                contentType: "application/pdf",
+                storageKey: "candidate-documents/uploaded",
+              },
+            ],
+          }),
+        }),
+      }),
+    );
   });
 });

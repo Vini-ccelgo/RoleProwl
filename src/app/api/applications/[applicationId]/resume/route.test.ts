@@ -54,10 +54,55 @@ describe("application résumé download", () => {
     );
   });
 
+  it("downloads a canonical tailored résumé snapshot", async () => {
+    findFirst.mockResolvedValue({
+      documentsSnapshot: [
+        {
+          kind: "RESUME",
+          fileName: "tailored.docx",
+          contentType:
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          storageKey: "resume-versions/tailored-key",
+        },
+      ],
+    });
+    get.mockResolvedValue(new Uint8Array([80, 75, 3, 4]));
+    const response = await GET(new Request("https://roleprowl.test"), {
+      params: Promise.resolve({ applicationId: "application-tailored" }),
+    });
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "application-tailored", userId: "user-1" },
+      }),
+    );
+    expect(get).toHaveBeenCalledWith("resume-versions/tailored-key");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe(
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
+  });
+
   it("conceals a missing or foreign application", async () => {
     findFirst.mockResolvedValue(null);
     const response = await GET(new Request("https://roleprowl.test"), {
       params: Promise.resolve({ applicationId: "foreign" }),
+    });
+    expect(response.status).toBe(404);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("returns a safe 404 for a malformed legacy snapshot without touching storage", async () => {
+    findFirst.mockResolvedValue({
+      documentsSnapshot: [
+        {
+          fileName: "legacy.pdf",
+          contentType: "application/pdf",
+          storageKey: "candidate-documents/legacy",
+        },
+      ],
+    });
+    const response = await GET(new Request("https://roleprowl.test"), {
+      params: Promise.resolve({ applicationId: "legacy" }),
     });
     expect(response.status).toBe(404);
     expect(get).not.toHaveBeenCalled();

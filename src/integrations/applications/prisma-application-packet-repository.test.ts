@@ -138,7 +138,17 @@ describe("Prisma application packet repository", () => {
     );
     expect(mocks.applicationUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ state: "READY" }),
+        data: expect.objectContaining({
+          state: "READY",
+          documentsSnapshot: [
+            {
+              kind: "RESUME",
+              fileName: "resume.pdf",
+              contentType: "application/pdf",
+              storageKey: "candidate-documents/safe",
+            },
+          ],
+        }),
       }),
     );
   });
@@ -174,6 +184,63 @@ describe("Prisma application packet repository", () => {
         data: expect.objectContaining({
           resumeVersionId: "resume-version-1",
           state: "NEEDS_REVIEW",
+          documentsSnapshot: [
+            {
+              kind: "RESUME",
+              fileName: "avery-security-analyst.docx",
+              contentType:
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              storageKey: "resume-versions/tailored-safe",
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("synchronizes a changed pre-submission CandidateDocument selection", async () => {
+    mocks.documentFindFirst.mockResolvedValue({
+      originalFileName: "resume-b.pdf",
+      mimeType: "application/pdf",
+      storageKey: "candidate-documents/resume-b",
+    });
+    await new PrismaApplicationPacketRepository(
+      vi.fn(async () => Response.json({ questions: [] })),
+    ).refresh({
+      applicationId: "application-1",
+      userId: "user-1",
+      reviewed: false,
+    });
+    expect(mocks.applicationUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          documentsSnapshot: [
+            {
+              kind: "RESUME",
+              fileName: "resume-b.pdf",
+              contentType: "application/pdf",
+              storageKey: "candidate-documents/resume-b",
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("stores no résumé snapshot when the packet has no selected résumé", async () => {
+    mocks.documentFindFirst.mockResolvedValue(null);
+    await new PrismaApplicationPacketRepository(
+      vi.fn(async () => Response.json({ questions: [] })),
+    ).refresh({
+      applicationId: "application-1",
+      userId: "user-1",
+      reviewed: false,
+    });
+    expect(mocks.applicationUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          documentsSnapshot: [],
+          resumeVersionId: null,
         }),
       }),
     );
@@ -258,7 +325,20 @@ describe("Prisma application packet repository", () => {
       ...application,
       state: "SUBMITTED",
       submittedAt: new Date(),
+      documentsSnapshot: [
+        {
+          kind: "RESUME",
+          fileName: "resume-a.pdf",
+          contentType: "application/pdf",
+          storageKey: "candidate-documents/resume-a",
+        },
+      ],
       submissionPayloadSnapshot: { packet },
+    });
+    mocks.documentFindFirst.mockResolvedValue({
+      originalFileName: "resume-b.pdf",
+      mimeType: "application/pdf",
+      storageKey: "candidate-documents/resume-b",
     });
     const result = await new PrismaApplicationPacketRepository().refresh({
       applicationId: "application-1",
@@ -267,6 +347,7 @@ describe("Prisma application packet repository", () => {
     });
     expect(result).toEqual(packet);
     expect(mocks.profileFindUnique).not.toHaveBeenCalled();
+    expect(mocks.documentFindFirst).not.toHaveBeenCalled();
     expect(mocks.applicationUpdateMany).not.toHaveBeenCalled();
   });
 

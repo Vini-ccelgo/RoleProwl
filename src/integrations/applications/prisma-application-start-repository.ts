@@ -7,6 +7,7 @@ import {
   NotFoundError,
 } from "@/core/errors/application-errors";
 import { MATCH_SCORING_VERSION } from "@/core/domain/matching/match-job";
+import { selectApplicationResume } from "@/core/domain/applications/application-resume";
 import type { ApplicationStartRepository } from "@/features/applications/start-application";
 import { Prisma } from "@/generated/prisma/client";
 import { databaseClient } from "@/lib/db/client";
@@ -104,7 +105,22 @@ export class PrismaApplicationStartRepository implements ApplicationStartReposit
             const destination = requireLegitimateDestination(
               source?.applicationUrl ?? null,
             );
-            const resume = job.resumeVersions[0] ?? null;
+            const tailoredResume = job.resumeVersions[0] ?? null;
+            const candidateDocument = tailoredResume
+              ? null
+              : await transaction.candidateDocument.findFirst({
+                  where: { userId: input.userId, status: "EXTRACTED" },
+                  orderBy: { createdAt: "desc" },
+                  select: {
+                    originalFileName: true,
+                    mimeType: true,
+                    storageKey: true,
+                  },
+                });
+            const resume = selectApplicationResume({
+              tailoredResume,
+              candidateDocument,
+            });
             const generatedText = Object.fromEntries(
               job.writingArtifacts
                 .filter(
@@ -115,15 +131,7 @@ export class PrismaApplicationStartRepository implements ApplicationStartReposit
                 )
                 .map((artifact) => [artifact.type, artifact.content]),
             );
-            const documents = resume
-              ? [
-                  {
-                    contentType: resume.renderedContentType,
-                    fileName: resume.renderedFileName,
-                    storageKey: resume.renderedStorageKey,
-                  },
-                ]
-              : [];
+            const documents = resume ? [resume.document] : [];
             const applicationPackage = {
               answers: {},
               destinationUrl: destination,
@@ -134,7 +142,7 @@ export class PrismaApplicationStartRepository implements ApplicationStartReposit
                 externalId: source?.externalId ?? input.jobId,
                 source: source?.source ?? "UNKNOWN",
               },
-              resumeVersionId: resume?.id ?? null,
+              resumeVersionId: resume?.resumeVersionId ?? null,
             };
             const review = job.reviewQueueItems[0] ?? null;
             const state = review
@@ -162,7 +170,7 @@ export class PrismaApplicationStartRepository implements ApplicationStartReposit
               data: {
                 userId: input.userId,
                 jobId: job.id,
-                resumeVersionId: resume?.id,
+                resumeVersionId: resume?.resumeVersionId,
                 state,
                 fitSnapshot: json(fitSnapshot),
                 generatedTextSnapshot: json(generatedText),

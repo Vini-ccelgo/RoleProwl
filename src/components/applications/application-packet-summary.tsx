@@ -75,10 +75,12 @@ function Values({
 export function ApplicationPacketSummary({
   applicationId,
   packet: value,
+  resumeDownloadAvailable = false,
   saveAction,
 }: {
   readonly applicationId: string;
   readonly packet: unknown;
+  readonly resumeDownloadAvailable?: boolean;
   readonly saveAction: (formData: FormData) => Promise<void>;
 }) {
   if (!isApplicationPacket(value))
@@ -248,7 +250,9 @@ export function ApplicationPacketSummary({
               <p className="m-0 text-sm text-foreground-muted">
                 {document.fileName ?? "No document selected"}
               </p>
-              {document.kind === "RESUME" && document.fileName ? (
+              {document.kind === "RESUME" &&
+              document.fileName &&
+              resumeDownloadAvailable ? (
                 <a
                   className="text-sm font-semibold text-brand"
                   href={`/api/applications/${applicationId}/resume`}

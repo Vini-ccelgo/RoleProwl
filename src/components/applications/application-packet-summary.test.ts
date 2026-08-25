@@ -56,6 +56,7 @@ describe("application packet summary", () => {
       createElement(ApplicationPacketSummary, {
         applicationId: "application-1",
         packet,
+        resumeDownloadAvailable: true,
         saveAction: async () => undefined,
       }),
     );
@@ -65,6 +66,46 @@ describe("application packet summary", () => {
     expect(markup).toContain("/api/applications/application-1/resume");
     expect(markup).toContain("card grid gap-3 self-start p-5");
     expect(markup).not.toContain("candidate-documents/private-key");
+  });
+
+  it("does not render a download link without a canonical Application snapshot", () => {
+    const packet = buildApplicationPacket({
+      reviewed: true,
+      source: {
+        accountEmail: null,
+        profile: null,
+        verifiedResumeFacts: [],
+        experience: [],
+        education: [],
+        credentials: [],
+        skills: [],
+        languages: [],
+        workAuthorization: null,
+        sponsorshipRequired: null,
+        answerMemories: [],
+        selectedResume: {
+          fileName: "resume.pdf",
+          contentType: "application/pdf",
+          storageKey: "candidate-documents/private-key",
+          tailored: false,
+        },
+        coverLetter: null,
+        questions: [],
+        questionInspection: "AVAILABLE",
+        sourceName: "GREENHOUSE",
+        targetRole: "Security Analyst",
+      },
+    });
+    const markup = renderToStaticMarkup(
+      createElement(ApplicationPacketSummary, {
+        applicationId: "application-1",
+        packet,
+        resumeDownloadAvailable: false,
+        saveAction: async () => undefined,
+      }),
+    );
+    expect(markup).toContain("resume.pdf");
+    expect(markup).not.toContain("Download application résumé");
   });
 
   it("makes blocking fields actionable without repeating resolved badges", () => {

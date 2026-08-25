@@ -1,17 +1,12 @@
 import { NextResponse } from "next/server";
 import { AuthorizationError } from "@/core/errors/application-errors";
+import { applicationResumeSnapshot } from "@/core/domain/applications/application-resume";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { documentStorage } from "@/integrations/storage/document-storage";
 import { databaseClient } from "@/lib/db/client";
 
 export const runtime = "nodejs";
-
-function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
 
 function safeFileName(value: string) {
   return value.replace(/[^a-zA-Z0-9._ -]/gu, "_").slice(0, 180) || "resume";
@@ -33,25 +28,13 @@ export async function GET(
         { error: "Document not found." },
         { status: 404 },
       );
-    const documents = Array.isArray(application.documentsSnapshot)
-      ? application.documentsSnapshot
-      : [];
-    const resume = documents
-      .map(record)
-      .find((document) => document?.kind === "RESUME");
-    const storageKey = resume?.storageKey;
-    const fileName = resume?.fileName;
-    const contentType = resume?.contentType;
-    if (
-      typeof storageKey !== "string" ||
-      typeof fileName !== "string" ||
-      typeof contentType !== "string"
-    )
+    const resume = applicationResumeSnapshot(application.documentsSnapshot);
+    if (!resume)
       return NextResponse.json(
         { error: "Document not found." },
         { status: 404 },
       );
-    const bytes = await documentStorage().get(storageKey);
+    const bytes = await documentStorage().get(resume.storageKey);
     if (!bytes)
       return NextResponse.json(
         { error: "Document not found." },
@@ -64,9 +47,9 @@ export async function GET(
     return new Response(body, {
       headers: {
         "cache-control": "private, no-store",
-        "content-disposition": `attachment; filename="${safeFileName(fileName)}"`,
+        "content-disposition": `attachment; filename="${safeFileName(resume.fileName)}"`,
         "content-length": String(bytes.byteLength),
-        "content-type": contentType,
+        "content-type": resume.contentType,
         "x-content-type-options": "nosniff",
       },
     });

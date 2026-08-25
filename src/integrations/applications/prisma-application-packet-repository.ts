@@ -9,6 +9,7 @@ import {
 import type { ApplicationPacketRepository } from "@/features/applications/refresh-application-packet";
 import { ConflictError, NotFoundError } from "@/core/errors/application-errors";
 import type { Prisma } from "@/generated/prisma/client";
+import { selectApplicationResume } from "@/core/domain/applications/application-resume";
 import { databaseClient } from "@/lib/db/client";
 import {
   fetchGreenhouseApplicationQuestions,
@@ -205,21 +206,10 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
       const value = text(fact.value);
       return value ? [{ factType: fact.factType, text: value }] : [];
     });
-    const selectedResume = tailoredResume
-      ? {
-          fileName: tailoredResume.renderedFileName,
-          contentType: tailoredResume.renderedContentType,
-          storageKey: tailoredResume.renderedStorageKey,
-          tailored: true,
-        }
-      : candidateDocument
-        ? {
-            fileName: candidateDocument.originalFileName,
-            contentType: candidateDocument.mimeType,
-            storageKey: candidateDocument.storageKey,
-            tailored: false,
-          }
-        : null;
+    const resume = selectApplicationResume({
+      tailoredResume,
+      candidateDocument,
+    });
     const coverLetter = writingArtifacts.find(
       (artifact) => artifact.type === "COVER_LETTER",
     );
@@ -272,7 +262,7 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
             travelPercent: preferences.maximumTravelPercent,
           }
         : null,
-      selectedResume,
+      selectedResume: resume?.packetSource ?? null,
       coverLetter: coverLetter
         ? {
             fileName: "cover-letter.txt",
@@ -302,13 +292,18 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
           : [],
       ),
     );
-    const documents = packet.documents.map((document) => ({
-      contentType: document.contentType,
-      fileName: document.fileName,
-      kind: document.kind,
-      status: document.status,
-      storageKey: document.storageKey,
-    }));
+    const documents = [
+      ...(resume ? [resume.document] : []),
+      ...packet.documents
+        .filter((document) => document.kind !== "RESUME")
+        .map((document) => ({
+          contentType: document.contentType,
+          fileName: document.fileName,
+          kind: document.kind,
+          status: document.status,
+          storageKey: document.storageKey,
+        })),
+    ];
     const desiredState =
       input.reviewed && packet.completeness.readyForSubmissionHandoff
         ? ("READY" as const)
@@ -323,7 +318,7 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
       generatedText,
       overrides: applicationOverrides,
       packet,
-      resumeVersionId: tailoredResume?.id ?? null,
+      resumeVersionId: resume?.resumeVersionId ?? null,
     };
     await database.$transaction(async (transaction) => {
       const updated = await transaction.application.updateMany({
@@ -335,7 +330,7 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
         },
         data: {
           state: desiredState,
-          resumeVersionId: tailoredResume?.id ?? null,
+          resumeVersionId: resume?.resumeVersionId ?? null,
           answersSnapshot: json(answers),
           documentsSnapshot: json(documents),
           generatedTextSnapshot: json(generatedText),

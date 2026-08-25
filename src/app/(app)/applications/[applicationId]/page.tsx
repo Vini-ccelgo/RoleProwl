@@ -21,6 +21,7 @@ import {
   isApplicationPacket,
 } from "@/core/domain/applications/application-packet";
 import { buildGreenhouseTransferDraft } from "@/core/domain/applications/greenhouse-transfer";
+import { applicationResumeDownloadAvailable } from "@/core/domain/applications/application-resume";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
@@ -101,6 +102,10 @@ export default async function ApplicationDetailPage({
   if (!application) notFound();
   const packetValue = object(application.submissionPayloadSnapshot)?.packet;
   const packet = isApplicationPacket(packetValue) ? packetValue : null;
+  const resumeDownloadAvailable = applicationResumeDownloadAvailable(
+    application.documentsSnapshot,
+    packet?.documents,
+  );
   const nextStates = applicationTransitionsFrom(application.state).filter(
     (state) => USER_OUTCOME_STATES.has(state),
   );
@@ -272,13 +277,18 @@ export default async function ApplicationDetailPage({
       <ApplicationPacketSummary
         applicationId={application.id}
         packet={packetValue}
+        resumeDownloadAvailable={resumeDownloadAvailable}
         saveAction={saveApplicationOverridesAction}
       />
 
       {greenhouseTransfer ? (
         <GreenhouseAssistedApply
           draft={greenhouseTransfer}
-          resumeDownloadUrl={`/api/applications/${application.id}/resume`}
+          resumeDownloadUrl={
+            resumeDownloadAvailable
+              ? `/api/applications/${application.id}/resume`
+              : null
+          }
         />
       ) : null}
 
