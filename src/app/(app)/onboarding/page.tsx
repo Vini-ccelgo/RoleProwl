@@ -5,7 +5,10 @@ import { PageHeader } from "@/components/ui/page-header";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
-import { isSupportedProposalDestination } from "@/core/domain/candidate/proposal-destinations";
+import {
+  pendingProposalReviewQuery,
+  proposalReviewSummary,
+} from "@/features/candidate/proposal-review-summary";
 
 export default async function OnboardingPage() {
   await connection();
@@ -25,18 +28,9 @@ export default async function OnboardingPage() {
         _count: { select: { proposals: true } },
       },
     }),
-    database.candidateFactProposal.findMany({
-      where: { userId: actor.id, status: "PENDING" },
-      orderBy: { createdAt: "asc" },
-      select: {
-        id: true,
-        factType: true,
-        proposedValue: true,
-        sourceRegion: true,
-        targetPath: true,
-        confidence: true,
-      },
-    }),
+    database.candidateFactProposal.findMany(
+      pendingProposalReviewQuery(actor.id),
+    ),
   ]);
 
   return (
@@ -52,29 +46,7 @@ export default async function OnboardingPage() {
           proposalCount: _count.proposals,
         }))}
       />
-      <FactProposalReview
-        proposals={proposals.map((proposal) => {
-          const value = proposal.proposedValue as { text?: unknown };
-          const source = proposal.sourceRegion as { text?: unknown };
-          return {
-            id: proposal.id,
-            factType: proposal.factType,
-            supported: isSupportedProposalDestination(
-              proposal.factType,
-              proposal.targetPath,
-            ),
-            confidence: proposal.confidence,
-            value:
-              typeof value.text === "string"
-                ? value.text
-                : JSON.stringify(value),
-            sourceText:
-              typeof source.text === "string"
-                ? source.text
-                : "Extracted document region",
-          };
-        })}
-      />
+      <FactProposalReview proposals={proposals.map(proposalReviewSummary)} />
     </div>
   );
 }
