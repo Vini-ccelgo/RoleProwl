@@ -14,7 +14,15 @@ function SignedOutActions() {
   );
 }
 
-export function AuthNavigation() {
+type AuthNavigationProps = {
+  readonly privateBetaRestricted: boolean;
+  readonly workspaceAvailable: boolean;
+};
+
+export function AuthNavigation({
+  privateBetaRestricted,
+  workspaceAvailable,
+}: AuthNavigationProps) {
   if (!isClerkConfigured()) {
     return (
       <div className="header-actions">
@@ -29,16 +37,26 @@ export function AuthNavigation() {
         <SignedOutActions />
       </Show>
       <Show when="signed-in">
-        <Button href="/dashboard" variant="secondary">
-          Dashboard
-        </Button>
+        {workspaceAvailable && (
+          <Button href="/dashboard" variant="secondary">
+            Dashboard
+          </Button>
+        )}
+        {privateBetaRestricted && (
+          <span className="text-sm text-foreground-muted">
+            Private beta access unavailable
+          </span>
+        )}
         <UserButton />
       </Show>
     </div>
   );
 }
 
-export function MobileAuthNavigation() {
+export function MobileAuthNavigation({
+  privateBetaRestricted,
+  workspaceAvailable,
+}: AuthNavigationProps) {
   const configured = isClerkConfigured();
   return (
     <div className="mobile-actions">
@@ -49,9 +67,14 @@ export function MobileAuthNavigation() {
             <Button href="/onboarding">Get Started</Button>
           </Show>
           <Show when="signed-in">
-            <Button href="/dashboard" variant="secondary">
-              Workspace
-            </Button>
+            {workspaceAvailable && (
+              <Button href="/dashboard" variant="secondary">
+                Workspace
+              </Button>
+            )}
+            {privateBetaRestricted && (
+              <span className="sr-only">Private beta access unavailable</span>
+            )}
           </Show>
         </>
       )}

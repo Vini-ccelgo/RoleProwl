@@ -38,6 +38,8 @@ Private-beta admission:
 
 When beta mode is disabled, authenticated access behaves as before. When enabled, a missing/empty allowlist fails closed and authenticated non-invited accounts are denied before candidate workspace data/actions are accessed.
 
+Authentication and beta admission are separate. A non-invited account may remain signed in to Clerk on the public Home page, but RoleProwl must not load candidate workspace data there or present an available Dashboard/Workspace action. The shared `(app)` server layout and each data-bearing workspace page enforce admission for Dashboard, Onboarding, Career Profile, Jobs and job details, Queue, Applications and application details, Notifications, and Settings. Workspace server actions and APIs use the same admitted-actor boundary; navigation visibility is never the authorization control.
+
 ## AI and real candidate data
 
 The normal résumé upload path performs PDF/DOCX text extraction and initial fact proposals locally in RoleProwl code; it does not call Gemini or OpenAI. Current fit scoring is deterministic. AI-capable structured operations elsewhere in the codebase include résumé fact extraction, job-requirement normalization, semantic evidence comparison, application-question classification, free-text application generation, résumé tailoring, and cover-letter generation.
@@ -97,6 +99,14 @@ The ordinary acceptance path must verify:
 - account deletion includes candidate document and rendered résumé object keys.
 
 Live B2 behavior is an operator test; ordinary automated tests use mocked storage.
+
+When testing a Preview protected by Vercel Deployment Protection or a Shareable Link, first pass Vercel protection in the browser/session used for the ownership check. A Vercel login or interception page is not a RoleProwl authorization result. Do not disable Vercel protection or modify RoleProwl authorization to compensate for that interception.
+
+## Shared jobs and candidate-private state
+
+Canonical `Job` and `JobSourceRecord` rows are a global discovered catalog. Invited candidates may therefore see the same active jobs, including jobs discovered while another account was in use. Do not duplicate canonical jobs per candidate merely to make the visible catalog count private.
+
+Candidate state joined to that catalog remains owner-scoped by `userId`: dispositions such as Shortlisted or Rejected by you, fit analyses, match feedback, review items, Applications and their status/answers, and other candidate-specific workflow state. Acceptance must use two invited candidates against the same canonical job and verify that candidate B sees none of candidate A's private state.
 
 ## Clerk and beta admission
 
@@ -173,6 +183,9 @@ Use a consenting invited candidate and data they are authorized to provide. Do n
 18. Exercise account export and inspect résumé-ingestion, facts, fit, application, event, notification, and generated-material sections.
 19. Verify document deletion and account-control behavior, including cleanup-required reporting on a simulated/provider failure.
 20. Inspect Vercel, Inngest, storage, and AI operational logs for unexpected errors or PII.
+21. With an authenticated non-invited account, directly request Dashboard, Settings, Career Profile, and Applications; verify RoleProwl denies workspace admission while Clerk may remain signed in.
+22. With invited candidates A and B, confirm a shared canonical job may appear for both but A's disposition, analysis, feedback, Application, status, and answers do not appear for B.
+23. After passing Vercel Preview protection in both browser sessions, confirm A can download A's application résumé and B receives a concealed not-found response for A's exact URL.
 
 ## Rollback and disable
 

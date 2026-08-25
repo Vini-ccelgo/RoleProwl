@@ -32,7 +32,8 @@ describe("responsive navigation contract", () => {
     expect(navigation).toContain('when="signed-in"');
     expect(navigation).toContain('href="/dashboard"');
     expect(navigation).toContain("Workspace");
-    expect(header).toContain("<MobileAuthNavigation />");
+    expect(header).toContain("<MobileAuthNavigation");
+    expect(header).toContain("workspaceAvailable={workspaceAvailable}");
     expect(narrow).toMatch(/\.mobile-actions \{[\s\S]*?margin-left: auto/u);
   });
 });

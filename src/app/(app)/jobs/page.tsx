@@ -1,6 +1,5 @@
 import { connection } from "next/server";
 import Link from "next/link";
-import type { Prisma } from "@/generated/prisma/client";
 import { MatchAnalysisSummary } from "@/components/jobs/match-analysis-summary";
 import { JobCardActions } from "@/components/jobs/job-card-actions";
 import { PageHeader } from "@/components/ui/page-header";
@@ -9,8 +8,8 @@ import {
   JOB_DISPOSITION_FILTERS,
   parseJobDispositionView,
 } from "@/core/domain/jobs/job-disposition";
-import { MATCH_SCORING_VERSION } from "@/core/domain/matching/match-job";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
+import { candidateJobCatalogQuery } from "@/features/jobs/candidate-job-catalog";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 import {
@@ -29,44 +28,9 @@ export default async function JobsPage({
   const view = parseJobDispositionView(
     Array.isArray(rawView) ? rawView[0] : rawView,
   );
-  const dispositionFilter:
-    Prisma.CandidateJobDispositionListRelationFilter | undefined =
-    view === "shortlisted"
-      ? { some: { userId: actor.id, status: "SHORTLISTED" as const } }
-      : view === "rejected"
-        ? { some: { userId: actor.id, status: "REJECTED" as const } }
-        : view === "active"
-          ? {
-              none: {
-                userId: actor.id,
-                status: { in: ["REJECTED", "SHORTLISTED"] },
-              },
-            }
-          : undefined;
-  const jobs = await databaseClient().job.findMany({
-    where: {
-      status: "ACTIVE",
-      ...(dispositionFilter
-        ? { candidateDispositions: dispositionFilter }
-        : {}),
-    },
-    orderBy: { lastSeenAt: "desc" },
-    take: 50,
-    include: {
-      sourceRecords: { orderBy: { lastSeenAt: "desc" }, take: 1 },
-      matchAnalyses: {
-        where: { userId: actor.id, scoringVersion: MATCH_SCORING_VERSION },
-        include: { feedback: { where: { userId: actor.id } } },
-        take: 1,
-      },
-      candidateDispositions: { where: { userId: actor.id }, take: 1 },
-      applications: {
-        where: { userId: actor.id },
-        select: { id: true, state: true },
-        take: 1,
-      },
-    },
-  });
+  const jobs = await databaseClient().job.findMany(
+    candidateJobCatalogQuery(actor.id, view),
+  );
 
   return (
     <div className="grid gap-7">

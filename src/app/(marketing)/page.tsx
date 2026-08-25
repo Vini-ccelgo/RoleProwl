@@ -8,10 +8,12 @@ import { features, principles, workflowSteps } from "@/config/marketing";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 import { searchRunIsActive } from "@/features/jobs/manual-discovery";
+import { resolveWorkspaceAdmission } from "@/features/accounts/require-authenticated-actor";
 
 export default async function HomePage() {
-  const actor = await currentAuthProvider().currentActor();
-  if (actor) {
+  const admission = await resolveWorkspaceAdmission(currentAuthProvider());
+  if (admission.status === "ALLOWED") {
+    const actor = admission.actor;
     const database = databaseClient();
     const [searchState, activeJobs, pendingReviews, unreadNotifications] =
       await Promise.all([

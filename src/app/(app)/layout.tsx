@@ -1,9 +1,5 @@
 import { AppShell } from "@/components/layout/app-shell";
-import {
-  AuthorizationError,
-  PrivateBetaAccessError,
-} from "@/core/errors/application-errors";
-import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
+import { resolveWorkspaceAdmission } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 import { syntheticGeminiTestingEnabled } from "@/lib/env/server";
@@ -14,15 +10,12 @@ export default async function ApplicationLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const actor = await requireAuthenticatedActor(currentAuthProvider()).catch(
-    (error: unknown) => {
-      if (error instanceof PrivateBetaAccessError) return "PRIVATE_BETA_DENIED";
-      if (error instanceof AuthorizationError) return null;
-      throw error;
-    },
-  );
-  if (actor === "PRIVATE_BETA_DENIED") redirect("/?private_beta=restricted");
-  if (!actor) redirect("/sign-in?redirect_url=/dashboard");
+  const admission = await resolveWorkspaceAdmission(currentAuthProvider());
+  if (admission.status === "PRIVATE_BETA_DENIED")
+    redirect("/?private_beta=restricted");
+  if (admission.status === "UNAUTHENTICATED")
+    redirect("/sign-in?redirect_url=/dashboard");
+  const actor = admission.actor;
   const unreadNotifications = await databaseClient().notification.count({
     where: { userId: actor.id, readAt: null },
   });

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PrivateBetaAccessError } from "@/core/errors/application-errors";
 
 const mocks = vi.hoisted(() => ({
   consume: vi.fn(),
@@ -55,6 +56,19 @@ describe("account export route", () => {
     const response = await GET();
     expect(response.status).toBe(429);
     expect(response.headers.get("retry-after")).toBe("120");
+    expect(mocks.exportAccountData).not.toHaveBeenCalled();
+  });
+
+  it("returns a structured denial before exporting a non-invited account", async () => {
+    mocks.requireAuthenticatedActor.mockRejectedValueOnce(
+      new PrivateBetaAccessError(),
+    );
+    const response = await GET();
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      error: "Authentication is required",
+    });
+    expect(mocks.consume).not.toHaveBeenCalled();
     expect(mocks.exportAccountData).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { AuthorizationError } from "@/core/errors/application-errors";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { documentStorage } from "@/integrations/storage/document-storage";
@@ -20,43 +21,58 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ applicationId: string }> },
 ) {
-  const actor = await requireAuthenticatedActor(currentAuthProvider());
-  const { applicationId } = await context.params;
-  const application = await databaseClient().application.findFirst({
-    where: { id: applicationId, userId: actor.id },
-    select: { documentsSnapshot: true },
-  });
-  if (!application)
-    return NextResponse.json({ error: "Document not found." }, { status: 404 });
-  const documents = Array.isArray(application.documentsSnapshot)
-    ? application.documentsSnapshot
-    : [];
-  const resume = documents
-    .map(record)
-    .find((document) => document?.kind === "RESUME");
-  const storageKey = resume?.storageKey;
-  const fileName = resume?.fileName;
-  const contentType = resume?.contentType;
-  if (
-    typeof storageKey !== "string" ||
-    typeof fileName !== "string" ||
-    typeof contentType !== "string"
-  )
-    return NextResponse.json({ error: "Document not found." }, { status: 404 });
-  const bytes = await documentStorage().get(storageKey);
-  if (!bytes)
-    return NextResponse.json({ error: "Document not found." }, { status: 404 });
-  const body = bytes.buffer.slice(
-    bytes.byteOffset,
-    bytes.byteOffset + bytes.byteLength,
-  ) as ArrayBuffer;
-  return new Response(body, {
-    headers: {
-      "cache-control": "private, no-store",
-      "content-disposition": `attachment; filename="${safeFileName(fileName)}"`,
-      "content-length": String(bytes.byteLength),
-      "content-type": contentType,
-      "x-content-type-options": "nosniff",
-    },
-  });
+  try {
+    const actor = await requireAuthenticatedActor(currentAuthProvider());
+    const { applicationId } = await context.params;
+    const application = await databaseClient().application.findFirst({
+      where: { id: applicationId, userId: actor.id },
+      select: { documentsSnapshot: true },
+    });
+    if (!application)
+      return NextResponse.json(
+        { error: "Document not found." },
+        { status: 404 },
+      );
+    const documents = Array.isArray(application.documentsSnapshot)
+      ? application.documentsSnapshot
+      : [];
+    const resume = documents
+      .map(record)
+      .find((document) => document?.kind === "RESUME");
+    const storageKey = resume?.storageKey;
+    const fileName = resume?.fileName;
+    const contentType = resume?.contentType;
+    if (
+      typeof storageKey !== "string" ||
+      typeof fileName !== "string" ||
+      typeof contentType !== "string"
+    )
+      return NextResponse.json(
+        { error: "Document not found." },
+        { status: 404 },
+      );
+    const bytes = await documentStorage().get(storageKey);
+    if (!bytes)
+      return NextResponse.json(
+        { error: "Document not found." },
+        { status: 404 },
+      );
+    const body = bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength,
+    ) as ArrayBuffer;
+    return new Response(body, {
+      headers: {
+        "cache-control": "private, no-store",
+        "content-disposition": `attachment; filename="${safeFileName(fileName)}"`,
+        "content-length": String(bytes.byteLength),
+        "content-type": contentType,
+        "x-content-type-options": "nosniff",
+      },
+    });
+  } catch (error) {
+    if (error instanceof AuthorizationError)
+      return NextResponse.json({ error: error.message }, { status: 401 });
+    throw error;
+  }
 }

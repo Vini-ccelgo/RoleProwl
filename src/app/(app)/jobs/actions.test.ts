@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PrivateBetaAccessError } from "@/core/errors/application-errors";
 
 const {
   deleteMany,
@@ -134,6 +135,18 @@ describe("candidate job disposition action", () => {
     await setJobDispositionAction(dispositionForm("REJECTED"));
     expect(upsert).not.toHaveBeenCalled();
     expect(deleteMany).not.toHaveBeenCalled();
+    expect(trackProductEvent).not.toHaveBeenCalled();
+  });
+
+  it("denies a non-invited authenticated actor before a workspace mutation", async () => {
+    requireAuthenticatedActor.mockRejectedValueOnce(
+      new PrivateBetaAccessError(),
+    );
+    await expect(
+      setJobDispositionAction(dispositionForm("SHORTLISTED")),
+    ).rejects.toBeInstanceOf(PrivateBetaAccessError);
+    expect(findUnique).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
     expect(trackProductEvent).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PrivateBetaAccessError } from "@/core/errors/application-errors";
 
 const { findFirst, get, requireAuthenticatedActor } = vi.hoisted(() => ({
   findFirst: vi.fn(),
@@ -59,6 +60,18 @@ describe("application résumé download", () => {
       params: Promise.resolve({ applicationId: "foreign" }),
     });
     expect(response.status).toBe(404);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("denies a non-invited authenticated candidate before ownership or storage lookup", async () => {
+    requireAuthenticatedActor.mockRejectedValueOnce(
+      new PrivateBetaAccessError(),
+    );
+    const response = await GET(new Request("https://roleprowl.test"), {
+      params: Promise.resolve({ applicationId: "application-1" }),
+    });
+    expect(response.status).toBe(401);
+    expect(findFirst).not.toHaveBeenCalled();
     expect(get).not.toHaveBeenCalled();
   });
 });

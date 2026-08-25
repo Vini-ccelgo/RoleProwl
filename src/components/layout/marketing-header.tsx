@@ -5,8 +5,13 @@ import {
 } from "@/components/navigation/auth-navigation";
 import { MARKETING_NAV_ROUTES } from "@/config/routes";
 import { NavigationLink } from "@/components/navigation/navigation-link";
+import { resolveWorkspaceAdmission } from "@/features/accounts/require-authenticated-actor";
+import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 
-export function MarketingHeader() {
+export async function MarketingHeader() {
+  const admission = await resolveWorkspaceAdmission(currentAuthProvider());
+  const workspaceAvailable = admission.status === "ALLOWED";
+  const privateBetaRestricted = admission.status === "PRIVATE_BETA_DENIED";
   return (
     <header className="site-header">
       <div className="header-inner">
@@ -16,8 +21,14 @@ export function MarketingHeader() {
             <NavigationLink key={route.href} href={route.href} compact />
           ))}
         </nav>
-        <AuthNavigation />
-        <MobileAuthNavigation />
+        <AuthNavigation
+          privateBetaRestricted={privateBetaRestricted}
+          workspaceAvailable={workspaceAvailable}
+        />
+        <MobileAuthNavigation
+          privateBetaRestricted={privateBetaRestricted}
+          workspaceAvailable={workspaceAvailable}
+        />
       </div>
     </header>
   );
