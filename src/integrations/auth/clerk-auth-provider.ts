@@ -1,6 +1,5 @@
 import "server-only";
 import { currentUser } from "@clerk/nextjs/server";
-import { isClerkAPIResponseError } from "@clerk/nextjs/errors";
 import { cache } from "react";
 import type { AuthProvider, AuthenticatedActor } from "@/core/contracts";
 import { resolveUserAccount } from "@/features/accounts/resolve-user-account";
@@ -19,12 +18,7 @@ export class ClerkAuthProvider implements AuthProvider {
     try {
       clerkUser = await currentUser();
     } catch (error) {
-      if (
-        isClerkAPIResponseError(error) &&
-        error.status === 404 &&
-        error.errors.some((item) => item.code === "resource_not_found")
-      )
-        return null;
+      if (isDeletedClerkUserError(error)) return null;
       throw error;
     }
     if (!clerkUser) return null;
@@ -39,6 +33,25 @@ export class ClerkAuthProvider implements AuthProvider {
       this.repository,
     );
   }
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+export function isDeletedClerkUserError(error: unknown) {
+  const candidate = record(error);
+  return Boolean(
+    candidate?.clerkError === true &&
+    candidate.code === "api_response_error" &&
+    candidate.status === 404 &&
+    Array.isArray(candidate.errors) &&
+    candidate.errors.some(
+      (item) => record(item)?.code === "resource_not_found",
+    ),
+  );
 }
 
 export type RequestActorMemoizer = <Result>(

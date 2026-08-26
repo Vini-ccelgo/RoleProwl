@@ -6,7 +6,7 @@ import {
   applicationNextAction,
   applicationStateLabel,
 } from "@/features/applications/application-presentation";
-import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
+import { requireWorkspacePageActor } from "@/features/accounts/require-workspace-page-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 import { isApplicationPacket } from "@/core/domain/applications/application-packet";
@@ -19,7 +19,7 @@ function object(value: unknown): Record<string, unknown> | null {
 
 export default async function ApplicationsPage() {
   await connection();
-  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const actor = await requireWorkspacePageActor(currentAuthProvider());
   const applications = await databaseClient().application.findMany({
     where: { userId: actor.id },
     include: {

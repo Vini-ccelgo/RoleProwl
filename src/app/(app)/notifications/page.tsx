@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { PageHeader } from "@/components/ui/page-header";
-import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
+import { requireWorkspacePageActor } from "@/features/accounts/require-workspace-page-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 import {
@@ -23,7 +23,7 @@ function label(value: string) {
 
 export default async function NotificationsPage() {
   await connection();
-  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const actor = await requireWorkspacePageActor(currentAuthProvider());
   const notifications = await databaseClient().notification.findMany({
     where: { userId: actor.id },
     orderBy: { createdAt: "desc" },

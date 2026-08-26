@@ -2,7 +2,7 @@ import { connection } from "next/server";
 import { ResumeImporter } from "@/components/candidate/resume-importer";
 import { FactProposalReview } from "@/components/candidate/fact-proposal-review";
 import { PageHeader } from "@/components/ui/page-header";
-import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
+import { requireWorkspacePageActor } from "@/features/accounts/require-workspace-page-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 import {
@@ -12,7 +12,7 @@ import {
 
 export default async function OnboardingPage() {
   await connection();
-  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const actor = await requireWorkspacePageActor(currentAuthProvider());
   const database = databaseClient();
   const [documents, proposals] = await Promise.all([
     database.candidateDocument.findMany({

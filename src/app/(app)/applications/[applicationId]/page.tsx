@@ -26,7 +26,7 @@ import {
   applicationResumeDownloadAvailable,
   applicationResumeSnapshot,
 } from "@/core/domain/applications/application-resume";
-import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
+import { requireWorkspacePageActor } from "@/features/accounts/require-workspace-page-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 import {
@@ -75,7 +75,7 @@ export default async function ApplicationDetailPage({
   params: Promise<{ applicationId: string }>;
 }) {
   await connection();
-  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const actor = await requireWorkspacePageActor(currentAuthProvider());
   const { applicationId } = await params;
   const application = await databaseClient().application.findFirst({
     where: { id: applicationId, userId: actor.id },

@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ClerkAPIResponseError } from "@clerk/nextjs/errors";
 
 const { currentUser, isClerkConfigured } = vi.hoisted(() => ({
   currentUser: vi.fn(),
@@ -13,10 +12,12 @@ vi.mock("@/lib/auth/config", () => ({ isClerkConfigured }));
 import { ClerkAuthProvider } from "./clerk-auth-provider";
 
 function deletedUserError() {
-  return new ClerkAPIResponseError("User not found", {
+  return {
+    clerkError: true,
+    code: "api_response_error",
     status: 404,
-    data: [{ code: "resource_not_found", message: "User not found" }],
-  });
+    errors: [{ code: "resource_not_found", message: "not found" }],
+  };
 }
 
 describe("Clerk current actor resolution", () => {
@@ -35,6 +36,24 @@ describe("Clerk current actor resolution", () => {
     const failure = new Error("Clerk network unavailable");
     currentUser.mockRejectedValueOnce(failure);
     const repository = { upsertIdentity: vi.fn() };
+    await expect(
+      new ClerkAuthProvider(repository as never).currentActor(),
+    ).rejects.toBe(failure);
+    expect(repository.upsertIdentity).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "an unrelated 404",
+      { ...deletedUserError(), errors: [{ code: "other" }] },
+    ],
+    ["a provider 500", { ...deletedUserError(), status: 500 }],
+    ["a rate limit", { ...deletedUserError(), status: 429 }],
+    ["a non-Clerk response", { ...deletedUserError(), clerkError: false }],
+  ])("keeps %s observable", async (_label, failure) => {
+    currentUser.mockRejectedValueOnce(failure);
+    const repository = { upsertIdentity: vi.fn() };
+
     await expect(
       new ClerkAuthProvider(repository as never).currentActor(),
     ).rejects.toBe(failure);

@@ -36,16 +36,16 @@ describe("candidate workspace route admission", () => {
     }
   });
 
-  it("requires server-side beta admission in the shared layout and each data page", () => {
+  it("requires redirect-safe server-side beta admission in the layout and each data page", () => {
     const layout = readFileSync("src/app/(app)/layout.tsx", "utf8");
     expect(layout).toContain("resolveWorkspaceAdmission");
     expect(layout).toContain('admission.status === "PRIVATE_BETA_DENIED"');
 
     for (const pagePath of representativeWorkspacePages) {
       const page = readFileSync(pagePath, "utf8");
-      expect(page, pagePath).toContain("requireAuthenticatedActor");
+      expect(page, pagePath).toContain("requireWorkspacePageActor");
       expect(page, pagePath).toContain(
-        "await requireAuthenticatedActor(currentAuthProvider())",
+        "await requireWorkspacePageActor(currentAuthProvider())",
       );
     }
   });

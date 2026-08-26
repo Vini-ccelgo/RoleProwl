@@ -10,10 +10,9 @@ import {
   INTEGRATION_SOURCES,
   resolveIntegrationCapability,
 } from "@/core/integrations/capability-registry";
-import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
+import { requireWorkspacePageActor } from "@/features/accounts/require-workspace-page-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
-import { deleteAccountAction } from "./actions";
 import { NotificationPreferencesForm } from "./notification-preferences-form";
 import { ThemeSelector } from "./theme-selector";
 import { UserProfile } from "@clerk/nextjs";
@@ -22,7 +21,7 @@ import { AccountDeletionForm } from "./account-deletion-form";
 
 export default async function SettingsPage() {
   await connection();
-  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const actor = await requireWorkspacePageActor(currentAuthProvider());
   const [
     auditEvents,
     productEventCounts,
@@ -263,7 +262,7 @@ export default async function SettingsPage() {
             recipients separately.
           </p>
         </div>
-        <AccountDeletionForm action={deleteAccountAction} />
+        <AccountDeletionForm />
       </section>
       <AuditHistory events={auditEvents} />
     </div>

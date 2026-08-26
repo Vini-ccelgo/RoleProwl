@@ -8,7 +8,7 @@ import {
   JOB_DISPOSITION_FILTERS,
   parseJobDispositionView,
 } from "@/core/domain/jobs/job-disposition";
-import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
+import { requireWorkspacePageActor } from "@/features/accounts/require-workspace-page-actor";
 import { candidateJobCatalogQuery } from "@/features/jobs/candidate-job-catalog";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
@@ -23,7 +23,7 @@ export default async function JobsPage({
   readonly searchParams: Promise<{ readonly view?: string | string[] }>;
 }) {
   await connection();
-  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const actor = await requireWorkspacePageActor(currentAuthProvider());
   const rawView = (await searchParams).view;
   const view = parseJobDispositionView(
     Array.isArray(rawView) ? rawView[0] : rawView,

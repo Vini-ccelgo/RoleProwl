@@ -1,14 +1,11 @@
 "use client";
 
 import { useClerk } from "@clerk/nextjs";
-import { useActionState, useEffect, useRef, useState } from "react";
-import type { AccountDeletionActionState } from "./actions";
-
-export const INITIAL_ACCOUNT_DELETION_STATE: AccountDeletionActionState = {
-  status: "idle",
-};
+import { useState, type FormEvent } from "react";
 
 export const ACCOUNT_DELETED_DESTINATION = "/?account_deleted=1";
+export const ACCOUNT_DELETION_PENDING_DESTINATION =
+  "/?account_deletion_pending=1";
 
 export async function finalizeCompletedAccountDeletion(
   signOut: (options: { redirectUrl: string }) => Promise<void>,
@@ -16,34 +13,90 @@ export async function finalizeCompletedAccountDeletion(
   await signOut({ redirectUrl: ACCOUNT_DELETED_DESTINATION });
 }
 
-export function AccountDeletionForm({
-  action,
-}: {
-  readonly action: (
-    state: AccountDeletionActionState,
-    formData: FormData,
-  ) => Promise<AccountDeletionActionState>;
-}) {
+export async function finalizeAccountDeletionTransport(
+  status: "COMPLETE" | "CLEANUP_REQUIRED",
+  options: {
+    readonly navigate: (destination: string) => void;
+    readonly signOut: (options: { redirectUrl: string }) => Promise<void>;
+  },
+) {
+  if (status === "CLEANUP_REQUIRED") {
+    options.navigate(ACCOUNT_DELETION_PENDING_DESTINATION);
+    return;
+  }
+  await finalizeCompletedAccountDeletion(options.signOut);
+}
+
+export async function requestAccountDeletion(
+  confirmation: string,
+  request: typeof fetch = fetch,
+) {
+  const response = await request("/api/account/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirmation }),
+  });
+  const result = (await response.json()) as {
+    error?: string;
+    status?: "COMPLETE" | "CLEANUP_REQUIRED";
+  };
+  if (!response.ok)
+    throw new Error(result.error ?? "The account could not be deleted.");
+  if (result.status !== "COMPLETE" && result.status !== "CLEANUP_REQUIRED")
+    throw new Error("The account deletion response was invalid.");
+  return result.status;
+}
+
+export function AccountDeletionForm() {
   const clerk = useClerk();
-  const [state, formAction, pending] = useActionState(
-    action,
-    INITIAL_ACCOUNT_DELETION_STATE,
-  );
-  const finalizationStarted = useRef(false);
   const [finalizationFailed, setFinalizationFailed] = useState(false);
+  const [deletionComplete, setDeletionComplete] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState<string>();
 
-  useEffect(() => {
-    if (state.status !== "complete" || finalizationStarted.current) return;
-    finalizationStarted.current = true;
-    void finalizeCompletedAccountDeletion((options) =>
-      clerk.signOut(options),
-    ).catch(() => {
-      finalizationStarted.current = false;
+  async function finalizeSession() {
+    setFinalizationFailed(false);
+    try {
+      await finalizeAccountDeletionTransport("COMPLETE", {
+        navigate: (destination) => window.location.assign(destination),
+        signOut: (options) => clerk.signOut(options),
+      });
+    } catch {
       setFinalizationFailed(true);
-    });
-  }, [clerk, state.status]);
+    }
+  }
 
-  if (state.status === "complete")
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pending) return;
+    setPending(true);
+    setMessage(undefined);
+    const formData = new FormData(event.currentTarget);
+    try {
+      const status = await requestAccountDeletion(
+        String(formData.get("confirmation") ?? ""),
+      );
+      if (status === "CLEANUP_REQUIRED") {
+        await finalizeAccountDeletionTransport(status, {
+          navigate: (destination) => window.location.assign(destination),
+          signOut: (options) => clerk.signOut(options),
+        });
+        return;
+      }
+      setDeletionComplete(true);
+      await finalizeSession();
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "The account could not be deleted.",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  if (deletionComplete)
     return (
       <div className="grid gap-3" role="status">
         <p className="m-0 text-sm">
@@ -53,14 +106,7 @@ export function AccountDeletionForm({
           <button
             className="button button-secondary w-fit"
             onClick={() => {
-              setFinalizationFailed(false);
-              finalizationStarted.current = true;
-              void finalizeCompletedAccountDeletion((options) =>
-                clerk.signOut(options),
-              ).catch(() => {
-                finalizationStarted.current = false;
-                setFinalizationFailed(true);
-              });
+              void finalizeSession();
             }}
             type="button"
           >
@@ -71,7 +117,7 @@ export function AccountDeletionForm({
     );
 
   return (
-    <form action={formAction} className="grid max-w-xl gap-3">
+    <form className="grid max-w-xl gap-3" onSubmit={submit}>
       <label className="field">
         <span>Type DELETE ROLEPROWL ACCOUNT</span>
         <input autoComplete="off" name="confirmation" required type="text" />
@@ -83,6 +129,9 @@ export function AccountDeletionForm({
       >
         {pending ? "Deleting account…" : "Permanently delete account"}
       </button>
+      <p className="m-0 text-sm" role="status">
+        {message}
+      </p>
     </form>
   );
 }

@@ -6,7 +6,7 @@ import {
   MINIMUM_HIGH_FIT_EVIDENCE_COVERAGE,
   hasSufficientEvidenceForHighFit,
 } from "@/core/domain/matching/match-job";
-import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
+import { requireWorkspacePageActor } from "@/features/accounts/require-workspace-page-actor";
 import {
   preparedApplicationsWhere,
   submittedApplicationsWhere,
@@ -34,7 +34,7 @@ function label(value: string) {
 
 export default async function DashboardPage() {
   await connection();
-  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const actor = await requireWorkspacePageActor(currentAuthProvider());
   const database = databaseClient();
   const policy = await database.applicationPolicy.findUnique({
     where: { userId: actor.id },

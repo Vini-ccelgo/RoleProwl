@@ -1,7 +1,7 @@
 import { connection } from "next/server";
 import type { Prisma } from "@/generated/prisma/client";
 import { PageHeader } from "@/components/ui/page-header";
-import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
+import { requireWorkspacePageActor } from "@/features/accounts/require-workspace-page-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 import { mutateQueueItemAction } from "./actions";
@@ -33,7 +33,7 @@ function draftText(value: Prisma.JsonValue | null) {
 
 export default async function QueuePage() {
   await connection();
-  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const actor = await requireWorkspacePageActor(currentAuthProvider());
   const items = await databaseClient().reviewQueueItem.findMany({
     where: { userId: actor.id },
     include: {

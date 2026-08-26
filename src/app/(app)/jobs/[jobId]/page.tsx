@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { candidateDispositionLabel } from "@/core/domain/jobs/job-disposition";
 import { readableJobDescription } from "@/core/domain/jobs/job-description";
 import { MATCH_SCORING_VERSION } from "@/core/domain/matching/match-job";
-import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
+import { requireWorkspacePageActor } from "@/features/accounts/require-workspace-page-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 
@@ -24,7 +24,7 @@ export default async function JobDetailPage({
   params: Promise<{ jobId: string }>;
 }) {
   await connection();
-  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const actor = await requireWorkspacePageActor(currentAuthProvider());
   const { jobId } = await params;
   const job = await databaseClient().job.findFirst({
     where: { id: jobId, status: "ACTIVE" },

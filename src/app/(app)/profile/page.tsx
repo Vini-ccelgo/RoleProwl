@@ -9,7 +9,7 @@ import {
   SkillsSection,
   VerifiedResumeFactsSection,
 } from "@/components/candidate/truth-vault-sections";
-import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
+import { requireWorkspacePageActor } from "@/features/accounts/require-workspace-page-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { getCandidateTruthVault } from "@/integrations/candidate/prisma-truth-vault";
 import { connection } from "next/server";
@@ -17,7 +17,7 @@ import { ProfileSectionNavigation } from "@/components/candidate/profile-section
 
 export default async function ProfilePage() {
   await connection();
-  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const actor = await requireWorkspacePageActor(currentAuthProvider());
   const vault = await getCandidateTruthVault(actor.id);
 
   return (
