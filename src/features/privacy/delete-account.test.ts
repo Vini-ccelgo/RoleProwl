@@ -53,6 +53,27 @@ describe("controlled account deletion", () => {
     ).toBeLessThan(
       deps.repository.deleteRoleProwlData.mock.invocationCallOrder[0],
     );
+    expect(deps.storage.delete.mock.invocationCallOrder[0]).toBeLessThan(
+      deps.repository.deleteRoleProwlData.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("does not delete identity or RoleProwl data when private storage cleanup fails", async () => {
+    const deps = dependencies();
+    deps.storage.delete.mockRejectedValueOnce(new Error("storage unavailable"));
+    await expect(
+      deleteAccount({
+        ...deps,
+        userId: "user-1",
+        confirmation: ACCOUNT_DELETION_CONFIRMATION,
+      }),
+    ).resolves.toEqual({ status: "CLEANUP_REQUIRED" });
+    expect(deps.identity.deleteIdentity).not.toHaveBeenCalled();
+    expect(deps.repository.deleteRoleProwlData).not.toHaveBeenCalled();
+    expect(deps.repository.markCleanupRequired).toHaveBeenCalledWith({
+      requestId: "request-1",
+      code: "EXTERNAL_CLEANUP_REQUIRED",
+    });
   });
 
   it("retains a cleanup request if an external cleanup step fails", async () => {

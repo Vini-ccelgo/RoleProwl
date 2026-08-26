@@ -10,7 +10,15 @@ import { databaseClient } from "@/lib/db/client";
 import { searchRunIsActive } from "@/features/jobs/manual-discovery";
 import { resolveWorkspaceAdmission } from "@/features/accounts/require-authenticated-actor";
 
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    account_deleted?: string;
+    account_deletion_pending?: string;
+  }>;
+}) {
+  const query = await searchParams;
   const admission = await resolveWorkspaceAdmission(currentAuthProvider());
   if (admission.status === "ALLOWED") {
     const actor = admission.actor;
@@ -73,6 +81,24 @@ export default async function HomePage() {
 
   return (
     <>
+      {query.account_deleted === "1" ? (
+        <Section>
+          <Container>
+            <p className="card m-0 border-brand p-4 text-sm" role="status">
+              Your RoleProwl account and stored candidate data were deleted.
+            </p>
+          </Container>
+        </Section>
+      ) : query.account_deletion_pending === "1" ? (
+        <Section>
+          <Container>
+            <p className="card m-0 border-danger p-4 text-sm" role="status">
+              Account deletion requires cleanup. RoleProwl has not reported the
+              deletion as complete.
+            </p>
+          </Container>
+        </Section>
+      ) : null}
       <Section className="hero">
         <div className="topo" aria-hidden="true" />
         <Container className="hero-grid">

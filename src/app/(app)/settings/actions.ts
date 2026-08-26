@@ -15,6 +15,9 @@ import { PrismaAccountDeletionRepository } from "@/integrations/privacy/prisma-a
 import { documentStorage } from "@/integrations/storage/document-storage";
 import { databaseClient } from "@/lib/db/client";
 
+export type AccountDeletionActionState =
+  { readonly status: "idle" } | { readonly status: "complete" };
+
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "");
 }
@@ -57,7 +60,10 @@ export async function saveApplicationPolicyAction(
   }
 }
 
-export async function deleteAccountAction(formData: FormData) {
+export async function deleteAccountAction(
+  _state: AccountDeletionActionState,
+  formData: FormData,
+): Promise<AccountDeletionActionState> {
   const actor = await requireAuthenticatedActor(currentAuthProvider());
   const result = await deleteAccount({
     userId: actor.id,
@@ -66,11 +72,11 @@ export async function deleteAccountAction(formData: FormData) {
     storage: documentStorage(),
     identity: new ClerkIdentityManager(),
   });
-  redirect(
-    result.status === "COMPLETE"
-      ? "/?account_deleted=1"
-      : "/?account_deletion_pending=1",
-  );
+  if (result.status === "CLEANUP_REQUIRED") {
+    redirect("/?account_deletion_pending=1");
+    return { status: "idle" };
+  }
+  return { status: "complete" };
 }
 
 export async function saveNotificationPreferencesAction(

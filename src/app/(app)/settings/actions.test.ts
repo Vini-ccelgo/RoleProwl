@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  deleteAccount: vi.fn(async () => ({ status: "COMPLETE" as const })),
+  deleteAccount: vi.fn(
+    async (): Promise<{ status: "COMPLETE" | "CLEANUP_REQUIRED" }> => ({
+      status: "COMPLETE",
+    }),
+  ),
   redirect: vi.fn(),
   requireAuthenticatedActor: vi.fn(async () => ({ id: "user-1" })),
 }));
@@ -38,13 +42,27 @@ describe("account deletion action", () => {
     const formData = new FormData();
     formData.set("confirmation", "DELETE ROLEPROWL ACCOUNT");
     formData.set("userId", "user-2");
-    await deleteAccountAction(formData);
+    await expect(
+      deleteAccountAction({ status: "idle" }, formData),
+    ).resolves.toEqual({ status: "complete" });
     expect(mocks.deleteAccount).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: "user-1",
         confirmation: "DELETE ROLEPROWL ACCOUNT",
       }),
     );
-    expect(mocks.redirect).toHaveBeenCalledWith("/?account_deleted=1");
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it("preserves cleanup-required routing without reporting completion", async () => {
+    mocks.deleteAccount.mockResolvedValueOnce({
+      status: "CLEANUP_REQUIRED" as const,
+    });
+    const formData = new FormData();
+    formData.set("confirmation", "DELETE ROLEPROWL ACCOUNT");
+    await expect(
+      deleteAccountAction({ status: "idle" }, formData),
+    ).resolves.toEqual({ status: "idle" });
+    expect(mocks.redirect).toHaveBeenCalledWith("/?account_deletion_pending=1");
   });
 });

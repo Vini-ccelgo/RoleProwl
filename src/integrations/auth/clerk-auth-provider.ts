@@ -1,5 +1,6 @@
 import "server-only";
 import { currentUser } from "@clerk/nextjs/server";
+import { isClerkAPIResponseError } from "@clerk/nextjs/errors";
 import { cache } from "react";
 import type { AuthProvider, AuthenticatedActor } from "@/core/contracts";
 import { resolveUserAccount } from "@/features/accounts/resolve-user-account";
@@ -14,7 +15,18 @@ export class ClerkAuthProvider implements AuthProvider {
   async currentActor(): Promise<AuthenticatedActor | null> {
     if (!isClerkConfigured()) return null;
 
-    const clerkUser = await currentUser();
+    let clerkUser: Awaited<ReturnType<typeof currentUser>>;
+    try {
+      clerkUser = await currentUser();
+    } catch (error) {
+      if (
+        isClerkAPIResponseError(error) &&
+        error.status === 404 &&
+        error.errors.some((item) => item.code === "resource_not_found")
+      )
+        return null;
+      throw error;
+    }
     if (!clerkUser) return null;
 
     const email =

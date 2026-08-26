@@ -18,6 +18,7 @@ import { NotificationPreferencesForm } from "./notification-preferences-form";
 import { ThemeSelector } from "./theme-selector";
 import { UserProfile } from "@clerk/nextjs";
 import { isClerkConfigured } from "@/lib/auth/config";
+import { AccountDeletionForm } from "./account-deletion-form";
 
 export default async function SettingsPage() {
   await connection();
@@ -262,23 +263,7 @@ export default async function SettingsPage() {
             recipients separately.
           </p>
         </div>
-        <form action={deleteAccountAction} className="grid max-w-xl gap-3">
-          <label className="field">
-            <span>Type DELETE ROLEPROWL ACCOUNT</span>
-            <input
-              autoComplete="off"
-              name="confirmation"
-              required
-              type="text"
-            />
-          </label>
-          <button
-            className="button w-fit border-danger text-danger"
-            type="submit"
-          >
-            Permanently delete account
-          </button>
-        </form>
+        <AccountDeletionForm action={deleteAccountAction} />
       </section>
       <AuditHistory events={auditEvents} />
     </div>
