@@ -118,6 +118,22 @@ export async function refreshApplicationPacketAction(formData: FormData) {
   revalidatePath("/dashboard");
 }
 
+export async function selectApplicationResumeAction(formData: FormData) {
+  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const applicationId = String(formData.get("applicationId") ?? "");
+  const candidateDocumentId = String(formData.get("candidateDocumentId") ?? "");
+  if (!applicationId || !candidateDocumentId) return;
+  await refreshApplicationPacket({
+    applicationId,
+    repository: new PrismaApplicationPacketRepository(),
+    resumeSelection: { kind: "CANDIDATE_DOCUMENT", id: candidateDocumentId },
+    userId: actor.id,
+  });
+  revalidatePath("/applications");
+  revalidatePath(`/applications/${applicationId}`);
+  revalidatePath("/dashboard");
+}
+
 export async function saveApplicationOverridesAction(formData: FormData) {
   const actor = await requireAuthenticatedActor(currentAuthProvider());
   const applicationId = String(formData.get("applicationId") ?? "");

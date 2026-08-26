@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applicationResumeDownloadAvailable,
   applicationResumeSnapshot,
+  selectedApplicationResume,
   selectApplicationResume,
 } from "./application-resume";
 
@@ -41,7 +42,7 @@ describe("canonical Application résumé snapshot", () => {
     });
   });
 
-  it("falls back to the latest extracted CandidateDocument", () => {
+  it("uses a CandidateDocument when creation has no tailored résumé", () => {
     expect(
       selectApplicationResume({
         tailoredResume: null,
@@ -60,6 +61,30 @@ describe("canonical Application résumé snapshot", () => {
       },
       resumeVersionId: null,
       packetSource: { tailored: false },
+    });
+  });
+
+  it("reconstructs packet input from the stable Application snapshot", () => {
+    expect(
+      selectedApplicationResume({
+        documentsSnapshot: [
+          {
+            kind: "RESUME",
+            fileName: "Calder.pdf",
+            contentType: "application/pdf",
+            storageKey: "candidate-documents/calder",
+          },
+        ],
+        resumeVersionId: null,
+      }),
+    ).toMatchObject({
+      document: { fileName: "Calder.pdf" },
+      resumeVersionId: null,
+      packetSource: {
+        fileName: "Calder.pdf",
+        storageKey: "candidate-documents/calder",
+        tailored: false,
+      },
     });
   });
 

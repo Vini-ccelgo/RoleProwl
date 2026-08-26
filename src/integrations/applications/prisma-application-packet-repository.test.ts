@@ -57,6 +57,15 @@ const application = {
   state: "NEEDS_REVIEW",
   submittedAt: null,
   submissionDestination: "https://job-boards.greenhouse.io/acme/jobs/42",
+  documentsSnapshot: [
+    {
+      kind: "RESUME",
+      fileName: "resume.pdf",
+      contentType: "application/pdf",
+      storageKey: "candidate-documents/safe",
+    },
+  ],
+  resumeVersionId: null,
   submissionPayloadSnapshot: {
     reference: { source: "GREENHOUSE", externalId: "42" },
   },
@@ -167,6 +176,7 @@ describe("Prisma application packet repository", () => {
       applicationId: "application-1",
       userId: "user-1",
       reviewed: false,
+      resumeSelection: { kind: "RESUME_VERSION", id: "resume-version-1" },
     });
     expect(packet.documents).toEqual(
       expect.arrayContaining([
@@ -198,7 +208,7 @@ describe("Prisma application packet repository", () => {
     );
   });
 
-  it("synchronizes a changed pre-submission CandidateDocument selection", async () => {
+  it("synchronizes an explicit pre-submission CandidateDocument selection", async () => {
     mocks.documentFindFirst.mockResolvedValue({
       originalFileName: "resume-b.pdf",
       mimeType: "application/pdf",
@@ -210,6 +220,7 @@ describe("Prisma application packet repository", () => {
       applicationId: "application-1",
       userId: "user-1",
       reviewed: false,
+      resumeSelection: { kind: "CANDIDATE_DOCUMENT", id: "document-b" },
     });
     expect(mocks.applicationUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -228,6 +239,11 @@ describe("Prisma application packet repository", () => {
   });
 
   it("stores no résumé snapshot when the packet has no selected résumé", async () => {
+    mocks.applicationFindFirst.mockResolvedValue({
+      ...application,
+      documentsSnapshot: [],
+      resumeVersionId: null,
+    });
     mocks.documentFindFirst.mockResolvedValue(null);
     await new PrismaApplicationPacketRepository(
       vi.fn(async () => Response.json({ questions: [] })),
@@ -298,6 +314,35 @@ describe("Prisma application packet repository", () => {
     );
   });
 
+  it("keeps the selected snapshot when a newer CandidateDocument exists", async () => {
+    mocks.documentFindFirst.mockResolvedValue({
+      originalFileName: "resume-b.pdf",
+      mimeType: "application/pdf",
+      storageKey: "candidate-documents/resume-b",
+    });
+    await new PrismaApplicationPacketRepository(
+      vi.fn(async () => Response.json({ questions: [] })),
+    ).refresh({
+      applicationId: "application-1",
+      userId: "user-1",
+      reviewed: false,
+    });
+    expect(mocks.documentFindFirst).not.toHaveBeenCalled();
+    expect(mocks.resumeFindFirst).not.toHaveBeenCalled();
+    expect(mocks.applicationUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          documentsSnapshot: application.documentsSnapshot,
+          resumeVersionId: null,
+          submissionPayloadSnapshot: expect.objectContaining({
+            documents: application.documentsSnapshot,
+            resumeVersionId: null,
+          }),
+        }),
+      }),
+    );
+  });
+
   it("returns a submitted historical packet without rebuilding it", async () => {
     const packet = buildApplicationPacket({
       reviewed: true,
@@ -347,6 +392,25 @@ describe("Prisma application packet repository", () => {
     });
     expect(result).toEqual(packet);
     expect(mocks.profileFindUnique).not.toHaveBeenCalled();
+    expect(mocks.documentFindFirst).not.toHaveBeenCalled();
+    expect(mocks.applicationUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("denies an explicit résumé switch for a submitted application", async () => {
+    mocks.applicationFindFirst.mockResolvedValue({
+      ...application,
+      state: "SUBMITTED",
+      submittedAt: new Date(),
+      submissionPayloadSnapshot: { packet: {} },
+    });
+    await expect(
+      new PrismaApplicationPacketRepository().refresh({
+        applicationId: "application-1",
+        userId: "user-1",
+        reviewed: false,
+        resumeSelection: { kind: "CANDIDATE_DOCUMENT", id: "document-b" },
+      }),
+    ).rejects.toThrow("cannot be changed");
     expect(mocks.documentFindFirst).not.toHaveBeenCalled();
     expect(mocks.applicationUpdateMany).not.toHaveBeenCalled();
   });

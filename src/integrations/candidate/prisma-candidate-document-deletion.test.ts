@@ -18,10 +18,20 @@ vi.mock("@/lib/db/client", () => ({
     application: { findMany: mocks.applicationsFindMany },
     $transaction: vi.fn(async (callback) =>
       callback({
-        candidateFact: { deleteMany: mocks.removedFactsDeleteMany },
-        candidateDocument: { deleteMany: mocks.documentDeleteMany },
+        candidateFact: {
+          count: mocks.factCount,
+          deleteMany: mocks.removedFactsDeleteMany,
+        },
+        candidateDocument: {
+          findFirst: mocks.documentFindFirst,
+          deleteMany: mocks.documentDeleteMany,
+        },
         application: {
-          findMany: mocks.readyFindMany,
+          findMany: vi.fn(async (input) =>
+            input?.where?.state === "READY"
+              ? mocks.readyFindMany()
+              : mocks.applicationsFindMany(input),
+          ),
           updateMany: vi.fn(),
         },
         applicationEvent: { create: mocks.eventCreate },
@@ -75,11 +85,11 @@ describe("Prisma candidate document deletion", () => {
         documentId: "document-1",
         userId: "user-1",
       }),
-    ).rejects.toThrow("Replace or refresh");
+    ).rejects.toThrow("Select another résumé");
     expect(storage.delete).not.toHaveBeenCalled();
   });
 
-  it("preserves accepted résumé-fact provenance until the candidate removes it", async () => {
+  it("requires explicit confirmation before deleting accepted résumé facts", async () => {
     mocks.factCount.mockResolvedValue(2);
     const storage = { delete: vi.fn() };
     await expect(
@@ -87,12 +97,35 @@ describe("Prisma candidate document deletion", () => {
         documentId: "document-1",
         userId: "user-1",
       }),
-    ).rejects.toThrow("Remove the accepted résumé facts");
+    ).rejects.toMatchObject({
+      confirmationCode: "ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED",
+      factCount: 2,
+    });
     expect(storage.delete).not.toHaveBeenCalled();
     expect(mocks.documentDeleteMany).not.toHaveBeenCalled();
   });
 
+  it("deletes ACTIVE and REMOVED sourced facts after explicit confirmation", async () => {
+    mocks.factCount.mockResolvedValue(2);
+    const storage = { delete: vi.fn(async () => undefined) };
+    await new PrismaCandidateDocumentDeletion(storage as never).delete({
+      confirmAcceptedFacts: true,
+      documentId: "document-1",
+      userId: "user-1",
+    });
+    expect(mocks.removedFactsDeleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: "user-1",
+        status: { in: ["ACTIVE", "REMOVED"] },
+        sourceProposal: { documentId: "document-1" },
+      },
+    });
+    expect(mocks.documentDeleteMany).toHaveBeenCalled();
+    expect(storage.delete).toHaveBeenCalledWith("candidate-documents/private");
+  });
+
   it("preserves a résumé referenced by a submitted historical packet", async () => {
+    mocks.factCount.mockResolvedValue(2);
     mocks.applicationsFindMany.mockResolvedValue([
       {
         id: "application-1",
@@ -109,10 +142,12 @@ describe("Prisma candidate document deletion", () => {
     ]);
     await expect(
       new PrismaCandidateDocumentDeletion({ delete: vi.fn() } as never).delete({
+        confirmAcceptedFacts: true,
         documentId: "document-1",
         userId: "user-1",
       }),
     ).rejects.toThrow("submitted application");
+    expect(mocks.removedFactsDeleteMany).not.toHaveBeenCalled();
     expect(mocks.documentDeleteMany).not.toHaveBeenCalled();
   });
 

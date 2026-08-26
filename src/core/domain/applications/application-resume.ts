@@ -29,6 +29,10 @@ export interface ApplicationResumeSelection {
   };
 }
 
+export type ExplicitApplicationResumeSelection =
+  | { readonly kind: "CANDIDATE_DOCUMENT"; readonly id: string }
+  | { readonly kind: "RESUME_VERSION"; readonly id: string };
+
 export function selectApplicationResume(input: {
   readonly tailoredResume: TailoredResume | null;
   readonly candidateDocument: CandidateDocument | null;
@@ -64,6 +68,24 @@ export function selectApplicationResume(input: {
       contentType: source.contentType,
       storageKey: source.storageKey,
       tailored: source.tailored,
+    },
+  };
+}
+
+export function selectedApplicationResume(input: {
+  readonly documentsSnapshot: unknown;
+  readonly resumeVersionId: string | null;
+}): ApplicationResumeSelection | null {
+  const document = applicationResumeSnapshot(input.documentsSnapshot);
+  if (!document) return null;
+  return {
+    document,
+    resumeVersionId: input.resumeVersionId,
+    packetSource: {
+      fileName: document.fileName,
+      contentType: document.contentType,
+      storageKey: document.storageKey,
+      tailored: input.resumeVersionId !== null,
     },
   };
 }

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { ApplicationPreparationSummary } from "@/components/applications/application-preparation-summary";
 import { ApplicationPacketSummary } from "@/components/applications/application-packet-summary";
+import { ApplicationDocuments } from "@/components/applications/application-documents";
 import { GreenhouseAssistedApply } from "@/components/applications/greenhouse-assisted-apply";
 import { PageHeader } from "@/components/ui/page-header";
 import { ResumeVersionSummary } from "@/components/applications/resume-version-summary";
@@ -21,7 +22,10 @@ import {
   isApplicationPacket,
 } from "@/core/domain/applications/application-packet";
 import { buildGreenhouseTransferDraft } from "@/core/domain/applications/greenhouse-transfer";
-import { applicationResumeDownloadAvailable } from "@/core/domain/applications/application-resume";
+import {
+  applicationResumeDownloadAvailable,
+  applicationResumeSnapshot,
+} from "@/core/domain/applications/application-resume";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
@@ -30,6 +34,7 @@ import {
   markApplicationReadyAction,
   refreshApplicationPacketAction,
   saveApplicationOverridesAction,
+  selectApplicationResumeAction,
   updateApplicationStateAction,
 } from "./actions";
 
@@ -100,6 +105,23 @@ export default async function ApplicationDetailPage({
     },
   });
   if (!application) notFound();
+  const selectedResume = applicationResumeSnapshot(
+    application.documentsSnapshot,
+  );
+  const availableResumes = !application.submittedAt
+    ? await databaseClient().candidateDocument.findMany({
+        where: { userId: actor.id, status: "EXTRACTED" },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          originalFileName: true,
+          storageKey: true,
+        },
+      })
+    : [];
+  const resumeAlternatives = availableResumes
+    .filter((resume) => resume.storageKey !== selectedResume?.storageKey)
+    .map(({ id, originalFileName }) => ({ id, originalFileName }));
   const packetValue = object(application.submissionPayloadSnapshot)?.packet;
   const packet = isApplicationPacket(packetValue) ? packetValue : null;
   const resumeDownloadAvailable = applicationResumeDownloadAvailable(
@@ -281,6 +303,14 @@ export default async function ApplicationDetailPage({
         saveAction={saveApplicationOverridesAction}
       />
 
+      <ApplicationDocuments
+        alternatives={resumeAlternatives}
+        applicationId={application.id}
+        mutable={canRefreshPacket}
+        selectedResume={selectedResume}
+        selectResumeAction={selectApplicationResumeAction}
+      />
+
       {greenhouseTransfer ? (
         <GreenhouseAssistedApply
           draft={greenhouseTransfer}
@@ -332,7 +362,6 @@ export default async function ApplicationDetailPage({
 
       <ApplicationPreparationSummary
         answers={application.answersSnapshot}
-        documents={application.documentsSnapshot}
         fit={application.fitSnapshot}
         generatedText={application.generatedTextSnapshot}
         policy={application.policyResultSnapshot}

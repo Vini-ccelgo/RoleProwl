@@ -8,7 +8,10 @@ import {
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { assertMutationRequestIsSameOrigin } from "@/lib/security/request-security";
-import { PrismaCandidateDocumentDeletion } from "@/integrations/candidate/prisma-candidate-document-deletion";
+import {
+  AcceptedFactsDeleteConfirmationRequiredError,
+  PrismaCandidateDocumentDeletion,
+} from "@/integrations/candidate/prisma-candidate-document-deletion";
 
 export async function DELETE(
   request: Request,
@@ -18,7 +21,15 @@ export async function DELETE(
     const actor = await requireAuthenticatedActor(currentAuthProvider());
     assertMutationRequestIsSameOrigin(request);
     const { documentId } = await context.params;
+    let confirmAcceptedFacts = false;
+    try {
+      const body = (await request.json()) as { confirmAcceptedFacts?: unknown };
+      confirmAcceptedFacts = body.confirmAcceptedFacts === true;
+    } catch {
+      // The initial DELETE request intentionally has no body.
+    }
     await new PrismaCandidateDocumentDeletion().delete({
+      confirmAcceptedFacts,
       documentId,
       userId: actor.id,
     });
@@ -29,6 +40,15 @@ export async function DELETE(
     }
     if (error instanceof NotFoundError)
       return NextResponse.json({ error: error.message }, { status: 404 });
+    if (error instanceof AcceptedFactsDeleteConfirmationRequiredError)
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: error.confirmationCode,
+          factCount: error.factCount,
+        },
+        { status: 409 },
+      );
     if (error instanceof ConflictError)
       return NextResponse.json(
         { error: error.message, code: error.code },

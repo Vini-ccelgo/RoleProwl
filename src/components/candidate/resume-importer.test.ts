@@ -6,7 +6,11 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 
-import { ResumeImporter } from "./resume-importer";
+import {
+  confirmResumeFactDeletion,
+  RESUME_FACT_DELETION_WARNING,
+  ResumeImporter,
+} from "./resume-importer";
 
 describe("résumé file picker", () => {
   it("uses one file input with an explicit accessible trigger and status", () => {
@@ -19,5 +23,17 @@ describe("résumé file picker", () => {
     expect(markup).toContain('aria-controls="resume-file-input"');
     expect(markup).toContain("Choose File");
     expect(markup).toContain("No file selected");
+  });
+});
+
+describe("résumé accepted-fact deletion confirmation", () => {
+  it("allows the candidate to cancel without confirming destructive deletion", () => {
+    const confirmOperator = vi.fn(() => false);
+    expect(confirmResumeFactDeletion(confirmOperator)).toBe(false);
+    expect(confirmOperator).toHaveBeenCalledWith(RESUME_FACT_DELETION_WARNING);
+  });
+
+  it("requires an explicit affirmative confirmation", () => {
+    expect(confirmResumeFactDeletion(() => true)).toBe(true);
   });
 });

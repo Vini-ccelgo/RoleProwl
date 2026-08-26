@@ -9,7 +9,10 @@ import {
 import type { ApplicationPacketRepository } from "@/features/applications/refresh-application-packet";
 import { ConflictError, NotFoundError } from "@/core/errors/application-errors";
 import type { Prisma } from "@/generated/prisma/client";
-import { selectApplicationResume } from "@/core/domain/applications/application-resume";
+import {
+  selectedApplicationResume,
+  selectApplicationResume,
+} from "@/core/domain/applications/application-resume";
 import { databaseClient } from "@/lib/db/client";
 import {
   fetchGreenhouseApplicationQuestions,
@@ -70,6 +73,8 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
         state: true,
         submittedAt: true,
         submissionDestination: true,
+        documentsSnapshot: true,
+        resumeVersionId: true,
         submissionPayloadSnapshot: true,
         job: {
           select: {
@@ -93,6 +98,10 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
       existingPayload.overrides,
     );
     if (application.submittedAt) {
+      if (input.resumeSelection)
+        throw new ConflictError(
+          "The résumé for a submitted application cannot be changed.",
+        );
       const packet = existingPayload.packet;
       if (!isApplicationPacket(packet))
         throw new ConflictError(
@@ -149,8 +158,6 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
       authorization,
       preferences,
       answerMemories,
-      tailoredResume,
-      candidateDocument,
       writingArtifacts,
     ] = await Promise.all([
       database.user.findUnique({
@@ -189,14 +196,6 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
         where: { userId: input.userId },
         orderBy: { updatedAt: "desc" },
       }),
-      database.resumeVersion.findFirst({
-        where: { userId: input.userId, targetJobId: application.jobId },
-        orderBy: { generatedAt: "desc" },
-      }),
-      database.candidateDocument.findFirst({
-        where: { userId: input.userId, status: "EXTRACTED" },
-        orderBy: { createdAt: "desc" },
-      }),
       database.applicationWritingArtifact.findMany({
         where: { userId: input.userId, targetJobId: application.jobId },
         orderBy: { generatedAt: "desc" },
@@ -206,10 +205,50 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
       const value = text(fact.value);
       return value ? [{ factType: fact.factType, text: value }] : [];
     });
-    const resume = selectApplicationResume({
-      tailoredResume,
-      candidateDocument,
+    let resume = selectedApplicationResume({
+      documentsSnapshot: application.documentsSnapshot,
+      resumeVersionId: application.resumeVersionId,
     });
+    if (input.resumeSelection?.kind === "CANDIDATE_DOCUMENT") {
+      const candidateDocument = await database.candidateDocument.findFirst({
+        where: {
+          id: input.resumeSelection.id,
+          userId: input.userId,
+          status: "EXTRACTED",
+        },
+        select: {
+          originalFileName: true,
+          mimeType: true,
+          storageKey: true,
+        },
+      });
+      if (!candidateDocument)
+        throw new NotFoundError("The selected résumé was not found.");
+      resume = selectApplicationResume({
+        tailoredResume: null,
+        candidateDocument,
+      });
+    } else if (input.resumeSelection?.kind === "RESUME_VERSION") {
+      const tailoredResume = await database.resumeVersion.findFirst({
+        where: {
+          id: input.resumeSelection.id,
+          userId: input.userId,
+          targetJobId: application.jobId,
+        },
+        select: {
+          id: true,
+          renderedContentType: true,
+          renderedFileName: true,
+          renderedStorageKey: true,
+        },
+      });
+      if (!tailoredResume)
+        throw new NotFoundError("The selected résumé was not found.");
+      resume = selectApplicationResume({
+        tailoredResume,
+        candidateDocument: null,
+      });
+    }
     const coverLetter = writingArtifacts.find(
       (artifact) => artifact.type === "COVER_LETTER",
     );

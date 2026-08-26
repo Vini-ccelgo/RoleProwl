@@ -19,20 +19,13 @@ function title(value: string) {
   return value.replaceAll("_", " ").toLowerCase();
 }
 
-function meaningfulDocument(value: Prisma.JsonValue) {
-  const item = record(value);
-  return Boolean(scalar(item?.fileName) || scalar(item?.contentType));
-}
-
 export function ApplicationPreparationSummary({
   answers,
-  documents,
   fit,
   generatedText,
   policy,
 }: {
   readonly answers: Prisma.JsonValue;
-  readonly documents: Prisma.JsonValue;
   readonly fit: Prisma.JsonValue;
   readonly generatedText: Prisma.JsonValue;
   readonly policy: Prisma.JsonValue;
@@ -41,9 +34,6 @@ export function ApplicationPreparationSummary({
   const policyRecord = record(policy);
   const textRecord = record(generatedText);
   const answerRecord = record(answers);
-  const documentList = Array.isArray(documents)
-    ? documents.filter(meaningfulDocument)
-    : [];
   const hasPreparedWriting = Boolean(
     textRecord && Object.keys(textRecord).length > 0,
   );
@@ -125,25 +115,6 @@ export function ApplicationPreparationSummary({
           </p>
         )}
       </section>
-
-      {documentList.length > 0 && (
-        <section className="card grid gap-3 p-5 lg:col-span-2">
-          <h2 className="text-base font-semibold">Application documents</h2>
-          <ul className="m-0 grid gap-2 pl-5 text-sm">
-            {documentList.map((document, index) => {
-              const item = record(document);
-              return (
-                <li key={`${scalar(item?.fileName) ?? "document"}-${index}`}>
-                  {scalar(item?.fileName) ?? "Prepared document"}
-                  {scalar(item?.contentType)
-                    ? ` · ${scalar(item?.contentType)}`
-                    : ""}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
     </div>
   );
 }

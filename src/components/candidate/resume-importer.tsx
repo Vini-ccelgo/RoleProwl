@@ -14,6 +14,19 @@ interface CandidateDocumentSummary {
   readonly status: string;
 }
 
+const ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED =
+  "ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED";
+
+export const RESUME_FACT_DELETION_WARNING =
+  "Deleting this résumé will also remove verified facts sourced from it. This may affect application readiness. Continue?";
+
+export function confirmResumeFactDeletion(
+  confirmOperator: (message: string) => boolean = (message) =>
+    window.confirm(message),
+) {
+  return confirmOperator(RESUME_FACT_DELETION_WARNING);
+}
+
 export function ResumeImporter({
   documents,
 }: {
@@ -61,12 +74,31 @@ export function ResumeImporter({
   async function remove(documentId: string) {
     setBusy(true);
     try {
-      const response = await fetch(`/api/candidate/documents/${documentId}`, {
+      let response = await fetch(`/api/candidate/documents/${documentId}`, {
         method: "DELETE",
       });
-      const result = response.ok
+      let result = response.ok
         ? null
-        : ((await response.json()) as { error?: string });
+        : ((await response.json()) as { code?: string; error?: string });
+      if (
+        response.status === 409 &&
+        result?.code === ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED
+      ) {
+        if (!confirmResumeFactDeletion()) {
+          setMessage(
+            "Deletion cancelled. No résumé or verified facts were removed.",
+          );
+          return;
+        }
+        response = await fetch(`/api/candidate/documents/${documentId}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirmAcceptedFacts: true }),
+        });
+        result = response.ok
+          ? null
+          : ((await response.json()) as { code?: string; error?: string });
+      }
       setMessage(
         response.ok
           ? "Document deleted."

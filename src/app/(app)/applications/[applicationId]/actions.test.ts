@@ -57,6 +57,7 @@ import {
   confirmExternalApplicationAction,
   markApplicationReadyAction,
   saveApplicationOverridesAction,
+  selectApplicationResumeAction,
 } from "./actions";
 
 function form() {
@@ -165,6 +166,19 @@ describe("application packet actions", () => {
         userId: "user-1",
         identity: [{ key: "phone", value: "+55 51 5555 0100" }],
         answers: [{ key: "question-42", value: "Yes" }],
+      }),
+    );
+  });
+
+  it("passes only the explicit owner selection into packet synchronization", async () => {
+    const value = form();
+    value.set("candidateDocumentId", "document-b");
+    await selectApplicationResumeAction(value);
+    expect(refreshApplicationPacket).toHaveBeenCalledWith(
+      expect.objectContaining({
+        applicationId: "application-1",
+        userId: "user-1",
+        resumeSelection: { kind: "CANDIDATE_DOCUMENT", id: "document-b" },
       }),
     );
   });
