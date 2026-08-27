@@ -126,13 +126,52 @@ const SECTION_TARGETS: Record<
   { factType: SupportedProposalFactType; targetPath: string }
 > = {
   EXPERIENCE: proposalTarget("WORK_EXPERIENCE_TEXT"),
+  "WORK EXPERIENCE": proposalTarget("WORK_EXPERIENCE_TEXT"),
+  "PROFESSIONAL EXPERIENCE": proposalTarget("WORK_EXPERIENCE_TEXT"),
   EMPLOYMENT: proposalTarget("WORK_EXPERIENCE_TEXT"),
+  "EMPLOYMENT HISTORY": proposalTarget("WORK_EXPERIENCE_TEXT"),
+  "PROFESSIONAL HISTORY": proposalTarget("WORK_EXPERIENCE_TEXT"),
+  "WORK HISTORY": proposalTarget("WORK_EXPERIENCE_TEXT"),
   EDUCATION: proposalTarget("EDUCATION_TEXT"),
+  "ACADEMIC BACKGROUND": proposalTarget("EDUCATION_TEXT"),
+  "EDUCATIONAL BACKGROUND": proposalTarget("EDUCATION_TEXT"),
+  "EDUCATION AND TRAINING": proposalTarget("EDUCATION_TEXT"),
   SKILLS: proposalTarget("SKILL_TEXT"),
+  "TECHNICAL SKILLS": proposalTarget("SKILL_TEXT"),
+  "CORE SKILLS": proposalTarget("SKILL_TEXT"),
+  "CORE COMPETENCIES": proposalTarget("SKILL_TEXT"),
+  COMPETENCIES: proposalTarget("SKILL_TEXT"),
   PROJECTS: proposalTarget("PROJECT_TEXT"),
+  "PERSONAL PROJECTS": proposalTarget("PROJECT_TEXT"),
+  "PROFESSIONAL PROJECTS": proposalTarget("PROJECT_TEXT"),
+  "PROJECT EXPERIENCE": proposalTarget("PROJECT_TEXT"),
+  "PROJECTS AND RESEARCH": proposalTarget("PROJECT_TEXT"),
   CERTIFICATIONS: proposalTarget("CREDENTIAL_TEXT"),
+  CERTIFICATES: proposalTarget("CREDENTIAL_TEXT"),
   CREDENTIALS: proposalTarget("CREDENTIAL_TEXT"),
+  "LICENSES AND CERTIFICATIONS": proposalTarget("CREDENTIAL_TEXT"),
+  "PROFESSIONAL CERTIFICATIONS": proposalTarget("CREDENTIAL_TEXT"),
 };
+
+const SUBSTANTIAL_RESUME_CHARACTER_COUNT = 400;
+const SUBSTANTIAL_RESUME_LINE_COUNT = 8;
+const LOW_INTERPRETATION_COVERAGE = 0.15;
+
+function normalizedHeading(line: string) {
+  return line.replace(/[:\s]+$/u, "").toUpperCase();
+}
+
+export type ResumeInterpretationStatus = "NORMAL_REVIEW" | "INCOMPLETE";
+
+export interface ResumeInterpretationAssessment {
+  readonly status: ResumeInterpretationStatus;
+  readonly reason:
+    | "USEFUL_STRUCTURED_CONTENT"
+    | "INSUFFICIENT_EVIDENCE_OF_INCOMPLETE_INTERPRETATION"
+    | "CONTACT_ONLY_WITH_SUBSTANTIAL_TEXT"
+    | "NO_PROPOSALS_WITH_SUBSTANTIAL_TEXT"
+    | "LOW_STRUCTURED_SOURCE_COVERAGE";
+}
 
 export function proposeFactsFromResumeText(
   text: string,
@@ -145,7 +184,7 @@ export function proposeFactsFromResumeText(
 
   lines.forEach((line, index) => {
     if (!line) return;
-    const heading = line.replace(/[:\s]+$/u, "").toUpperCase();
+    const heading = normalizedHeading(line);
     if (SECTION_TARGETS[heading]) {
       activeSection = SECTION_TARGETS[heading];
       return;
@@ -162,4 +201,67 @@ export function proposeFactsFromResumeText(
   });
 
   return proposals;
+}
+
+export function assessResumeInterpretation(
+  text: string,
+  proposals: readonly CandidateFactProposalDraft[] = proposeFactsFromResumeText(
+    text,
+  ),
+): ResumeInterpretationAssessment {
+  const normalizedText = normalizeExtractedResumeText(text);
+  const meaningfulLines = normalizedText
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const characterCount = normalizedText.replace(/\s/gu, "").length;
+  const substantialText =
+    characterCount >= SUBSTANTIAL_RESUME_CHARACTER_COUNT &&
+    meaningfulLines.length >= SUBSTANTIAL_RESUME_LINE_COUNT;
+
+  if (!substantialText) {
+    return {
+      status: "NORMAL_REVIEW",
+      reason: "INSUFFICIENT_EVIDENCE_OF_INCOMPLETE_INTERPRETATION",
+    };
+  }
+
+  const structuredProposals = proposals.filter(
+    (proposal) => proposal.factType !== "PROFILE_EMAIL",
+  );
+  if (structuredProposals.length === 0) {
+    return {
+      status: "INCOMPLETE",
+      reason:
+        proposals.length === 0
+          ? "NO_PROPOSALS_WITH_SUBSTANTIAL_TEXT"
+          : "CONTACT_ONLY_WITH_SUBSTANTIAL_TEXT",
+    };
+  }
+
+  const supportedSourceCharacters = new Map(
+    proposals.map((proposal) => [
+      proposal.sourceRegion.lineStart,
+      proposal.sourceRegion.text.replace(/\s/gu, "").length,
+    ]),
+  );
+  const sourceCoverage =
+    [...supportedSourceCharacters.values()].reduce(
+      (total, count) => total + count,
+      0,
+    ) / characterCount;
+  const structuredDestinations = new Set(
+    structuredProposals.map((proposal) => proposal.factType),
+  );
+  if (
+    structuredDestinations.size === 1 &&
+    sourceCoverage < LOW_INTERPRETATION_COVERAGE
+  ) {
+    return {
+      status: "INCOMPLETE",
+      reason: "LOW_STRUCTURED_SOURCE_COVERAGE",
+    };
+  }
+
+  return { status: "NORMAL_REVIEW", reason: "USEFUL_STRUCTURED_CONTENT" };
 }

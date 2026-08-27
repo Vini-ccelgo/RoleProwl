@@ -36,7 +36,7 @@ export default async function JobsPage({
     <div className="grid gap-7">
       <PageHeader
         title="Jobs and fit analysis"
-        description="Candidate decisions, assessed fit, and missing evidence remain explicit and under your control."
+        description="Listings are shared public-source records, not personalized matches. Candidate-specific fit appears only when an explainable analysis has been recorded."
       />
       <nav
         aria-label="Job disposition filters"

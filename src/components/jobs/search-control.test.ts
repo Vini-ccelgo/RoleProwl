@@ -10,6 +10,7 @@ describe("Search now control", () => {
     );
     expect(markup).toContain("Search now");
     expect(markup).toContain("never submits an application");
+    expect(markup).toContain("personalized matches");
   });
 
   it("disables duplicate invocation while a persisted run is active", () => {
@@ -29,5 +30,18 @@ describe("Search now control", () => {
     expect(markup).toContain("disabled");
     expect(markup).toContain("Search running");
     expect(markup).toContain("A search is currently running");
+  });
+
+  it("requires a role preference instead of exposing broad empty-query discovery", () => {
+    const markup = renderToStaticMarkup(
+      createElement(SearchControl, {
+        directedCriteriaReady: false,
+        lastRun: null,
+      }),
+    );
+    expect(markup).not.toContain("Search now");
+    expect(markup).toContain("Add a role preference");
+    expect(markup).toContain("/profile#preferences");
+    expect(markup).toContain("Location is optional");
   });
 });

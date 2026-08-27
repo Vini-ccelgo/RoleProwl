@@ -38,8 +38,19 @@ async function syntheticPdf() {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const page = pdf.addPage([612, 792]);
-  ["synthetic@example.test", "SKILLS", "TypeScript"].forEach((line, index) =>
-    page.drawText(line, { x: 72, y: 720 - index * 24, font, size: 12 }),
+  [
+    "synthetic@example.test",
+    "PROFESSIONAL EXPERIENCE",
+    "Built reliable ingestion",
+    "TECHNICAL SKILLS",
+    "TypeScript",
+  ].forEach((line, index) =>
+    page.drawText(line, {
+      x: index % 2 === 0 ? 72 : 84,
+      y: 720 - index * 24,
+      font,
+      size: 12,
+    }),
   );
   return pdf.save();
 }
@@ -50,7 +61,9 @@ async function syntheticDocx() {
       {
         children: [
           new Paragraph("synthetic@example.test"),
-          new Paragraph("SKILLS"),
+          new Paragraph("PROFESSIONAL EXPERIENCE"),
+          new Paragraph("Built reliable ingestion"),
+          new Paragraph("TECHNICAL SKILLS"),
           new Paragraph("Incident response"),
         ],
       },
@@ -98,6 +111,7 @@ describe.each([
     expect(proposals).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ factType: "PROFILE_EMAIL" }),
+        expect.objectContaining({ factType: "WORK_EXPERIENCE_TEXT" }),
         expect.objectContaining({ factType: "SKILL_TEXT" }),
       ]),
     );

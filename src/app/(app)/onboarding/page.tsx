@@ -1,4 +1,8 @@
 import { connection } from "next/server";
+import {
+  assessResumeInterpretation,
+  proposeFactsFromResumeText,
+} from "@/core/domain/candidate/resume-import";
 import { ResumeImporter } from "@/components/candidate/resume-importer";
 import { FactProposalReview } from "@/components/candidate/fact-proposal-review";
 import { PageHeader } from "@/components/ui/page-header";
@@ -25,6 +29,7 @@ export default async function OnboardingPage() {
         status: true,
         sizeBytes: true,
         createdAt: true,
+        extraction: { select: { extractedText: true } },
         _count: { select: { proposals: true } },
       },
     }),
@@ -40,11 +45,22 @@ export default async function OnboardingPage() {
         description="Import a résumé to create reviewable suggestions, then decide what belongs in your Truth Vault."
       />
       <ResumeImporter
-        documents={documents.map(({ _count, createdAt, ...document }) => ({
-          ...document,
-          createdAt: createdAt.toISOString(),
-          proposalCount: _count.proposals,
-        }))}
+        documents={documents.map(
+          ({ _count, createdAt, extraction, ...document }) => {
+            const extractedText = extraction?.extractedText;
+            return {
+              ...document,
+              createdAt: createdAt.toISOString(),
+              interpretationStatus: extractedText
+                ? assessResumeInterpretation(
+                    extractedText,
+                    proposeFactsFromResumeText(extractedText),
+                  ).status
+                : undefined,
+              proposalCount: _count.proposals,
+            };
+          },
+        )}
       />
       <FactProposalReview proposals={proposals.map(proposalReviewSummary)} />
     </div>

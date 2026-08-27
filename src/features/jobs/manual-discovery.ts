@@ -41,19 +41,41 @@ export function searchRunIsActive(
   return now.getTime() - state.startedAt.getTime() < 15 * 60 * 1000;
 }
 
+export function directedJobSearchCriteria(
+  preferences:
+    | {
+        readonly roleFamilies: readonly string[];
+        readonly locationPreferences: readonly string[];
+      }
+    | null
+    | undefined,
+) {
+  const query = preferences?.roleFamilies.find((value) => value.trim())?.trim();
+  if (!query) return null;
+  const location = preferences?.locationPreferences
+    .find((value) => value.trim())
+    ?.trim();
+  return { query, ...(location ? { location } : {}) };
+}
+
 export async function runManualDiscovery(input: {
   adapters: readonly JobSourceAdapter[];
   analytics?: AnalyticsProvider;
   health: SourceHealthReporter;
   repository: JobIngestionRepository;
-  query?: { query: string; location?: string };
+  query: { query: string; location?: string };
 }) {
+  if (!input.query.query.trim()) {
+    throw new Error(
+      "Candidate-directed manual discovery requires a role-family query.",
+    );
+  }
   const discoveryStartedAt = performance.now();
   const discovery = await discoverAcrossSources(
     input.adapters,
     {
-      query: input.query?.query ?? "",
-      location: input.query?.location,
+      query: input.query.query,
+      location: input.query.location,
       limit: 100,
     },
     input.health,

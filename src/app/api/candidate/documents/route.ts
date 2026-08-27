@@ -8,6 +8,7 @@ import {
 } from "@/core/errors/application-errors";
 import {
   MAX_RESUME_BYTES,
+  assessResumeInterpretation,
   assertResumeIsNotDuplicate,
   proposeFactsFromResumeText,
   validateResumeUpload,
@@ -256,6 +257,7 @@ export async function POST(request: Request) {
     }
 
     const drafts = proposeFactsFromResumeText(extraction.text);
+    const interpretation = assessResumeInterpretation(extraction.text, drafts);
     pipelineState.stage = "truth_vault_persistence";
     const repository = new PrismaResumeIngestionRepository(db);
     await repository.persistExtractedResume(
@@ -277,6 +279,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         documentId: document.id,
+        interpretationStatus: interpretation.status,
         proposalCount: drafts.length,
         status: "EXTRACTED",
       },

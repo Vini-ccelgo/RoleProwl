@@ -7,7 +7,10 @@ import { SearchControl } from "@/components/jobs/search-control";
 import { features, principles, workflowSteps } from "@/config/marketing";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
-import { searchRunIsActive } from "@/features/jobs/manual-discovery";
+import {
+  directedJobSearchCriteria,
+  searchRunIsActive,
+} from "@/features/jobs/manual-discovery";
 import { resolveWorkspaceAdmission } from "@/features/accounts/require-authenticated-actor";
 
 export default async function HomePage({
@@ -23,17 +26,26 @@ export default async function HomePage({
   if (admission.status === "ALLOWED") {
     const actor = admission.actor;
     const database = databaseClient();
-    const [searchState, activeJobs, pendingReviews, unreadNotifications] =
-      await Promise.all([
-        database.jobSearchState.findUnique({ where: { userId: actor.id } }),
-        database.job.count({ where: { status: "ACTIVE" } }),
-        database.reviewQueueItem.count({
-          where: { userId: actor.id, status: { in: ["PENDING", "DEFERRED"] } },
-        }),
-        database.notification.count({
-          where: { userId: actor.id, readAt: null },
-        }),
-      ]);
+    const [
+      searchState,
+      activeJobs,
+      pendingReviews,
+      unreadNotifications,
+      preferences,
+    ] = await Promise.all([
+      database.jobSearchState.findUnique({ where: { userId: actor.id } }),
+      database.job.count({ where: { status: "ACTIVE" } }),
+      database.reviewQueueItem.count({
+        where: { userId: actor.id, status: { in: ["PENDING", "DEFERRED"] } },
+      }),
+      database.notification.count({
+        where: { userId: actor.id, readAt: null },
+      }),
+      database.candidatePreferences.findUnique({
+        where: { userId: actor.id },
+        select: { roleFamilies: true, locationPreferences: true },
+      }),
+    ]);
     return (
       <Section className="authenticated-home">
         <Container>
@@ -47,6 +59,9 @@ export default async function HomePage({
           </header>
           <SearchControl
             active={searchRunIsActive(searchState)}
+            directedCriteriaReady={Boolean(
+              directedJobSearchCriteria(preferences),
+            )}
             lastRun={
               searchState
                 ? {

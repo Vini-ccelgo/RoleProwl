@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import {
+  directedJobSearchCriteria,
   isGreenhouseConfigurationFailure,
   parseGreenhouseBoards,
   runManualDiscovery,
@@ -30,6 +31,18 @@ export interface JobSearchActionState {
 export async function runJobSearchAction(): Promise<JobSearchActionState> {
   const actionStartedAt = performance.now();
   const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const database = databaseClient();
+  const preferences = await database.candidatePreferences.findUnique({
+    where: { userId: actor.id },
+    select: { roleFamilies: true, locationPreferences: true },
+  });
+  const criteria = directedJobSearchCriteria(preferences);
+  if (!criteria)
+    return {
+      status: "error",
+      message:
+        "Add at least one role family in Job preferences before starting candidate-directed discovery.",
+    };
   const rateLimit = await checkManualJobSearchRateLimit(
     searchRateLimiter,
     actor.id,
@@ -39,7 +52,6 @@ export async function runJobSearchAction(): Promise<JobSearchActionState> {
       status: "error",
       message: `Job search limit reached. Retry in ${Math.max(1, Math.ceil(rateLimit.retryAfterSeconds / 60))} minute(s).`,
     };
-  const database = databaseClient();
   const startedAt = new Date();
   const claimed = await database.$transaction(async (transaction) => {
     await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${actor.id}))`;
@@ -80,19 +92,12 @@ export async function runJobSearchAction(): Promise<JobSearchActionState> {
     if (boards.length === 0) {
       throw new Error("No Greenhouse job boards are configured.");
     }
-    const preferences = await database.candidatePreferences.findUnique({
-      where: { userId: actor.id },
-      select: { roleFamilies: true, locationPreferences: true },
-    });
     const result = await runManualDiscovery({
       adapters: boards.map((board) => new GreenhouseJobSource(board)),
       analytics: new PrismaProductAnalyticsProvider(),
       health: new PrismaSourceHealthReporter(),
       repository: new PrismaJobIngestionRepository(),
-      query: {
-        query: preferences?.roleFamilies[0] ?? "",
-        location: preferences?.locationPreferences[0],
-      },
+      query: criteria,
     });
     await database.jobSearchState.update({
       where: { userId: actor.id },

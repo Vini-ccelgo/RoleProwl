@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { JobSourceAdapter } from "@/core/contracts/job-source-adapter";
 import type { SourceCapability } from "@/core/types/capabilities";
 import {
+  directedJobSearchCriteria,
   isGreenhouseConfigurationFailure,
   parseGreenhouseBoards,
   runManualDiscovery,
@@ -52,6 +53,22 @@ function adapter(): JobSourceAdapter {
 }
 
 describe("manual public job discovery", () => {
+  it("requires a non-empty role family and keeps location optional", () => {
+    expect(directedJobSearchCriteria(null)).toBeNull();
+    expect(
+      directedJobSearchCriteria({
+        roleFamilies: ["  ", "Platform Engineering "],
+        locationPreferences: [],
+      }),
+    ).toEqual({ query: "Platform Engineering" });
+    expect(
+      directedJobSearchCriteria({
+        roleFamilies: ["Operations"],
+        locationPreferences: [" ", "Remote "],
+      }),
+    ).toEqual({ query: "Operations", location: "Remote" });
+  });
+
   it("parses only explicit Greenhouse board configuration", () => {
     expect(
       parseGreenhouseBoards(
@@ -103,6 +120,7 @@ describe("manual public job discovery", () => {
         createCanonicalWithSource,
         mergeSourceAssociation: async () => undefined,
       },
+      query: { query: "Synthetic Analyst" },
     });
     expect(createCanonicalWithSource).toHaveBeenCalledOnce();
     expect(result).toEqual({
@@ -129,6 +147,7 @@ describe("manual public job discovery", () => {
         createCanonicalWithSource: async () => "canonical-1",
         mergeSourceAssociation: async () => undefined,
       },
+      query: { query: "Synthetic Analyst" },
     };
 
     await expect(runManualDiscovery(input)).rejects.toThrow(
@@ -140,5 +159,23 @@ describe("manual public job discovery", () => {
       newCount: 1,
       sourceFailureCount: 0,
     });
+  });
+
+  it("rejects an empty query before calling a public source", async () => {
+    const source = adapter();
+    source.discover = vi.fn(source.discover);
+    await expect(
+      runManualDiscovery({
+        adapters: [source],
+        health: { report: async () => undefined },
+        repository: {
+          findDeduplicationCandidates: async () => [],
+          createCanonicalWithSource: async () => "canonical-1",
+          mergeSourceAssociation: async () => undefined,
+        },
+        query: { query: "  " },
+      }),
+    ).rejects.toThrow("requires a role-family query");
+    expect(source.discover).not.toHaveBeenCalled();
   });
 });

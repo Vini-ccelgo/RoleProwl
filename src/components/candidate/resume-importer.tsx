@@ -8,6 +8,7 @@ interface CandidateDocumentSummary {
   readonly createdAt: string;
   readonly format: "PDF" | "DOCX";
   readonly id: string;
+  readonly interpretationStatus?: "NORMAL_REVIEW" | "INCOMPLETE";
   readonly originalFileName: string;
   readonly proposalCount: number;
   readonly sizeBytes: number;
@@ -55,11 +56,14 @@ export function ResumeImporter({
       });
       const result = (await response.json()) as {
         error?: string;
+        interpretationStatus?: "NORMAL_REVIEW" | "INCOMPLETE";
         proposalCount?: number;
       };
       if (!response.ok) throw new Error(result.error ?? "Upload failed.");
       setMessage(
-        `${result.proposalCount ?? 0} possible profile facts are ready for review. Nothing was added automatically.`,
+        result.interpretationStatus === "INCOMPLETE"
+          ? "RoleProwl extracted machine-readable text from this résumé, but could not reliably identify much structured résumé information. Review any proposals below or try a DOCX or text-selectable PDF export."
+          : `${result.proposalCount ?? 0} possible profile facts are ready for review. Nothing was added automatically.`,
       );
       if (input.current) input.current.value = "";
       setSelectedFile(undefined);
@@ -198,6 +202,13 @@ export function ResumeImporter({
                   KB · {document.status.replaceAll("_", " ").toLowerCase()} ·{" "}
                   {document.proposalCount} proposals
                 </p>
+                {document.interpretationStatus === "INCOMPLETE" && (
+                  <p className="mt-2 mb-0 text-xs text-foreground-muted">
+                    Machine-readable text was extracted, but RoleProwl could not
+                    reliably identify much structured résumé information. Review
+                    any proposals or try a DOCX or text-selectable PDF export.
+                  </p>
+                )}
               </div>
               <button
                 type="button"
