@@ -1,13 +1,8 @@
 import Link from "next/link";
-
-export interface DocumentDeletionBlockingApplication {
-  readonly applicationId: string;
-  readonly company: string;
-  readonly jobTitle: string;
-}
-
-export type DocumentDeletionBlockerCode =
-  "PENDING_APPLICATION_REFERENCES" | "SUBMITTED_APPLICATION_REFERENCES";
+import type {
+  DocumentDeletionBlockerCode,
+  DocumentDeletionBlockingApplication,
+} from "@/features/candidate/document-deletion-protocol";
 
 export function DocumentDeletionBlockerNotice({
   applications,
@@ -31,14 +26,14 @@ export function DocumentDeletionBlockerNotice({
       <ul className="m-0 grid list-none gap-2 p-0">
         {applications.map((application) => (
           <li
-            className="flex min-w-0 flex-wrap items-center justify-between gap-2"
+            className="document-deletion-blocker-item flex min-w-0 flex-wrap items-center justify-between gap-2"
             key={application.applicationId}
           >
             <span className="safe-user-text min-w-0 text-sm">
               {application.jobTitle} at {application.company}
             </span>
             <Link
-              className="button button-secondary"
+              className="button button-secondary document-deletion-blocker-link"
               href={`/applications/${application.applicationId}`}
             >
               Open application

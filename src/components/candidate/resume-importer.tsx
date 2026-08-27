@@ -3,12 +3,13 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, LoaderCircle, Trash2, Upload } from "lucide-react";
+import { DocumentDeletionBlockerNotice } from "@/components/candidate/document-deletion-blocker-notice";
+import { InspectableFileName } from "@/components/documents/inspectable-file-name";
 import {
-  DocumentDeletionBlockerNotice,
   type DocumentDeletionBlockerCode,
   type DocumentDeletionBlockingApplication,
-} from "@/components/candidate/document-deletion-blocker-notice";
-import { InspectableFileName } from "@/components/documents/inspectable-file-name";
+  requestCandidateDocumentDeletion,
+} from "@/features/candidate/document-deletion-protocol";
 
 interface CandidateDocumentSummary {
   readonly createdAt: string;
@@ -19,18 +20,6 @@ interface CandidateDocumentSummary {
   readonly proposalCount: number;
   readonly sizeBytes: number;
   readonly status: string;
-}
-
-const ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED =
-  "ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED";
-
-function deletionBlockerCode(
-  value: string | undefined,
-): DocumentDeletionBlockerCode | undefined {
-  return value === "PENDING_APPLICATION_REFERENCES" ||
-    value === "SUBMITTED_APPLICATION_REFERENCES"
-    ? value
-    : undefined;
 }
 
 export const RESUME_FACT_DELETION_WARNING =
@@ -122,38 +111,28 @@ export function ResumeImporter({
     }
     setBusy(true);
     try {
-      let response = await fetch(`/api/candidate/documents/${document.id}`, {
-        method: "DELETE",
+      let result = await requestCandidateDocumentDeletion({
+        confirmAcceptedFacts: false,
+        documentId: document.id,
       });
-      let result = response.ok
-        ? null
-        : ((await response.json()) as {
-            applications?: DocumentDeletionBlockingApplication[];
-            code?: string;
-            error?: string;
-            factCount?: number;
-          });
-      const blockerCode = deletionBlockerCode(result?.code);
-      if (response.status === 409 && result && blockerCode) {
-        const applications = result.applications ?? [];
+      if (result.kind === "APPLICATION_BLOCKER") {
+        const applications = result.applications;
+        const code = result.code;
         setDeletionBlockers((current) => ({
           ...current,
           [document.id]: {
             applications,
-            code: blockerCode,
+            code,
           },
         }));
-        setMessage(result.error ?? "This résumé cannot be deleted yet.");
+        setMessage(result.message);
         return;
       }
-      if (
-        response.status === 409 &&
-        result?.code === ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED
-      ) {
+      if (result.kind === "ACCEPTED_FACTS_CONFIRMATION") {
         if (
           !confirmResumeFactDeletion(
             document.originalFileName,
-            result.factCount ?? 0,
+            result.factCount,
           )
         ) {
           setMessage(
@@ -161,39 +140,30 @@ export function ResumeImporter({
           );
           return;
         }
-        response = await fetch(`/api/candidate/documents/${document.id}`, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ confirmAcceptedFacts: true }),
+        result = await requestCandidateDocumentDeletion({
+          confirmAcceptedFacts: true,
+          documentId: document.id,
         });
-        result = response.ok
-          ? null
-          : ((await response.json()) as {
-              applications?: DocumentDeletionBlockingApplication[];
-              code?: string;
-              error?: string;
-              factCount?: number;
-            });
-        const refreshedBlockerCode = deletionBlockerCode(result?.code);
-        if (response.status === 409 && result && refreshedBlockerCode) {
-          const applications = result.applications ?? [];
+        if (result.kind === "APPLICATION_BLOCKER") {
+          const applications = result.applications;
+          const code = result.code;
           setDeletionBlockers((current) => ({
             ...current,
             [document.id]: {
               applications,
-              code: refreshedBlockerCode,
+              code,
             },
           }));
-          setMessage(result.error ?? "This résumé cannot be deleted yet.");
+          setMessage(result.message);
           return;
         }
       }
       setMessage(
-        response.ok
+        result.kind === "DELETED"
           ? `Deleted résumé: ${document.originalFileName}`
-          : (result?.error ?? "The document could not be deleted."),
+          : result.message,
       );
-      if (response.ok) {
+      if (result.kind === "DELETED") {
         setDeletionBlockers((current) => {
           const next = { ...current };
           delete next[document.id];
@@ -209,13 +179,13 @@ export function ResumeImporter({
   }
 
   return (
-    <div className="grid gap-6">
-      <section className="card grid gap-4 p-6">
+    <div className="mobile-contained-grid grid gap-6">
+      <section className="card mobile-contained-grid grid gap-4 p-6">
         <div className="flex items-start gap-3">
           <span className="rounded-lg bg-brand-soft p-2 text-brand">
             <Upload aria-hidden="true" size={22} />
           </span>
-          <div>
+          <div className="min-w-0">
             <h2 className="text-lg font-semibold">Import a résumé</h2>
             <p className="mt-1 text-sm">
               PDF with selectable text or DOCX, up to 5 MB. OCR is not included.
@@ -273,7 +243,10 @@ export function ResumeImporter({
         </p>
       </section>
 
-      <section className="grid gap-3" aria-labelledby="uploaded-resumes-title">
+      <section
+        className="mobile-contained-grid grid gap-3"
+        aria-labelledby="uploaded-resumes-title"
+      >
         <h2 id="uploaded-resumes-title" className="text-lg font-semibold">
           Uploaded résumés
         </h2>
@@ -289,26 +262,29 @@ export function ResumeImporter({
                 className="card document-management-row grid gap-4 p-4"
                 key={document.id}
               >
-                <FileText aria-hidden="true" className="text-brand" />
-                <div className="min-w-0">
-                  <h3 className="sr-only">{document.originalFileName}</h3>
-                  <InspectableFileName
-                    className="font-medium"
-                    fileName={document.originalFileName}
-                  />
-                  <p className="m-0 text-xs">
-                    {document.format} · {(document.sizeBytes / 1024).toFixed(1)}{" "}
-                    KB · {document.status.replaceAll("_", " ").toLowerCase()} ·{" "}
-                    {document.proposalCount} proposals
-                  </p>
-                  {document.interpretationStatus === "INCOMPLETE" && (
-                    <p className="mt-2 mb-0 text-xs text-foreground-muted">
-                      Machine-readable text was extracted, but RoleProwl could
-                      not reliably identify much structured résumé information.
-                      Review any proposals or try a DOCX or text-selectable PDF
-                      export.
+                <div className="document-management-details">
+                  <FileText aria-hidden="true" className="text-brand" />
+                  <div className="min-w-0">
+                    <h3 className="sr-only">{document.originalFileName}</h3>
+                    <InspectableFileName
+                      className="font-medium"
+                      fileName={document.originalFileName}
+                    />
+                    <p className="safe-user-text m-0 text-xs">
+                      {document.format} ·{" "}
+                      {(document.sizeBytes / 1024).toFixed(1)} KB ·{" "}
+                      {document.status.replaceAll("_", " ").toLowerCase()} ·{" "}
+                      {document.proposalCount} proposals
                     </p>
-                  )}
+                    {document.interpretationStatus === "INCOMPLETE" && (
+                      <p className="safe-user-text mt-2 mb-0 text-xs text-foreground-muted">
+                        Machine-readable text was extracted, but RoleProwl could
+                        not reliably identify much structured résumé
+                        information. Review any proposals or try a DOCX or
+                        text-selectable PDF export.
+                      </p>
+                    )}
+                  </div>
                 </div>
                 <button
                   type="button"

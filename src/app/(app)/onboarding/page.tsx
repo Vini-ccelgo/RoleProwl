@@ -39,7 +39,7 @@ export default async function OnboardingPage() {
   ]);
 
   return (
-    <div className="app-page grid gap-7">
+    <div className="app-page mobile-contained-grid grid gap-7">
       <PageHeader
         title="Start with facts you control"
         description="Import a résumé to create reviewable suggestions, then decide what belongs in your Truth Vault."

@@ -1,3 +1,7 @@
+"use client";
+
+import { useId, useState } from "react";
+
 const DEFAULT_COMPACT_LENGTH = 44;
 
 export function compactFileName(
@@ -16,6 +20,43 @@ export function compactFileName(
   return `${fileName.slice(0, prefixLength)}…${suffix}`;
 }
 
+export function InspectableFileNameView({
+  className = "",
+  disclosureId,
+  expanded,
+  fileName,
+  onToggle,
+}: {
+  readonly className?: string;
+  readonly disclosureId: string;
+  readonly expanded: boolean;
+  readonly fileName: string;
+  readonly onToggle: () => void;
+}) {
+  return (
+    <div className={`filename-inspector ${className}`.trim()}>
+      <span className="filename-inspector-compact">
+        {compactFileName(fileName)}
+      </span>
+      <button
+        aria-controls={disclosureId}
+        aria-expanded={expanded}
+        aria-label={`${expanded ? "Hide" : "Show"} full filename: ${fileName}`}
+        className="filename-inspector-toggle"
+        onClick={onToggle}
+        type="button"
+      >
+        {expanded ? "Hide full filename" : "Show full filename"}
+      </button>
+      {expanded ? (
+        <p className="safe-filename filename-inspector-full" id={disclosureId}>
+          {fileName}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function InspectableFileName({
   className = "",
   fileName,
@@ -23,19 +64,16 @@ export function InspectableFileName({
   readonly className?: string;
   readonly fileName: string;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const disclosureId = useId();
+
   return (
-    <details className={`filename-inspector ${className}`.trim()}>
-      <summary
-        aria-label={`Filename: ${fileName}. Activate to show the full filename.`}
-      >
-        <span aria-hidden="true" className="filename-inspector-compact">
-          {compactFileName(fileName)}
-        </span>
-        <span aria-hidden="true" className="filename-inspector-action">
-          Show full filename
-        </span>
-      </summary>
-      <p className="safe-filename filename-inspector-full">{fileName}</p>
-    </details>
+    <InspectableFileNameView
+      className={className}
+      disclosureId={disclosureId}
+      expanded={expanded}
+      fileName={fileName}
+      onToggle={() => setExpanded((current) => !current)}
+    />
   );
 }

@@ -105,4 +105,26 @@ describe("fact proposal review component", () => {
     expect(markup).toContain(fileName);
     expect(markup.match(/safe-filename/gu)?.length).toBeGreaterThanOrEqual(2);
   });
+
+  it("keeps long proposed and provenance values inside shrinkable card descendants", () => {
+    const longValue = "x".repeat(300);
+    const markup = renderToStaticMarkup(
+      createElement(FactProposalReview, {
+        proposals: [
+          {
+            ...proposal,
+            sourceFileName: `${"resume_".repeat(40)}.pdf`,
+            sourceText: longValue,
+            value: longValue,
+          },
+        ],
+      }),
+    );
+
+    expect(markup).toContain("mobile-contained-grid");
+    expect(markup).toContain("proposal-review-input");
+    expect(markup).toContain("safe-user-text");
+    expect(markup).toContain("proposal-review-actions");
+    expect(markup).toContain(longValue);
+  });
 });

@@ -69,7 +69,9 @@ describe("résumé file picker", () => {
     );
 
     expect(markup).toContain("document-management-row");
+    expect(markup).toContain("document-management-details");
     expect(markup).toContain("filename-inspector");
+    expect(markup).toContain("Show full filename");
     expect(markup).toContain(fileName);
     expect(markup).toContain(`aria-label="Delete ${fileName}"`);
     expect(markup).not.toContain('class="truncate');

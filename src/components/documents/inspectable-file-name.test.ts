@@ -1,7 +1,11 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { compactFileName, InspectableFileName } from "./inspectable-file-name";
+import {
+  compactFileName,
+  InspectableFileName,
+  InspectableFileNameView,
+} from "./inspectable-file-name";
 
 const cases = [
   "a-very-long-ordinary-resume-filename-for-mobile-review.pdf",
@@ -19,11 +23,11 @@ describe("inspectable filename", () => {
         createElement(InspectableFileName, { fileName }),
       );
 
-      expect(markup).toContain("<details");
-      expect(markup).toContain("<summary");
+      expect(markup).toContain("<button");
       expect(markup).toContain("Show full filename");
       expect(markup).toContain(fileName);
-      expect(markup).toContain(`Filename: ${fileName}. Activate`);
+      expect(markup).toContain(`Show full filename: ${fileName}`);
+      expect(markup).toContain('aria-expanded="false"');
       expect(markup).not.toContain("title=");
     },
   );
@@ -35,5 +39,25 @@ describe("inspectable filename", () => {
     );
     expect(compact.endsWith(".docx")).toBe(true);
     expect(compact).toContain("…");
+  });
+
+  it("visibly renders the exact complete filename in the expanded state", () => {
+    const fileName =
+      "candidate_resume_with_a_complete_distinguishing_name_final_2.pdf";
+    const markup = renderToStaticMarkup(
+      createElement(InspectableFileNameView, {
+        disclosureId: "full-file-name",
+        expanded: true,
+        fileName,
+        onToggle: () => undefined,
+      }),
+    );
+
+    expect(markup).toContain('aria-expanded="true"');
+    expect(markup).toContain("Hide full filename");
+    expect(markup).toContain('id="full-file-name"');
+    expect(markup).toContain(
+      `<p class="safe-filename filename-inspector-full" id="full-file-name">${fileName}</p>`,
+    );
   });
 });

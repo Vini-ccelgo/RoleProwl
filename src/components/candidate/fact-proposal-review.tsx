@@ -72,7 +72,10 @@ export function FactProposalReview({
   }
 
   return (
-    <section className="grid gap-3" aria-labelledby="fact-review-title">
+    <section
+      className="mobile-contained-grid grid gap-3"
+      aria-labelledby="fact-review-title"
+    >
       <div>
         <h2 id="fact-review-title" className="text-lg font-semibold">
           Review extracted facts
@@ -92,7 +95,7 @@ export function FactProposalReview({
       ) : (
         proposalGroups.map((group) => (
           <section
-            className="grid gap-3"
+            className="mobile-contained-grid grid gap-3"
             aria-labelledby={`proposal-source-${group.documentId}`}
             key={group.documentId}
           >
@@ -116,12 +119,15 @@ export function FactProposalReview({
                 ? getProposalDestination(proposal.factType)
                 : undefined;
               return (
-                <article className="card grid gap-3 p-4" key={proposal.id}>
+                <article
+                  className="card mobile-contained-grid grid gap-3 p-4"
+                  key={proposal.id}
+                >
                   <strong className="text-sm">
                     {destination?.label ??
                       proposal.factType.replaceAll("_", " ").toLowerCase()}
                   </strong>
-                  <label className="grid gap-1 text-xs font-medium">
+                  <label className="mobile-contained-grid grid gap-1 text-xs font-medium">
                     Proposed value
                     <input
                       className="proposal-review-input"
@@ -152,7 +158,7 @@ export function FactProposalReview({
                   <p className="safe-user-text m-0 min-w-0 text-xs">
                     Extracted source: “{proposal.sourceText}”
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="proposal-review-actions flex flex-wrap gap-2">
                     {hasAction("ACCEPT") && (
                       <button
                         className="button button-primary"

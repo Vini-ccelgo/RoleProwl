@@ -815,6 +815,15 @@ p {
   max-width: 1100px;
   margin: auto;
 }
+.mobile-contained-grid {
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  max-width: 100%;
+}
+.mobile-contained-grid > * {
+  min-width: 0;
+  max-width: 100%;
+}
 .safe-filename {
   min-width: 0;
   max-width: 100%;
@@ -828,18 +837,11 @@ p {
   word-break: break-word;
 }
 .filename-inspector {
-  flex: 1 1 16rem;
+  display: grid;
+  justify-items: start;
+  gap: 0.4rem;
   min-width: 0;
   max-width: 100%;
-}
-.filename-inspector > summary {
-  display: flex;
-  min-width: 0;
-  max-width: 100%;
-  cursor: pointer;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.35rem 0.65rem;
 }
 .filename-inspector-compact {
   min-width: 0;
@@ -847,21 +849,36 @@ p {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
-.filename-inspector-action {
+.filename-inspector-toggle {
+  min-height: 44px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  padding: 0.55rem 0.75rem;
+  background: var(--surface-muted);
   color: var(--brand);
-  font-size: 0.72rem;
+  font: inherit;
+  font-size: 0.78rem;
   font-weight: 650;
-  white-space: nowrap;
+  cursor: pointer;
 }
 .filename-inspector-full {
-  margin: 0.45rem 0 0;
+  width: 100%;
+  margin: 0;
   border-left: 3px solid var(--brand-soft);
   padding-left: 0.65rem;
   font-size: 0.78rem;
 }
 .document-management-row {
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+.document-management-details {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 1rem;
   min-width: 0;
   max-width: 100%;
 }
@@ -875,6 +892,14 @@ p {
   border-radius: 10px;
   padding: 0.9rem;
   background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+}
+.proposal-review-input {
+  min-width: 0;
+  max-width: 100%;
+}
+.proposal-review-actions {
+  min-width: 0;
+  max-width: 100%;
 }
 .page-header {
   margin-bottom: 2rem;
@@ -1506,11 +1531,24 @@ p {
 }
 @media (max-width: 520px) {
   .document-management-row {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
   .document-management-row > .button {
-    grid-column: 1 / -1;
     width: 100%;
+  }
+  .proposal-review-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .proposal-review-actions .button,
+  .document-deletion-blocker-link {
+    width: 100%;
+    min-width: 0;
+    white-space: normal;
+  }
+  .document-deletion-blocker-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 560px) {

@@ -5,18 +5,12 @@ import type { Prisma } from "@/generated/prisma/client";
 import { invalidateReadyApplicationPackets } from "@/integrations/applications/invalidate-application-packets";
 import { documentStorage } from "@/integrations/storage/document-storage";
 import { databaseClient } from "@/lib/db/client";
-
-export const ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED =
-  "ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED";
-export const PENDING_APPLICATION_REFERENCES = "PENDING_APPLICATION_REFERENCES";
-export const SUBMITTED_APPLICATION_REFERENCES =
-  "SUBMITTED_APPLICATION_REFERENCES";
-
-export interface CandidateDocumentBlockingApplication {
-  readonly applicationId: string;
-  readonly company: string;
-  readonly jobTitle: string;
-}
+import {
+  ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED,
+  type DocumentDeletionBlockingApplication,
+  PENDING_APPLICATION_REFERENCES,
+  SUBMITTED_APPLICATION_REFERENCES,
+} from "@/features/candidate/document-deletion-protocol";
 
 export class AcceptedFactsDeleteConfirmationRequiredError extends ConflictError {
   readonly confirmationCode = ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED;
@@ -29,11 +23,13 @@ export class AcceptedFactsDeleteConfirmationRequiredError extends ConflictError 
 }
 
 export class CandidateDocumentApplicationReferenceError extends ConflictError {
+  readonly protocolKind = "CANDIDATE_DOCUMENT_APPLICATION_REFERENCE";
+
   constructor(
     readonly referenceCode:
       | typeof PENDING_APPLICATION_REFERENCES
       | typeof SUBMITTED_APPLICATION_REFERENCES,
-    readonly applications: readonly CandidateDocumentBlockingApplication[],
+    readonly applications: readonly DocumentDeletionBlockingApplication[],
   ) {
     super(
       referenceCode === SUBMITTED_APPLICATION_REFERENCES

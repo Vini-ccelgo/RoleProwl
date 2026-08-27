@@ -6,7 +6,9 @@ describe("onboarding mobile layout contract", () => {
     const page = readFileSync("src/app/(app)/onboarding/page.tsx", "utf8");
     const css = readFileSync("src/app/globals.css", "utf8");
 
-    expect(page).toContain('className="app-page grid gap-7"');
+    expect(page).toContain(
+      'className="app-page mobile-contained-grid grid gap-7"',
+    );
     expect(css).toMatch(
       /\.app-page \{[\s\S]*?width: 100%;[\s\S]*?min-width: 0;[\s\S]*?max-width: 1100px;[\s\S]*?margin: auto/u,
     );
@@ -25,7 +27,19 @@ describe("onboarding mobile layout contract", () => {
       /\.safe-filename \{[\s\S]*?max-width: 100%;[\s\S]*?overflow-wrap: anywhere/u,
     );
     expect(css).toMatch(
-      /\.document-management-row \{[\s\S]*?grid-template-columns: auto minmax\(0, 1fr\) auto/u,
+      /\.mobile-contained-grid \{[^}]*grid-template-columns: minmax\(0, 1fr\);[^}]*min-width: 0;[^}]*max-width: 100%/u,
+    );
+    expect(css).toMatch(
+      /\.document-management-row \{[^}]*grid-template-columns: minmax\(0, 1fr\) auto/u,
+    );
+    expect(css).toMatch(
+      /\.document-management-details \{[^}]*grid-template-columns: auto minmax\(0, 1fr\)[^}]*min-width: 0/u,
+    );
+    expect(css).toMatch(
+      /\.proposal-review-input \{[^}]*min-width: 0;[^}]*max-width: 100%/u,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 520px\) \{[\s\S]*?\.document-management-row \{[^}]*grid-template-columns: minmax\(0, 1fr\)[\s\S]*?\.proposal-review-actions \{[^}]*display: grid/u,
     );
     expect(css).not.toMatch(/\.app-page \{[^}]*overflow: hidden/u);
   });

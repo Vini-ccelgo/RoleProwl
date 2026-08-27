@@ -33,8 +33,8 @@ vi.mock(
 import {
   AcceptedFactsDeleteConfirmationRequiredError,
   CandidateDocumentApplicationReferenceError,
-  PENDING_APPLICATION_REFERENCES,
 } from "@/integrations/candidate/prisma-candidate-document-deletion";
+import { PENDING_APPLICATION_REFERENCES } from "@/features/candidate/document-deletion-protocol";
 import { DELETE } from "./route";
 
 function request(body?: unknown) {
@@ -116,5 +116,41 @@ describe("candidate document DELETE protocol", () => {
     expect(JSON.stringify(payload)).not.toContain("storageKey");
     expect(JSON.stringify(payload)).not.toContain("candidateId");
     expect(JSON.stringify(payload)).not.toContain("documentsSnapshot");
+  });
+
+  it("preserves a structured blocker across a production-style prototype boundary", async () => {
+    deleteDocument.mockRejectedValueOnce({
+      applications: [
+        {
+          applicationId: "application-1",
+          company: "Northstar Labs",
+          jobTitle: "Security Engineer",
+          storageKey: "must-not-be-forwarded",
+        },
+      ],
+      message:
+        "Select another résumé in your pending applications before deleting this one.",
+      protocolKind: "CANDIDATE_DOCUMENT_APPLICATION_REFERENCE",
+      referenceCode: "PENDING_APPLICATION_REFERENCES",
+    });
+
+    const response = await DELETE(request(), {
+      params: Promise.resolve({ documentId: "document-1" }),
+    });
+    const payload = await response.json();
+    expect(response.status).toBe(409);
+    expect(payload).toEqual({
+      applications: [
+        {
+          applicationId: "application-1",
+          company: "Northstar Labs",
+          jobTitle: "Security Engineer",
+        },
+      ],
+      code: "PENDING_APPLICATION_REFERENCES",
+      error:
+        "Select another résumé in your pending applications before deleting this one.",
+    });
+    expect(JSON.stringify(payload)).not.toContain("storageKey");
   });
 });

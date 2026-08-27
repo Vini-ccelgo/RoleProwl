@@ -107,6 +107,42 @@ describe("Prisma candidate document deletion", () => {
     expect(storage.delete).not.toHaveBeenCalled();
   });
 
+  it("returns every owner-scoped pending application that must switch résumés", async () => {
+    mocks.applicationsFindMany.mockResolvedValue([
+      {
+        id: "application-1",
+        submittedAt: null,
+        job: { company: "Northstar Labs", title: "Security Engineer" },
+        documentsSnapshot: [
+          { kind: "RESUME", storageKey: "candidate-documents/private" },
+        ],
+        submissionPayloadSnapshot: {},
+      },
+      {
+        id: "application-2",
+        submittedAt: null,
+        job: { company: "Atlas Systems", title: "Platform Engineer" },
+        documentsSnapshot: [],
+        submissionPayloadSnapshot: {
+          packet: { resumeStorageKey: "candidate-documents/private" },
+        },
+      },
+    ]);
+
+    await expect(
+      new PrismaCandidateDocumentDeletion({ delete: vi.fn() } as never).delete({
+        documentId: "document-1",
+        userId: "user-1",
+      }),
+    ).rejects.toMatchObject({
+      referenceCode: "PENDING_APPLICATION_REFERENCES",
+      applications: [
+        { applicationId: "application-1" },
+        { applicationId: "application-2" },
+      ],
+    });
+  });
+
   it("requires explicit confirmation before deleting accepted résumé facts", async () => {
     mocks.factCount.mockResolvedValue(2);
     const storage = { delete: vi.fn() };

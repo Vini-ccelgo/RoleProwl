@@ -39,4 +39,25 @@ describe("document deletion blocker notice", () => {
     expect(markup).toContain("immutable");
     expect(markup).toContain('href="/applications/owner-application-1"');
   });
+
+  it("renders every pending blocker with its own direct application link", () => {
+    const markup = renderToStaticMarkup(
+      createElement(DocumentDeletionBlockerNotice, {
+        applications: [
+          application,
+          {
+            applicationId: "owner-application-2",
+            company: "Atlas Systems",
+            jobTitle: "Platform Engineer",
+          },
+        ],
+        code: "PENDING_APPLICATION_REFERENCES",
+        fileName: "candidate_resume.pdf",
+      }),
+    );
+
+    expect(markup).toContain('href="/applications/owner-application-1"');
+    expect(markup).toContain('href="/applications/owner-application-2"');
+    expect(markup.match(/Open application/gu)).toHaveLength(2);
+  });
 });
