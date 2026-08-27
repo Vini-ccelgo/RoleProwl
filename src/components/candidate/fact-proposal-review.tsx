@@ -97,7 +97,7 @@ export function FactProposalReview({
             key={group.documentId}
           >
             <h3
-              className="text-sm font-semibold"
+              className="safe-filename min-w-0 text-sm font-semibold"
               id={`proposal-source-${group.documentId}`}
             >
               Source résumé: {group.sourceFileName}
@@ -146,10 +146,10 @@ export function FactProposalReview({
                       destination. It can only be rejected.
                     </p>
                   )}
-                  <p className="m-0 text-xs">
+                  <p className="safe-filename m-0 min-w-0 text-xs">
                     Source résumé: {proposal.sourceFileName}
                   </p>
-                  <p className="m-0 text-xs">
+                  <p className="safe-user-text m-0 min-w-0 text-xs">
                     Extracted source: “{proposal.sourceText}”
                   </p>
                   <div className="flex flex-wrap gap-2">

@@ -10,6 +10,7 @@ import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { assertMutationRequestIsSameOrigin } from "@/lib/security/request-security";
 import {
   AcceptedFactsDeleteConfirmationRequiredError,
+  CandidateDocumentApplicationReferenceError,
   PrismaCandidateDocumentDeletion,
 } from "@/integrations/candidate/prisma-candidate-document-deletion";
 
@@ -46,6 +47,15 @@ export async function DELETE(
           error: error.message,
           code: error.confirmationCode,
           factCount: error.factCount,
+        },
+        { status: 409 },
+      );
+    if (error instanceof CandidateDocumentApplicationReferenceError)
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: error.referenceCode,
+          applications: error.applications,
         },
         { status: 409 },
       );

@@ -693,12 +693,14 @@ p {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--surface-muted);
 }
 .app-sidebar {
   position: sticky;
   top: 0;
   height: 100vh;
+  height: 100dvh;
   padding: 1.4rem;
   border-right: 1px solid var(--border);
   background: var(--surface);
@@ -812,6 +814,67 @@ p {
   min-width: 0;
   max-width: 1100px;
   margin: auto;
+}
+.safe-filename {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.safe-user-text {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.filename-inspector {
+  flex: 1 1 16rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.filename-inspector > summary {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  cursor: pointer;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.65rem;
+}
+.filename-inspector-compact {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.filename-inspector-action {
+  color: var(--brand);
+  font-size: 0.72rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.filename-inspector-full {
+  margin: 0.45rem 0 0;
+  border-left: 3px solid var(--brand-soft);
+  padding-left: 0.65rem;
+  font-size: 0.78rem;
+}
+.document-management-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+.document-deletion-blocker {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 0.75rem;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  border-radius: 10px;
+  padding: 0.9rem;
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
 }
 .page-header {
   margin-bottom: 2rem;
@@ -1439,6 +1502,15 @@ p {
   }
   .legal-page h1 {
     font-size: 2.7rem;
+  }
+}
+@media (max-width: 520px) {
+  .document-management-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .document-management-row > .button {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 }
 @media (max-width: 560px) {

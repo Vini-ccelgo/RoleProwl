@@ -1,4 +1,5 @@
 import type { CanonicalApplicationResumeSnapshot } from "@/core/domain/applications/application-resume";
+import { InspectableFileName } from "@/components/documents/inspectable-file-name";
 
 interface AvailableResume {
   readonly id: string;
@@ -32,7 +33,10 @@ export function ApplicationDocuments({
       <div className="grid gap-2">
         <h3 className="text-sm font-semibold">Selected for this application</h3>
         {selectedResume ? (
-          <p className="m-0 text-sm">{selectedResume.fileName}</p>
+          <InspectableFileName
+            className="text-sm"
+            fileName={selectedResume.fileName}
+          />
         ) : (
           <p className="m-0 text-sm text-foreground-muted">
             Résumé selection needs attention. Choose an available résumé before
@@ -50,9 +54,10 @@ export function ApplicationDocuments({
                 className="border-border flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
                 key={resume.id}
               >
-                <span className="min-w-0 truncate text-sm">
-                  {resume.originalFileName}
-                </span>
+                <InspectableFileName
+                  className="min-w-0 text-sm"
+                  fileName={resume.originalFileName}
+                />
                 <form action={selectResumeAction}>
                   <input
                     name="applicationId"

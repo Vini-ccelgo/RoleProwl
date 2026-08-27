@@ -247,7 +247,7 @@ export function ApplicationPacketSummary({
                 <strong className="text-sm">{document.label}</strong>
                 <Status value={document.status} />
               </div>
-              <p className="m-0 text-sm text-foreground-muted">
+              <p className="safe-filename m-0 min-w-0 text-sm text-foreground-muted">
                 {document.fileName ?? "No document selected"}
               </p>
               {document.kind === "RESUME" &&

@@ -3,6 +3,12 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, LoaderCircle, Trash2, Upload } from "lucide-react";
+import {
+  DocumentDeletionBlockerNotice,
+  type DocumentDeletionBlockerCode,
+  type DocumentDeletionBlockingApplication,
+} from "@/components/candidate/document-deletion-blocker-notice";
+import { InspectableFileName } from "@/components/documents/inspectable-file-name";
 
 interface CandidateDocumentSummary {
   readonly createdAt: string;
@@ -18,14 +24,37 @@ interface CandidateDocumentSummary {
 const ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED =
   "ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED";
 
+function deletionBlockerCode(
+  value: string | undefined,
+): DocumentDeletionBlockerCode | undefined {
+  return value === "PENDING_APPLICATION_REFERENCES" ||
+    value === "SUBMITTED_APPLICATION_REFERENCES"
+    ? value
+    : undefined;
+}
+
 export const RESUME_FACT_DELETION_WARNING =
-  "Deleting this résumé will also remove verified facts sourced from it. This may affect application readiness. Continue?";
+  "Deleting this résumé will also remove verified facts sourced from it. This may affect application readiness.";
 
 export function confirmResumeFactDeletion(
+  fileName: string,
+  factCount: number,
   confirmOperator: (message: string) => boolean = (message) =>
     window.confirm(message),
 ) {
-  return confirmOperator(RESUME_FACT_DELETION_WARNING);
+  return confirmOperator(
+    `${RESUME_FACT_DELETION_WARNING}\n\n${factCount} accepted ${factCount === 1 ? "fact" : "facts"} will be removed.\n\nRésumé: ${fileName}\n\nContinue?`,
+  );
+}
+
+export function confirmResumeDeletion(
+  fileName: string,
+  confirmOperator: (message: string) => boolean = (message) =>
+    window.confirm(message),
+) {
+  return confirmOperator(
+    `Delete this résumé?\n\nRésumé: ${fileName}\n\nRoleProwl will check for application and accepted-fact dependencies before deleting it.`,
+  );
 }
 
 export function ResumeImporter({
@@ -38,6 +67,15 @@ export function ResumeImporter({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
   const [selectedFile, setSelectedFile] = useState<File>();
+  const [deletionBlockers, setDeletionBlockers] = useState<
+    Record<
+      string,
+      {
+        applications: readonly DocumentDeletionBlockingApplication[];
+        code: DocumentDeletionBlockerCode;
+      }
+    >
+  >({});
 
   async function upload() {
     const file = selectedFile;
@@ -75,40 +113,94 @@ export function ResumeImporter({
     }
   }
 
-  async function remove(documentId: string) {
+  async function remove(document: CandidateDocumentSummary) {
+    if (!confirmResumeDeletion(document.originalFileName)) {
+      setMessage(
+        "Deletion cancelled. No résumé or verified facts were removed.",
+      );
+      return;
+    }
     setBusy(true);
     try {
-      let response = await fetch(`/api/candidate/documents/${documentId}`, {
+      let response = await fetch(`/api/candidate/documents/${document.id}`, {
         method: "DELETE",
       });
       let result = response.ok
         ? null
-        : ((await response.json()) as { code?: string; error?: string });
+        : ((await response.json()) as {
+            applications?: DocumentDeletionBlockingApplication[];
+            code?: string;
+            error?: string;
+            factCount?: number;
+          });
+      const blockerCode = deletionBlockerCode(result?.code);
+      if (response.status === 409 && result && blockerCode) {
+        const applications = result.applications ?? [];
+        setDeletionBlockers((current) => ({
+          ...current,
+          [document.id]: {
+            applications,
+            code: blockerCode,
+          },
+        }));
+        setMessage(result.error ?? "This résumé cannot be deleted yet.");
+        return;
+      }
       if (
         response.status === 409 &&
         result?.code === ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED
       ) {
-        if (!confirmResumeFactDeletion()) {
+        if (
+          !confirmResumeFactDeletion(
+            document.originalFileName,
+            result.factCount ?? 0,
+          )
+        ) {
           setMessage(
             "Deletion cancelled. No résumé or verified facts were removed.",
           );
           return;
         }
-        response = await fetch(`/api/candidate/documents/${documentId}`, {
+        response = await fetch(`/api/candidate/documents/${document.id}`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ confirmAcceptedFacts: true }),
         });
         result = response.ok
           ? null
-          : ((await response.json()) as { code?: string; error?: string });
+          : ((await response.json()) as {
+              applications?: DocumentDeletionBlockingApplication[];
+              code?: string;
+              error?: string;
+              factCount?: number;
+            });
+        const refreshedBlockerCode = deletionBlockerCode(result?.code);
+        if (response.status === 409 && result && refreshedBlockerCode) {
+          const applications = result.applications ?? [];
+          setDeletionBlockers((current) => ({
+            ...current,
+            [document.id]: {
+              applications,
+              code: refreshedBlockerCode,
+            },
+          }));
+          setMessage(result.error ?? "This résumé cannot be deleted yet.");
+          return;
+        }
       }
       setMessage(
         response.ok
-          ? "Document deleted."
+          ? `Deleted résumé: ${document.originalFileName}`
           : (result?.error ?? "The document could not be deleted."),
       );
-      if (response.ok) router.refresh();
+      if (response.ok) {
+        setDeletionBlockers((current) => {
+          const next = { ...current };
+          delete next[document.id];
+          return next;
+        });
+        router.refresh();
+      }
     } catch {
       setMessage("The document could not be deleted. Try again.");
     } finally {
@@ -151,7 +243,10 @@ export function ResumeImporter({
           >
             Choose File
           </button>
-          <span id="resume-file-name" className="text-sm text-foreground-muted">
+          <span
+            id="resume-file-name"
+            className="safe-filename min-w-0 text-sm text-foreground-muted"
+          >
             {selectedFile?.name ?? "No file selected"}
           </span>
         </div>
@@ -187,40 +282,53 @@ export function ResumeImporter({
             No résumé has been uploaded.
           </div>
         ) : (
-          documents.map((document) => (
-            <article
-              className="card flex flex-wrap items-center gap-4 p-4"
-              key={document.id}
-            >
-              <FileText aria-hidden="true" className="text-brand" />
-              <div className="min-w-0 flex-1">
-                <h3 className="truncate font-medium">
-                  {document.originalFileName}
-                </h3>
-                <p className="m-0 text-xs">
-                  {document.format} · {(document.sizeBytes / 1024).toFixed(1)}{" "}
-                  KB · {document.status.replaceAll("_", " ").toLowerCase()} ·{" "}
-                  {document.proposalCount} proposals
-                </p>
-                {document.interpretationStatus === "INCOMPLETE" && (
-                  <p className="mt-2 mb-0 text-xs text-foreground-muted">
-                    Machine-readable text was extracted, but RoleProwl could not
-                    reliably identify much structured résumé information. Review
-                    any proposals or try a DOCX or text-selectable PDF export.
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                className="button button-secondary"
-                onClick={() => remove(document.id)}
-                disabled={busy}
-                aria-label={`Delete ${document.originalFileName}`}
+          documents.map((document) => {
+            const blocker = deletionBlockers[document.id];
+            return (
+              <article
+                className="card document-management-row grid gap-4 p-4"
+                key={document.id}
               >
-                <Trash2 aria-hidden="true" size={17} /> Delete
-              </button>
-            </article>
-          ))
+                <FileText aria-hidden="true" className="text-brand" />
+                <div className="min-w-0">
+                  <h3 className="sr-only">{document.originalFileName}</h3>
+                  <InspectableFileName
+                    className="font-medium"
+                    fileName={document.originalFileName}
+                  />
+                  <p className="m-0 text-xs">
+                    {document.format} · {(document.sizeBytes / 1024).toFixed(1)}{" "}
+                    KB · {document.status.replaceAll("_", " ").toLowerCase()} ·{" "}
+                    {document.proposalCount} proposals
+                  </p>
+                  {document.interpretationStatus === "INCOMPLETE" && (
+                    <p className="mt-2 mb-0 text-xs text-foreground-muted">
+                      Machine-readable text was extracted, but RoleProwl could
+                      not reliably identify much structured résumé information.
+                      Review any proposals or try a DOCX or text-selectable PDF
+                      export.
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={() => remove(document)}
+                  disabled={busy}
+                  aria-label={`Delete ${document.originalFileName}`}
+                >
+                  <Trash2 aria-hidden="true" size={17} /> Delete
+                </button>
+                {blocker ? (
+                  <DocumentDeletionBlockerNotice
+                    applications={blocker.applications}
+                    code={blocker.code}
+                    fileName={document.originalFileName}
+                  />
+                ) : null}
+              </article>
+            );
+          })
         )}
       </section>
     </div>

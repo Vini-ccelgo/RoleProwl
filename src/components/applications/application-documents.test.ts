@@ -48,4 +48,26 @@ describe("application documents", () => {
     expect(markup).not.toContain("Use for this application");
     expect(markup).not.toContain("Other available résumés");
   });
+
+  it("provides touch inspection for similar long selected and alternative filenames", () => {
+    const selected = "candidate_resume_security_engineer_final_1.pdf";
+    const alternative = "candidate_resume_security_engineer_final_2.pdf";
+    const markup = renderToStaticMarkup(
+      createElement(ApplicationDocuments, {
+        applicationId: "application-1",
+        mutable: true,
+        selectedResume: { ...selectedResume, fileName: selected },
+        alternatives: [{ id: "document-b", originalFileName: alternative }],
+        selectResumeAction: vi.fn(),
+      }),
+    );
+
+    expect(markup).toContain(selected);
+    expect(markup).toContain(alternative);
+    expect(markup.match(/filename-inspector/gu)?.length).toBeGreaterThanOrEqual(
+      2,
+    );
+    expect(markup).toContain("Show full filename");
+    expect(markup).not.toContain("title=");
+  });
 });

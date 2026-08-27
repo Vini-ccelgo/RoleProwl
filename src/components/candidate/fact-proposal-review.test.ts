@@ -92,4 +92,17 @@ describe("fact proposal review component", () => {
     expect(markup).toContain("remaining_resume.pdf");
     expect(markup).not.toContain("roleprowl_synthetic_resume_maya_calder.pdf");
   });
+
+  it("wraps a long unbroken source filename without losing its full value", () => {
+    const fileName =
+      "averyveryveryveryveryveryverylongunbrokenresumefilename.pdf";
+    const markup = renderToStaticMarkup(
+      createElement(FactProposalReview, {
+        proposals: [{ ...proposal, sourceFileName: fileName }],
+      }),
+    );
+
+    expect(markup).toContain(fileName);
+    expect(markup.match(/safe-filename/gu)?.length).toBeGreaterThanOrEqual(2);
+  });
 });

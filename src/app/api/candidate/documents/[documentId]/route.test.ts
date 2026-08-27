@@ -30,7 +30,11 @@ vi.mock(
   },
 );
 
-import { AcceptedFactsDeleteConfirmationRequiredError } from "@/integrations/candidate/prisma-candidate-document-deletion";
+import {
+  AcceptedFactsDeleteConfirmationRequiredError,
+  CandidateDocumentApplicationReferenceError,
+  PENDING_APPLICATION_REFERENCES,
+} from "@/integrations/candidate/prisma-candidate-document-deletion";
 import { DELETE } from "./route";
 
 function request(body?: unknown) {
@@ -77,5 +81,40 @@ describe("candidate document DELETE protocol", () => {
       documentId: "document-1",
       userId: "user-1",
     });
+  });
+
+  it("returns only safe owner-authorized descriptors for pending blockers", async () => {
+    deleteDocument.mockRejectedValueOnce(
+      new CandidateDocumentApplicationReferenceError(
+        PENDING_APPLICATION_REFERENCES,
+        [
+          {
+            applicationId: "application-1",
+            company: "Northstar Labs",
+            jobTitle: "Security Engineer",
+          },
+        ],
+      ),
+    );
+    const response = await DELETE(request(), {
+      params: Promise.resolve({ documentId: "document-1" }),
+    });
+    expect(response.status).toBe(409);
+    const payload = await response.json();
+    expect(payload).toEqual({
+      applications: [
+        {
+          applicationId: "application-1",
+          company: "Northstar Labs",
+          jobTitle: "Security Engineer",
+        },
+      ],
+      code: "PENDING_APPLICATION_REFERENCES",
+      error:
+        "Select another résumé in your pending applications before deleting this one.",
+    });
+    expect(JSON.stringify(payload)).not.toContain("storageKey");
+    expect(JSON.stringify(payload)).not.toContain("candidateId");
+    expect(JSON.stringify(payload)).not.toContain("documentsSnapshot");
   });
 });

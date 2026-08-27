@@ -36,7 +36,9 @@ export function ResumeVersionSummary({
         {meaningful(resumeVersion.renderedFileName) && (
           <div>
             <dt className="font-semibold">File</dt>
-            <dd className="m-0">{resumeVersion.renderedFileName}</dd>
+            <dd className="safe-filename m-0 min-w-0">
+              {resumeVersion.renderedFileName}
+            </dd>
           </div>
         )}
         {meaningful(resumeVersion.templateVersion) && (

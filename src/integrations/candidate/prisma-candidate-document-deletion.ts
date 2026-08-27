@@ -8,6 +8,15 @@ import { databaseClient } from "@/lib/db/client";
 
 export const ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED =
   "ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED";
+export const PENDING_APPLICATION_REFERENCES = "PENDING_APPLICATION_REFERENCES";
+export const SUBMITTED_APPLICATION_REFERENCES =
+  "SUBMITTED_APPLICATION_REFERENCES";
+
+export interface CandidateDocumentBlockingApplication {
+  readonly applicationId: string;
+  readonly company: string;
+  readonly jobTitle: string;
+}
 
 export class AcceptedFactsDeleteConfirmationRequiredError extends ConflictError {
   readonly confirmationCode = ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED;
@@ -15,6 +24,21 @@ export class AcceptedFactsDeleteConfirmationRequiredError extends ConflictError 
   constructor(readonly factCount: number) {
     super(
       "Deleting this résumé will also remove verified facts sourced from it. This may affect application readiness.",
+    );
+  }
+}
+
+export class CandidateDocumentApplicationReferenceError extends ConflictError {
+  constructor(
+    readonly referenceCode:
+      | typeof PENDING_APPLICATION_REFERENCES
+      | typeof SUBMITTED_APPLICATION_REFERENCES,
+    readonly applications: readonly CandidateDocumentBlockingApplication[],
+  ) {
+    super(
+      referenceCode === SUBMITTED_APPLICATION_REFERENCES
+        ? "This résumé is retained because it is used by a submitted application."
+        : "Select another résumé in your pending applications before deleting this one.",
     );
   }
 }
@@ -67,6 +91,7 @@ export class PrismaCandidateDocumentDeletion {
             submittedAt: true,
             documentsSnapshot: true,
             submissionPayloadSnapshot: true,
+            job: { select: { company: true, title: true } },
           },
         }),
       ]);
@@ -81,13 +106,27 @@ export class PrismaCandidateDocumentDeletion {
             document.storageKey,
           ),
       );
-      if (references.some((application) => application.submittedAt))
-        throw new ConflictError(
-          "This résumé is retained because it is used by a submitted application.",
+      const safeReferences = references.map((application) => ({
+        applicationId: application.id,
+        company: application.job.company,
+        jobTitle: application.job.title,
+      }));
+      const submittedReferences = references
+        .filter((application) => application.submittedAt)
+        .map((application) => ({
+          applicationId: application.id,
+          company: application.job.company,
+          jobTitle: application.job.title,
+        }));
+      if (submittedReferences.length)
+        throw new CandidateDocumentApplicationReferenceError(
+          SUBMITTED_APPLICATION_REFERENCES,
+          submittedReferences,
         );
-      if (references.length)
-        throw new ConflictError(
-          "Select another résumé in your pending applications before deleting this one.",
+      if (safeReferences.length)
+        throw new CandidateDocumentApplicationReferenceError(
+          PENDING_APPLICATION_REFERENCES,
+          safeReferences,
         );
       if (activeFacts > 0 && !input.confirmAcceptedFacts)
         throw new AcceptedFactsDeleteConfirmationRequiredError(activeFacts);

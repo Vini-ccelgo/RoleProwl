@@ -73,6 +73,7 @@ describe("Prisma candidate document deletion", () => {
       {
         id: "application-1",
         submittedAt: null,
+        job: { company: "Northstar Labs", title: "Security Engineer" },
         documentsSnapshot: [
           { kind: "RESUME", storageKey: "candidate-documents/private" },
         ],
@@ -85,7 +86,24 @@ describe("Prisma candidate document deletion", () => {
         documentId: "document-1",
         userId: "user-1",
       }),
-    ).rejects.toThrow("Select another résumé");
+    ).rejects.toMatchObject({
+      referenceCode: "PENDING_APPLICATION_REFERENCES",
+      applications: [
+        {
+          applicationId: "application-1",
+          company: "Northstar Labs",
+          jobTitle: "Security Engineer",
+        },
+      ],
+    });
+    expect(mocks.applicationsFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: "user-1" },
+        select: expect.objectContaining({
+          job: { select: { company: true, title: true } },
+        }),
+      }),
+    );
     expect(storage.delete).not.toHaveBeenCalled();
   });
 
@@ -130,6 +148,7 @@ describe("Prisma candidate document deletion", () => {
       {
         id: "application-1",
         submittedAt: new Date(),
+        job: { company: "Atlas Systems", title: "Platform Engineer" },
         documentsSnapshot: [],
         submissionPayloadSnapshot: {
           packet: {
@@ -146,7 +165,16 @@ describe("Prisma candidate document deletion", () => {
         documentId: "document-1",
         userId: "user-1",
       }),
-    ).rejects.toThrow("submitted application");
+    ).rejects.toMatchObject({
+      referenceCode: "SUBMITTED_APPLICATION_REFERENCES",
+      applications: [
+        {
+          applicationId: "application-1",
+          company: "Atlas Systems",
+          jobTitle: "Platform Engineer",
+        },
+      ],
+    });
     expect(mocks.removedFactsDeleteMany).not.toHaveBeenCalled();
     expect(mocks.documentDeleteMany).not.toHaveBeenCalled();
   });
@@ -173,5 +201,6 @@ describe("Prisma candidate document deletion", () => {
         userId: "user-1",
       }),
     ).rejects.toThrow("not found");
+    expect(mocks.applicationsFindMany).not.toHaveBeenCalled();
   });
 });
