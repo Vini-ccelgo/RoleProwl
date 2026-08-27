@@ -6,12 +6,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 
-import {
-  confirmResumeDeletion,
-  confirmResumeFactDeletion,
-  RESUME_FACT_DELETION_WARNING,
-  ResumeImporter,
-} from "./resume-importer";
+import { ResumeImporter } from "./resume-importer";
 
 describe("résumé file picker", () => {
   it("uses one file input with an explicit accessible trigger and status", () => {
@@ -69,43 +64,12 @@ describe("résumé file picker", () => {
     );
 
     expect(markup).toContain("document-management-row");
-    expect(markup).toContain("document-management-details");
+    expect(markup).toContain("document-management-content");
+    expect(markup).toContain("document-management-heading");
     expect(markup).toContain("filename-inspector");
     expect(markup).toContain("Show full filename");
     expect(markup).toContain(fileName);
     expect(markup).toContain(`aria-label="Delete ${fileName}"`);
     expect(markup).not.toContain('class="truncate');
-  });
-});
-
-describe("résumé accepted-fact deletion confirmation", () => {
-  it("allows the candidate to cancel without confirming destructive deletion", () => {
-    const confirmOperator = vi.fn(() => false);
-    expect(
-      confirmResumeFactDeletion("exact_resume.pdf", 3, confirmOperator),
-    ).toBe(false);
-    expect(confirmOperator).toHaveBeenCalledWith(
-      expect.stringContaining(RESUME_FACT_DELETION_WARNING),
-    );
-    expect(confirmOperator).toHaveBeenCalledWith(
-      expect.stringContaining("3 accepted facts"),
-    );
-    expect(confirmOperator).toHaveBeenCalledWith(
-      expect.stringContaining("Résumé: exact_resume.pdf"),
-    );
-  });
-
-  it("requires an explicit affirmative confirmation", () => {
-    expect(confirmResumeFactDeletion("resume.pdf", 1, () => true)).toBe(true);
-  });
-
-  it("identifies the exact document in the initial destructive confirmation", () => {
-    const confirmOperator = vi.fn(() => true);
-    expect(
-      confirmResumeDeletion("similar_resume_final_2.pdf", confirmOperator),
-    ).toBe(true);
-    expect(confirmOperator).toHaveBeenCalledWith(
-      expect.stringContaining("Résumé: similar_resume_final_2.pdf"),
-    );
   });
 });

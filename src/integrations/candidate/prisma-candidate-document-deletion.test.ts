@@ -1,32 +1,88 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  documentFindFirst: vi.fn(),
-  factCount: vi.fn(),
+  applicationDeleteMany: vi.fn(async (input) => ({
+    count: input.where.id.in.length,
+  })),
   applicationsFindMany: vi.fn(),
-  removedFactsDeleteMany: vi.fn(async () => ({ count: 0 })),
   documentDeleteMany: vi.fn(async () => ({ count: 1 })),
-  readyFindMany: vi.fn(async () => []),
+  documentFindFirst: vi.fn(),
   eventCreate: vi.fn(),
+  factCount: vi.fn(),
+  factsDeleteMany: vi.fn(async () => ({ count: 0 })),
+  notificationDeleteMany: vi.fn(async () => ({ count: 0 })),
+  readyFindMany: vi.fn(async () => []),
+  transaction: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/db/client", () => ({
   databaseClient: vi.fn(() => ({
-    candidateDocument: { findFirst: mocks.documentFindFirst },
-    candidateFact: { count: mocks.factCount },
-    application: { findMany: mocks.applicationsFindMany },
-    $transaction: vi.fn(async (callback) =>
+    $transaction: mocks.transaction,
+  })),
+}));
+
+import { PrismaCandidateDocumentDeletion } from "./prisma-candidate-document-deletion";
+
+function application(
+  id: string,
+  overrides: Partial<{
+    documentsSnapshot: unknown;
+    externalConfirmedAt: Date | null;
+    externalSubmissionId: string | null;
+    state:
+      | "PREPARING"
+      | "READY"
+      | "SUBMITTING"
+      | "SUBMITTED"
+      | "RESPONSE"
+      | "CLOSED"
+      | "FAILED";
+    submissionPayloadSnapshot: unknown;
+    submittedAt: Date | null;
+  }> = {},
+) {
+  return {
+    id,
+    state: "PREPARING" as const,
+    submittedAt: null,
+    externalConfirmedAt: null,
+    externalSubmissionId: null,
+    job: { company: `Company ${id}`, title: `Role ${id}` },
+    documentsSnapshot: [
+      { kind: "RESUME", storageKey: "candidate-documents/private" },
+    ],
+    submissionPayloadSnapshot: {},
+    ...overrides,
+  };
+}
+
+function storage(deleteObject = vi.fn(async () => undefined)) {
+  return { delete: deleteObject };
+}
+
+describe("Prisma candidate document deletion", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.documentFindFirst.mockResolvedValue({
+      id: "document-1",
+      originalFileName: "exact_resume.pdf",
+      storageKey: "candidate-documents/private",
+    });
+    mocks.factCount.mockResolvedValue(0);
+    mocks.applicationsFindMany.mockResolvedValue([]);
+    mocks.transaction.mockImplementation(async (callback) =>
       callback({
         candidateFact: {
           count: mocks.factCount,
-          deleteMany: mocks.removedFactsDeleteMany,
+          deleteMany: mocks.factsDeleteMany,
         },
         candidateDocument: {
           findFirst: mocks.documentFindFirst,
           deleteMany: mocks.documentDeleteMany,
         },
         application: {
+          deleteMany: mocks.applicationDeleteMany,
           findMany: vi.fn(async (input) =>
             input?.where?.state === "READY"
               ? mocks.readyFindMany()
@@ -35,204 +91,250 @@ vi.mock("@/lib/db/client", () => ({
           updateMany: vi.fn(),
         },
         applicationEvent: { create: mocks.eventCreate },
+        notification: { deleteMany: mocks.notificationDeleteMany },
       }),
-    ),
-  })),
-}));
-
-import { PrismaCandidateDocumentDeletion } from "./prisma-candidate-document-deletion";
-
-describe("Prisma candidate document deletion", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.documentFindFirst.mockResolvedValue({
-      id: "document-1",
-      storageKey: "candidate-documents/private",
-    });
-    mocks.factCount.mockResolvedValue(0);
-    mocks.applicationsFindMany.mockResolvedValue([]);
+    );
   });
 
-  it("deletes an unused owner document and its private object", async () => {
-    const storage = { delete: vi.fn(async () => undefined) };
-    await new PrismaCandidateDocumentDeletion(storage as never).delete({
+  it("previews an unused owner document without mutating it, then deletes on confirmation", async () => {
+    const objectStorage = storage();
+    const deletion = new PrismaCandidateDocumentDeletion(
+      objectStorage as never,
+    );
+
+    await expect(
+      deletion.delete({ documentId: "document-1", userId: "user-1" }),
+    ).rejects.toMatchObject({
+      confirmationCode: "DOCUMENT_DELETION_CONFIRMATION_REQUIRED",
+      consequences: {
+        acceptedFactCount: 0,
+        applicationCount: 0,
+        documentId: "document-1",
+        fileName: "exact_resume.pdf",
+      },
+    });
+    expect(mocks.documentDeleteMany).not.toHaveBeenCalled();
+    expect(objectStorage.delete).not.toHaveBeenCalled();
+
+    await deletion.delete({
+      confirmDeletion: true,
       documentId: "document-1",
       userId: "user-1",
     });
-    expect(mocks.documentFindFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "document-1", userId: "user-1" },
-      }),
-    );
-    expect(mocks.documentDeleteMany).toHaveBeenCalled();
-    expect(storage.delete).toHaveBeenCalledWith("candidate-documents/private");
-  });
-
-  it("blocks a résumé referenced by a pending application", async () => {
-    mocks.applicationsFindMany.mockResolvedValue([
-      {
-        id: "application-1",
-        submittedAt: null,
-        job: { company: "Northstar Labs", title: "Security Engineer" },
-        documentsSnapshot: [
-          { kind: "RESUME", storageKey: "candidate-documents/private" },
-        ],
-        submissionPayloadSnapshot: {},
-      },
-    ]);
-    const storage = { delete: vi.fn() };
-    await expect(
-      new PrismaCandidateDocumentDeletion(storage as never).delete({
-        documentId: "document-1",
-        userId: "user-1",
-      }),
-    ).rejects.toMatchObject({
-      referenceCode: "PENDING_APPLICATION_REFERENCES",
-      applications: [
-        {
-          applicationId: "application-1",
-          company: "Northstar Labs",
-          jobTitle: "Security Engineer",
-        },
-      ],
+    expect(mocks.documentDeleteMany).toHaveBeenCalledWith({
+      where: { id: "document-1", userId: "user-1" },
     });
-    expect(mocks.applicationsFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { userId: "user-1" },
-        select: expect.objectContaining({
-          job: { select: { company: true, title: true } },
-        }),
-      }),
+    expect(objectStorage.delete).toHaveBeenCalledWith(
+      "candidate-documents/private",
     );
-    expect(storage.delete).not.toHaveBeenCalled();
+    expect(mocks.transaction).toHaveBeenLastCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
   });
 
-  it("returns every owner-scoped pending application that must switch résumés", async () => {
+  it("previews one referenced pre-submission application and cascades it on confirmation", async () => {
     mocks.applicationsFindMany.mockResolvedValue([
-      {
-        id: "application-1",
-        submittedAt: null,
-        job: { company: "Northstar Labs", title: "Security Engineer" },
-        documentsSnapshot: [
-          { kind: "RESUME", storageKey: "candidate-documents/private" },
-        ],
-        submissionPayloadSnapshot: {},
+      application("application-1"),
+    ]);
+    const deletion = new PrismaCandidateDocumentDeletion(storage() as never);
+
+    await expect(
+      deletion.delete({ documentId: "document-1", userId: "user-1" }),
+    ).rejects.toMatchObject({
+      consequences: { applicationCount: 1 },
+    });
+    expect(mocks.applicationDeleteMany).not.toHaveBeenCalled();
+
+    await deletion.delete({
+      confirmDeletion: true,
+      documentId: "document-1",
+      userId: "user-1",
+    });
+    expect(mocks.applicationDeleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ["application-1"] }, userId: "user-1" },
+    });
+    expect(mocks.notificationDeleteMany).toHaveBeenCalledWith({
+      where: {
+        entityId: { in: ["application-1"] },
+        entityType: "application",
+        userId: "user-1",
       },
-      {
-        id: "application-2",
-        submittedAt: null,
-        job: { company: "Atlas Systems", title: "Platform Engineer" },
+    });
+  });
+
+  it("deletes every referenced pre-submission application and preserves unrelated applications", async () => {
+    mocks.applicationsFindMany.mockResolvedValue([
+      application("application-1"),
+      application("application-2", {
         documentsSnapshot: [],
         submissionPayloadSnapshot: {
-          packet: { resumeStorageKey: "candidate-documents/private" },
+          resumeStorageKey: "candidate-documents/private",
         },
-      },
+      }),
+      application("unrelated", {
+        documentsSnapshot: [
+          { kind: "RESUME", storageKey: "candidate-documents/other" },
+        ],
+      }),
     ]);
 
-    await expect(
-      new PrismaCandidateDocumentDeletion({ delete: vi.fn() } as never).delete({
-        documentId: "document-1",
-        userId: "user-1",
-      }),
-    ).rejects.toMatchObject({
-      referenceCode: "PENDING_APPLICATION_REFERENCES",
-      applications: [
-        { applicationId: "application-1" },
-        { applicationId: "application-2" },
-      ],
-    });
-  });
-
-  it("requires explicit confirmation before deleting accepted résumé facts", async () => {
-    mocks.factCount.mockResolvedValue(2);
-    const storage = { delete: vi.fn() };
-    await expect(
-      new PrismaCandidateDocumentDeletion(storage as never).delete({
-        documentId: "document-1",
-        userId: "user-1",
-      }),
-    ).rejects.toMatchObject({
-      confirmationCode: "ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED",
-      factCount: 2,
-    });
-    expect(storage.delete).not.toHaveBeenCalled();
-    expect(mocks.documentDeleteMany).not.toHaveBeenCalled();
-  });
-
-  it("deletes ACTIVE and REMOVED sourced facts after explicit confirmation", async () => {
-    mocks.factCount.mockResolvedValue(2);
-    const storage = { delete: vi.fn(async () => undefined) };
-    await new PrismaCandidateDocumentDeletion(storage as never).delete({
-      confirmAcceptedFacts: true,
+    const deleteObject = vi.fn(async () => undefined);
+    await new PrismaCandidateDocumentDeletion(
+      storage(deleteObject) as never,
+    ).delete({
+      confirmDeletion: true,
       documentId: "document-1",
       userId: "user-1",
     });
-    expect(mocks.removedFactsDeleteMany).toHaveBeenCalledWith({
+    expect(mocks.applicationDeleteMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: ["application-1", "application-2"] },
+        userId: "user-1",
+      },
+    });
+    expect(
+      mocks.notificationDeleteMany.mock.invocationCallOrder[0],
+    ).toBeLessThan(mocks.applicationDeleteMany.mock.invocationCallOrder[0]);
+    expect(
+      mocks.applicationDeleteMany.mock.invocationCallOrder[0],
+    ).toBeLessThan(mocks.factsDeleteMany.mock.invocationCallOrder[0]);
+    expect(mocks.factsDeleteMany.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.documentDeleteMany.mock.invocationCallOrder[0],
+    );
+    expect(mocks.documentDeleteMany.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.readyFindMany.mock.invocationCallOrder[0],
+    );
+    expect(mocks.readyFindMany.mock.invocationCallOrder[0]).toBeLessThan(
+      deleteObject.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("includes accepted facts in the same preview and deletes only document-sourced facts", async () => {
+    mocks.factCount.mockResolvedValue(7);
+    const deletion = new PrismaCandidateDocumentDeletion(storage() as never);
+
+    await expect(
+      deletion.delete({ documentId: "document-1", userId: "user-1" }),
+    ).rejects.toMatchObject({
+      consequences: { acceptedFactCount: 7 },
+    });
+    expect(mocks.factsDeleteMany).not.toHaveBeenCalled();
+
+    await deletion.delete({
+      confirmDeletion: true,
+      documentId: "document-1",
+      userId: "user-1",
+    });
+    expect(mocks.factsDeleteMany).toHaveBeenCalledWith({
       where: {
         userId: "user-1",
         status: { in: ["ACTIVE", "REMOVED"] },
         sourceProposal: { documentId: "document-1" },
       },
     });
-    expect(mocks.documentDeleteMany).toHaveBeenCalled();
-    expect(storage.delete).toHaveBeenCalledWith("candidate-documents/private");
   });
 
-  it("preserves a résumé referenced by a submitted historical packet", async () => {
-    mocks.factCount.mockResolvedValue(2);
-    mocks.applicationsFindMany.mockResolvedValue([
-      {
-        id: "application-1",
-        submittedAt: new Date(),
-        job: { company: "Atlas Systems", title: "Platform Engineer" },
-        documentsSnapshot: [],
-        submissionPayloadSnapshot: {
-          packet: {
-            documents: [
-              { storageKey: "candidate-documents/private", kind: "RESUME" },
-            ],
-          },
-        },
-      },
-    ]);
+  it("uses fresh dependencies when confirmation follows the preview", async () => {
+    mocks.applicationsFindMany
+      .mockResolvedValueOnce([application("application-1")])
+      .mockResolvedValueOnce([
+        application("application-1"),
+        application("application-2"),
+      ]);
+    const deletion = new PrismaCandidateDocumentDeletion(storage() as never);
+
     await expect(
-      new PrismaCandidateDocumentDeletion({ delete: vi.fn() } as never).delete({
-        confirmAcceptedFacts: true,
+      deletion.delete({ documentId: "document-1", userId: "user-1" }),
+    ).rejects.toMatchObject({ consequences: { applicationCount: 1 } });
+    await deletion.delete({
+      confirmDeletion: true,
+      documentId: "document-1",
+      userId: "user-1",
+    });
+    expect(mocks.applicationDeleteMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: ["application-1", "application-2"] },
+        userId: "user-1",
+      },
+    });
+  });
+
+  it("blocks confirmation when a fresh submitted dependency appears after preview", async () => {
+    mocks.applicationsFindMany
+      .mockResolvedValueOnce([application("application-1")])
+      .mockResolvedValueOnce([
+        application("application-1"),
+        application("new-history", { state: "SUBMITTED" }),
+      ]);
+    const objectStorage = storage();
+    const deletion = new PrismaCandidateDocumentDeletion(
+      objectStorage as never,
+    );
+
+    await expect(
+      deletion.delete({ documentId: "document-1", userId: "user-1" }),
+    ).rejects.toMatchObject({ consequences: { applicationCount: 1 } });
+    await expect(
+      deletion.delete({
+        confirmDeletion: true,
         documentId: "document-1",
         userId: "user-1",
       }),
     ).rejects.toMatchObject({
       referenceCode: "SUBMITTED_APPLICATION_REFERENCES",
-      applications: [
-        {
-          applicationId: "application-1",
-          company: "Atlas Systems",
-          jobTitle: "Platform Engineer",
-        },
-      ],
+      applications: [{ applicationId: "new-history" }],
     });
-    expect(mocks.removedFactsDeleteMany).not.toHaveBeenCalled();
-    expect(mocks.documentDeleteMany).not.toHaveBeenCalled();
+    expect(mocks.applicationDeleteMany).not.toHaveBeenCalled();
+    expect(objectStorage.delete).not.toHaveBeenCalled();
   });
 
-  it("does not report success when private storage deletion fails", async () => {
-    const storage = {
-      delete: vi.fn(async () => {
-        throw new Error("provider unavailable");
-      }),
-    };
+  it.each([
+    application("submitted", { state: "SUBMITTED" }),
+    application("response", { state: "RESPONSE" }),
+    application("closed-history", {
+      state: "CLOSED",
+      submittedAt: new Date("2026-08-27"),
+    }),
+    application("submitting", { state: "SUBMITTING" }),
+  ])("hard-blocks protected application $id", async (protectedApplication) => {
+    mocks.applicationsFindMany.mockResolvedValue([protectedApplication]);
+    const objectStorage = storage();
+
     await expect(
-      new PrismaCandidateDocumentDeletion(storage as never).delete({
+      new PrismaCandidateDocumentDeletion(objectStorage as never).delete({
+        confirmDeletion: true,
+        documentId: "document-1",
+        userId: "user-1",
+      }),
+    ).rejects.toMatchObject({
+      referenceCode: "SUBMITTED_APPLICATION_REFERENCES",
+      applications: [{ applicationId: protectedApplication.id }],
+    });
+    expect(mocks.applicationDeleteMany).not.toHaveBeenCalled();
+    expect(mocks.factsDeleteMany).not.toHaveBeenCalled();
+    expect(objectStorage.delete).not.toHaveBeenCalled();
+  });
+
+  it("does not report complete deletion when private storage fails", async () => {
+    const deleteObject = vi.fn(async () => {
+      throw new Error("provider unavailable");
+    });
+    await expect(
+      new PrismaCandidateDocumentDeletion(
+        storage(deleteObject) as never,
+      ).delete({
+        confirmDeletion: true,
         documentId: "document-1",
         userId: "user-1",
       }),
     ).rejects.toThrow("provider unavailable");
   });
 
-  it("conceals a foreign document", async () => {
+  it("conceals a foreign document before dependency inspection", async () => {
     mocks.documentFindFirst.mockResolvedValue(null);
     await expect(
-      new PrismaCandidateDocumentDeletion({ delete: vi.fn() } as never).delete({
+      new PrismaCandidateDocumentDeletion(storage() as never).delete({
+        confirmDeletion: true,
         documentId: "foreign",
         userId: "user-1",
       }),

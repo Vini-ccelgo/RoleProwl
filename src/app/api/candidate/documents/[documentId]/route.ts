@@ -8,36 +8,47 @@ import {
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { assertMutationRequestIsSameOrigin } from "@/lib/security/request-security";
-import {
-  AcceptedFactsDeleteConfirmationRequiredError,
-  PrismaCandidateDocumentDeletion,
-} from "@/integrations/candidate/prisma-candidate-document-deletion";
+import { PrismaCandidateDocumentDeletion } from "@/integrations/candidate/prisma-candidate-document-deletion";
 import {
   interpretDocumentDeletionFailure,
   type DocumentDeletionResult,
 } from "@/features/candidate/document-deletion-protocol";
 
-function applicationReferenceFailure(
+function structuredDeletionFailure(
   error: unknown,
-): Extract<DocumentDeletionResult, { kind: "APPLICATION_BLOCKER" }> | null {
+): Exclude<DocumentDeletionResult, { kind: "DELETED" | "FAILED" }> | null {
   if (!error || typeof error !== "object") return null;
   const candidate = error as {
     applications?: unknown;
+    confirmationCode?: unknown;
+    consequences?: unknown;
     message?: unknown;
     protocolKind?: unknown;
     referenceCode?: unknown;
   };
-  if (
-    candidate.protocolKind !== "CANDIDATE_DOCUMENT_APPLICATION_REFERENCE" ||
-    typeof candidate.message !== "string"
-  )
-    return null;
-  const parsed = interpretDocumentDeletionFailure({
-    applications: candidate.applications,
-    code: candidate.referenceCode,
-    error: candidate.message,
-  });
-  return parsed.kind === "APPLICATION_BLOCKER" ? parsed : null;
+  if (typeof candidate.message !== "string") return null;
+  const consequenceRecord =
+    candidate.consequences &&
+    typeof candidate.consequences === "object" &&
+    !Array.isArray(candidate.consequences)
+      ? (candidate.consequences as Record<string, unknown>)
+      : {};
+  const parsed = interpretDocumentDeletionFailure(
+    candidate.protocolKind === "CANDIDATE_DOCUMENT_DELETION_CONFIRMATION"
+      ? {
+          ...consequenceRecord,
+          code: candidate.confirmationCode,
+          error: candidate.message,
+        }
+      : candidate.protocolKind === "CANDIDATE_DOCUMENT_APPLICATION_REFERENCE"
+        ? {
+            applications: candidate.applications,
+            code: candidate.referenceCode,
+            error: candidate.message,
+          }
+        : null,
+  );
+  return parsed.kind === "FAILED" ? null : parsed;
 }
 
 export async function DELETE(
@@ -48,44 +59,45 @@ export async function DELETE(
     const actor = await requireAuthenticatedActor(currentAuthProvider());
     assertMutationRequestIsSameOrigin(request);
     const { documentId } = await context.params;
-    let confirmAcceptedFacts = false;
+    let confirmDeletion = false;
     try {
-      const body = (await request.json()) as { confirmAcceptedFacts?: unknown };
-      confirmAcceptedFacts = body.confirmAcceptedFacts === true;
+      const body = (await request.json()) as { confirmDeletion?: unknown };
+      confirmDeletion = body.confirmDeletion === true;
     } catch {
       // The initial DELETE request intentionally has no body.
     }
     await new PrismaCandidateDocumentDeletion().delete({
-      confirmAcceptedFacts,
+      confirmDeletion,
       documentId,
       userId: actor.id,
     });
     return new NextResponse(null, { status: 204 });
   } catch (error) {
-    const applicationReference = applicationReferenceFailure(error);
-    if (applicationReference)
+    const structuredFailure = structuredDeletionFailure(error);
+    if (structuredFailure) {
+      if (structuredFailure.kind === "CONFIRMATION_REQUIRED")
+        return NextResponse.json(
+          {
+            error: structuredFailure.message,
+            code: "DOCUMENT_DELETION_CONFIRMATION_REQUIRED",
+            ...structuredFailure.consequences,
+          },
+          { status: 409 },
+        );
       return NextResponse.json(
         {
-          error: applicationReference.message,
-          code: applicationReference.code,
-          applications: applicationReference.applications,
+          error: structuredFailure.message,
+          code: "SUBMITTED_APPLICATION_REFERENCES",
+          applications: structuredFailure.applications,
         },
         { status: 409 },
       );
+    }
     if (error instanceof AuthorizationError) {
       return NextResponse.json({ error: error.message }, { status: 401 });
     }
     if (error instanceof NotFoundError)
       return NextResponse.json({ error: error.message }, { status: 404 });
-    if (error instanceof AcceptedFactsDeleteConfirmationRequiredError)
-      return NextResponse.json(
-        {
-          error: error.message,
-          code: error.confirmationCode,
-          factCount: error.factCount,
-        },
-        { status: 409 },
-      );
     if (error instanceof ConflictError)
       return NextResponse.json(
         { error: error.message, code: error.code },

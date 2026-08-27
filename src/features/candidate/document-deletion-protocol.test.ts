@@ -5,22 +5,40 @@ import {
 } from "./document-deletion-protocol";
 
 describe("candidate document deletion client protocol", () => {
-  it("retains every safe pending blocker for actionable client rendering", () => {
+  it("preserves the exact safe consequence preview", () => {
     expect(
       interpretDocumentDeletionFailure({
-        code: "PENDING_APPLICATION_REFERENCES",
-        error: "Switch the pending applications first.",
+        acceptedFactCount: 7,
+        applicationCount: 2,
+        code: "DOCUMENT_DELETION_CONFIRMATION_REQUIRED",
+        documentId: "document-1",
+        error: "Confirm deletion.",
+        fileName: "exact_resume.pdf",
+        storageKey: "not-forwarded",
+      }),
+    ).toEqual({
+      consequences: {
+        acceptedFactCount: 7,
+        applicationCount: 2,
+        documentId: "document-1",
+        fileName: "exact_resume.pdf",
+      },
+      kind: "CONFIRMATION_REQUIRED",
+      message: "Confirm deletion.",
+    });
+  });
+
+  it("retains only safe submitted blockers for actionable rendering", () => {
+    expect(
+      interpretDocumentDeletionFailure({
+        code: "SUBMITTED_APPLICATION_REFERENCES",
+        error: "Submitted history prevents deletion.",
         applications: [
           {
             applicationId: "application-1",
             company: "Northstar Labs",
             jobTitle: "Security Engineer",
             storageKey: "not-forwarded",
-          },
-          {
-            applicationId: "application-2",
-            company: "Atlas Systems",
-            jobTitle: "Platform Engineer",
           },
         ],
       }),
@@ -31,46 +49,58 @@ describe("candidate document deletion client protocol", () => {
           company: "Northstar Labs",
           jobTitle: "Security Engineer",
         },
-        {
-          applicationId: "application-2",
-          company: "Atlas Systems",
-          jobTitle: "Platform Engineer",
-        },
       ],
-      code: "PENDING_APPLICATION_REFERENCES",
-      kind: "APPLICATION_BLOCKER",
-      message: "Switch the pending applications first.",
+      kind: "SUBMITTED_BLOCKER",
+      message: "Submitted history prevents deletion.",
     });
   });
 
-  it("does not interpret malformed or empty application data as actionable", () => {
+  it("fails closed for malformed consequence or blocker metadata", () => {
     expect(
       interpretDocumentDeletionFailure({
-        code: "PENDING_APPLICATION_REFERENCES",
+        code: "DOCUMENT_DELETION_CONFIRMATION_REQUIRED",
+        error: "Confirm deletion.",
+        fileName: "resume.pdf",
+      }),
+    ).toEqual({ kind: "FAILED", message: "Confirm deletion." });
+    expect(
+      interpretDocumentDeletionFailure({
+        code: "SUBMITTED_APPLICATION_REFERENCES",
         error: "Deletion remains blocked.",
-        applications: [
-          {
-            applicationId: "foreign-or-malformed",
-            storageKey: "private/storage",
-          },
-        ],
+        applications: [{ applicationId: "private-only" }],
       }),
     ).toEqual({ kind: "FAILED", message: "Deletion remains blocked." });
   });
 
-  it("sends only explicit accepted-fact confirmation and parses a blocker response", async () => {
+  it("sends only the explicit server confirmation flag", async () => {
+    const request = vi.fn(async () => new Response(null, { status: 204 }));
+
+    await expect(
+      requestCandidateDocumentDeletion(
+        { confirmDeletion: true, documentId: "document-1" },
+        request,
+      ),
+    ).resolves.toEqual({ kind: "DELETED" });
+    expect(request).toHaveBeenCalledWith(
+      "/api/candidate/documents/document-1",
+      {
+        body: JSON.stringify({ confirmDeletion: true }),
+        headers: { "Content-Type": "application/json" },
+        method: "DELETE",
+      },
+    );
+  });
+
+  it("does not send client counts on the preview request", async () => {
     const request = vi.fn(async () =>
       Response.json(
         {
-          applications: [
-            {
-              applicationId: "application-1",
-              company: "Northstar Labs",
-              jobTitle: "Security Engineer",
-            },
-          ],
-          code: "PENDING_APPLICATION_REFERENCES",
-          error: "Switch the pending application first.",
+          acceptedFactCount: 0,
+          applicationCount: 0,
+          code: "DOCUMENT_DELETION_CONFIRMATION_REQUIRED",
+          documentId: "document-1",
+          error: "Confirm deletion.",
+          fileName: "resume.pdf",
         },
         { status: 409 },
       ),
@@ -78,34 +108,13 @@ describe("candidate document deletion client protocol", () => {
 
     await expect(
       requestCandidateDocumentDeletion(
-        { confirmAcceptedFacts: true, documentId: "document-1" },
+        { confirmDeletion: false, documentId: "document-1" },
         request,
       ),
-    ).resolves.toMatchObject({
-      code: "PENDING_APPLICATION_REFERENCES",
-      kind: "APPLICATION_BLOCKER",
-    });
+    ).resolves.toMatchObject({ kind: "CONFIRMATION_REQUIRED" });
     expect(request).toHaveBeenCalledWith(
       "/api/candidate/documents/document-1",
-      {
-        body: JSON.stringify({ confirmAcceptedFacts: true }),
-        headers: { "Content-Type": "application/json" },
-        method: "DELETE",
-      },
+      { method: "DELETE" },
     );
-  });
-
-  it("preserves the accepted-fact count for the explicit second confirmation", () => {
-    expect(
-      interpretDocumentDeletionFailure({
-        code: "ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED",
-        error: "Accepted facts will be removed.",
-        factCount: 4,
-      }),
-    ).toEqual({
-      factCount: 4,
-      kind: "ACCEPTED_FACTS_CONFIRMATION",
-      message: "Accepted facts will be removed.",
-    });
   });
 });

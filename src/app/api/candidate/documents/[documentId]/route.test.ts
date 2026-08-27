@@ -31,10 +31,9 @@ vi.mock(
 );
 
 import {
-  AcceptedFactsDeleteConfirmationRequiredError,
   CandidateDocumentApplicationReferenceError,
+  DocumentDeletionConfirmationRequiredError,
 } from "@/integrations/candidate/prisma-candidate-document-deletion";
-import { PENDING_APPLICATION_REFERENCES } from "@/features/candidate/document-deletion-protocol";
 import { DELETE } from "./route";
 
 function request(body?: unknown) {
@@ -48,23 +47,31 @@ function request(body?: unknown) {
   );
 }
 
+const consequences = {
+  acceptedFactCount: 7,
+  applicationCount: 2,
+  documentId: "document-1",
+  fileName: "exact_resume.pdf",
+};
+
 describe("candidate document DELETE protocol", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("returns a structured confirmation requirement without confirming deletion", async () => {
+  it("returns a safe consequence preview without confirming deletion", async () => {
     deleteDocument.mockRejectedValueOnce(
-      new AcceptedFactsDeleteConfirmationRequiredError(3),
+      new DocumentDeletionConfirmationRequiredError(consequences),
     );
     const response = await DELETE(request(), {
       params: Promise.resolve({ documentId: "document-1" }),
     });
     expect(response.status).toBe(409);
-    await expect(response.json()).resolves.toMatchObject({
-      code: "ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED",
-      factCount: 3,
+    await expect(response.json()).resolves.toEqual({
+      ...consequences,
+      code: "DOCUMENT_DELETION_CONFIRMATION_REQUIRED",
+      error: "Confirm deletion of this résumé and its dependent data.",
     });
     expect(deleteDocument).toHaveBeenCalledWith({
-      confirmAcceptedFacts: false,
+      confirmDeletion: false,
       documentId: "document-1",
       userId: "user-1",
     });
@@ -72,29 +79,34 @@ describe("candidate document DELETE protocol", () => {
 
   it("passes only an explicit boolean confirmation to the deletion service", async () => {
     deleteDocument.mockResolvedValueOnce(undefined);
-    const response = await DELETE(request({ confirmAcceptedFacts: true }), {
-      params: Promise.resolve({ documentId: "document-1" }),
-    });
+    const response = await DELETE(
+      request({
+        acceptedFactCount: 0,
+        applicationCount: 0,
+        confirmDeletion: true,
+        userId: "attacker-supplied",
+      }),
+      {
+        params: Promise.resolve({ documentId: "document-1" }),
+      },
+    );
     expect(response.status).toBe(204);
     expect(deleteDocument).toHaveBeenCalledWith({
-      confirmAcceptedFacts: true,
+      confirmDeletion: true,
       documentId: "document-1",
       userId: "user-1",
     });
   });
 
-  it("returns only safe owner-authorized descriptors for pending blockers", async () => {
+  it("returns only safe owner-authorized descriptors for submitted blockers", async () => {
     deleteDocument.mockRejectedValueOnce(
-      new CandidateDocumentApplicationReferenceError(
-        PENDING_APPLICATION_REFERENCES,
-        [
-          {
-            applicationId: "application-1",
-            company: "Northstar Labs",
-            jobTitle: "Security Engineer",
-          },
-        ],
-      ),
+      new CandidateDocumentApplicationReferenceError([
+        {
+          applicationId: "application-1",
+          company: "Northstar Labs",
+          jobTitle: "Security Engineer",
+        },
+      ]),
     );
     const response = await DELETE(request(), {
       params: Promise.resolve({ documentId: "document-1" }),
@@ -109,29 +121,24 @@ describe("candidate document DELETE protocol", () => {
           jobTitle: "Security Engineer",
         },
       ],
-      code: "PENDING_APPLICATION_REFERENCES",
+      code: "SUBMITTED_APPLICATION_REFERENCES",
       error:
-        "Select another résumé in your pending applications before deleting this one.",
+        "This résumé is retained because an active or historical submission depends on it.",
     });
     expect(JSON.stringify(payload)).not.toContain("storageKey");
     expect(JSON.stringify(payload)).not.toContain("candidateId");
     expect(JSON.stringify(payload)).not.toContain("documentsSnapshot");
   });
 
-  it("preserves a structured blocker across a production-style prototype boundary", async () => {
+  it("sanitizes structured failures across production module boundaries", async () => {
     deleteDocument.mockRejectedValueOnce({
-      applications: [
-        {
-          applicationId: "application-1",
-          company: "Northstar Labs",
-          jobTitle: "Security Engineer",
-          storageKey: "must-not-be-forwarded",
-        },
-      ],
-      message:
-        "Select another résumé in your pending applications before deleting this one.",
-      protocolKind: "CANDIDATE_DOCUMENT_APPLICATION_REFERENCE",
-      referenceCode: "PENDING_APPLICATION_REFERENCES",
+      consequences: {
+        ...consequences,
+        storageKey: "must-not-be-forwarded",
+      },
+      confirmationCode: "DOCUMENT_DELETION_CONFIRMATION_REQUIRED",
+      message: "Confirm deletion.",
+      protocolKind: "CANDIDATE_DOCUMENT_DELETION_CONFIRMATION",
     });
 
     const response = await DELETE(request(), {
@@ -140,16 +147,9 @@ describe("candidate document DELETE protocol", () => {
     const payload = await response.json();
     expect(response.status).toBe(409);
     expect(payload).toEqual({
-      applications: [
-        {
-          applicationId: "application-1",
-          company: "Northstar Labs",
-          jobTitle: "Security Engineer",
-        },
-      ],
-      code: "PENDING_APPLICATION_REFERENCES",
-      error:
-        "Select another résumé in your pending applications before deleting this one.",
+      ...consequences,
+      code: "DOCUMENT_DELETION_CONFIRMATION_REQUIRED",
+      error: "Confirm deletion.",
     });
     expect(JSON.stringify(payload)).not.toContain("storageKey");
   });

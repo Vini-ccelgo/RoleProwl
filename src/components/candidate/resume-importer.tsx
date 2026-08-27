@@ -4,10 +4,11 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, LoaderCircle, Trash2, Upload } from "lucide-react";
 import { DocumentDeletionBlockerNotice } from "@/components/candidate/document-deletion-blocker-notice";
+import { DocumentDeletionConsequenceNotice } from "@/components/candidate/document-deletion-consequence-notice";
 import { InspectableFileName } from "@/components/documents/inspectable-file-name";
 import {
-  type DocumentDeletionBlockerCode,
   type DocumentDeletionBlockingApplication,
+  type DocumentDeletionConsequences,
   requestCandidateDocumentDeletion,
 } from "@/features/candidate/document-deletion-protocol";
 
@@ -20,30 +21,6 @@ interface CandidateDocumentSummary {
   readonly proposalCount: number;
   readonly sizeBytes: number;
   readonly status: string;
-}
-
-export const RESUME_FACT_DELETION_WARNING =
-  "Deleting this résumé will also remove verified facts sourced from it. This may affect application readiness.";
-
-export function confirmResumeFactDeletion(
-  fileName: string,
-  factCount: number,
-  confirmOperator: (message: string) => boolean = (message) =>
-    window.confirm(message),
-) {
-  return confirmOperator(
-    `${RESUME_FACT_DELETION_WARNING}\n\n${factCount} accepted ${factCount === 1 ? "fact" : "facts"} will be removed.\n\nRésumé: ${fileName}\n\nContinue?`,
-  );
-}
-
-export function confirmResumeDeletion(
-  fileName: string,
-  confirmOperator: (message: string) => boolean = (message) =>
-    window.confirm(message),
-) {
-  return confirmOperator(
-    `Delete this résumé?\n\nRésumé: ${fileName}\n\nRoleProwl will check for application and accepted-fact dependencies before deleting it.`,
-  );
 }
 
 export function ResumeImporter({
@@ -61,9 +38,11 @@ export function ResumeImporter({
       string,
       {
         applications: readonly DocumentDeletionBlockingApplication[];
-        code: DocumentDeletionBlockerCode;
       }
     >
+  >({});
+  const [deletionConsequences, setDeletionConsequences] = useState<
+    Record<string, DocumentDeletionConsequences>
   >({});
 
   async function upload() {
@@ -102,61 +81,42 @@ export function ResumeImporter({
     }
   }
 
-  async function remove(document: CandidateDocumentSummary) {
-    if (!confirmResumeDeletion(document.originalFileName)) {
-      setMessage(
-        "Deletion cancelled. No résumé or verified facts were removed.",
-      );
-      return;
-    }
+  async function remove(
+    document: CandidateDocumentSummary,
+    confirmDeletion: boolean,
+  ) {
     setBusy(true);
     try {
-      let result = await requestCandidateDocumentDeletion({
-        confirmAcceptedFacts: false,
+      const result = await requestCandidateDocumentDeletion({
+        confirmDeletion,
         documentId: document.id,
       });
-      if (result.kind === "APPLICATION_BLOCKER") {
+      if (result.kind === "SUBMITTED_BLOCKER") {
         const applications = result.applications;
-        const code = result.code;
         setDeletionBlockers((current) => ({
           ...current,
-          [document.id]: {
-            applications,
-            code,
-          },
+          [document.id]: { applications },
         }));
+        setDeletionConsequences((current) => {
+          const next = { ...current };
+          delete next[document.id];
+          return next;
+        });
         setMessage(result.message);
         return;
       }
-      if (result.kind === "ACCEPTED_FACTS_CONFIRMATION") {
-        if (
-          !confirmResumeFactDeletion(
-            document.originalFileName,
-            result.factCount,
-          )
-        ) {
-          setMessage(
-            "Deletion cancelled. No résumé or verified facts were removed.",
-          );
-          return;
-        }
-        result = await requestCandidateDocumentDeletion({
-          confirmAcceptedFacts: true,
-          documentId: document.id,
+      if (result.kind === "CONFIRMATION_REQUIRED") {
+        setDeletionConsequences((current) => ({
+          ...current,
+          [document.id]: result.consequences,
+        }));
+        setDeletionBlockers((current) => {
+          const next = { ...current };
+          delete next[document.id];
+          return next;
         });
-        if (result.kind === "APPLICATION_BLOCKER") {
-          const applications = result.applications;
-          const code = result.code;
-          setDeletionBlockers((current) => ({
-            ...current,
-            [document.id]: {
-              applications,
-              code,
-            },
-          }));
-          setMessage(result.message);
-          return;
-        }
+        setMessage(result.message);
+        return;
       }
       setMessage(
         result.kind === "DELETED"
@@ -169,6 +129,11 @@ export function ResumeImporter({
           delete next[document.id];
           return next;
         });
+        setDeletionConsequences((current) => {
+          const next = { ...current };
+          delete next[document.id];
+          return next;
+        });
         router.refresh();
       }
     } catch {
@@ -176,6 +141,15 @@ export function ResumeImporter({
     } finally {
       setBusy(false);
     }
+  }
+
+  function cancelDeletion(documentId: string) {
+    setDeletionConsequences((current) => {
+      const next = { ...current };
+      delete next[documentId];
+      return next;
+    });
+    setMessage("Deletion cancelled. No résumé or dependent data was removed.");
   }
 
   return (
@@ -257,48 +231,57 @@ export function ResumeImporter({
         ) : (
           documents.map((document) => {
             const blocker = deletionBlockers[document.id];
+            const consequences = deletionConsequences[document.id];
             return (
               <article
                 className="card document-management-row grid gap-4 p-4"
                 key={document.id}
               >
-                <div className="document-management-details">
-                  <FileText aria-hidden="true" className="text-brand" />
-                  <div className="min-w-0">
-                    <h3 className="sr-only">{document.originalFileName}</h3>
-                    <InspectableFileName
-                      className="font-medium"
-                      fileName={document.originalFileName}
-                    />
-                    <p className="safe-user-text m-0 text-xs">
-                      {document.format} ·{" "}
-                      {(document.sizeBytes / 1024).toFixed(1)} KB ·{" "}
-                      {document.status.replaceAll("_", " ").toLowerCase()} ·{" "}
-                      {document.proposalCount} proposals
-                    </p>
-                    {document.interpretationStatus === "INCOMPLETE" && (
-                      <p className="safe-user-text mt-2 mb-0 text-xs text-foreground-muted">
-                        Machine-readable text was extracted, but RoleProwl could
-                        not reliably identify much structured résumé
-                        information. Review any proposals or try a DOCX or
-                        text-selectable PDF export.
-                      </p>
-                    )}
+                <div className="document-management-content">
+                  <div className="document-management-heading">
+                    <FileText aria-hidden="true" className="text-brand" />
+                    <div className="min-w-0">
+                      <h3 className="sr-only">{document.originalFileName}</h3>
+                      <InspectableFileName
+                        className="font-medium"
+                        fileName={document.originalFileName}
+                      />
+                    </div>
                   </div>
+                  <p className="safe-user-text m-0 text-xs">
+                    {document.format} · {(document.sizeBytes / 1024).toFixed(1)}{" "}
+                    KB · {document.status.replaceAll("_", " ").toLowerCase()} ·{" "}
+                    {document.proposalCount} proposals
+                  </p>
+                  {document.interpretationStatus === "INCOMPLETE" && (
+                    <p className="safe-user-text m-0 text-xs text-foreground-muted">
+                      Machine-readable text was extracted, but RoleProwl could
+                      not reliably identify much structured résumé information.
+                      Review any proposals or try a DOCX or text-selectable PDF
+                      export.
+                    </p>
+                  )}
                 </div>
                 <button
                   type="button"
                   className="button button-secondary"
-                  onClick={() => remove(document)}
+                  onClick={() => remove(document, false)}
                   disabled={busy}
                   aria-label={`Delete ${document.originalFileName}`}
                 >
                   <Trash2 aria-hidden="true" size={17} /> Delete
                 </button>
+                {consequences ? (
+                  <DocumentDeletionConsequenceNotice
+                    consequences={consequences}
+                    disabled={busy}
+                    onCancel={() => cancelDeletion(document.id)}
+                    onConfirm={() => remove(document, true)}
+                  />
+                ) : null}
                 {blocker ? (
                   <DocumentDeletionBlockerNotice
                     applications={blocker.applications}
-                    code={blocker.code}
                     fileName={document.originalFileName}
                   />
                 ) : null}

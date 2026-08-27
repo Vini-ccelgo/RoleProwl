@@ -838,8 +838,10 @@ p {
 }
 .filename-inspector {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   justify-items: start;
   gap: 0.4rem;
+  width: 100%;
   min-width: 0;
   max-width: 100%;
 }
@@ -850,6 +852,10 @@ p {
   word-break: break-word;
 }
 .filename-inspector-toggle {
+  display: inline-flex;
+  width: fit-content;
+  min-width: 0;
+  max-width: 100%;
   min-height: 44px;
   border: 1px solid var(--border-strong);
   border-radius: 7px;
@@ -859,6 +865,8 @@ p {
   font: inherit;
   font-size: 0.78rem;
   font-weight: 650;
+  overflow-wrap: anywhere;
+  white-space: normal;
   cursor: pointer;
 }
 .filename-inspector-full {
@@ -869,12 +877,26 @@ p {
   font-size: 0.78rem;
 }
 .document-management-row {
+  width: 100%;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   min-width: 0;
   max-width: 100%;
 }
-.document-management-details {
+.document-management-row > *,
+.document-management-content > *,
+.document-management-heading > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.document-management-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.65rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.document-management-heading {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
@@ -882,7 +904,8 @@ p {
   min-width: 0;
   max-width: 100%;
 }
-.document-deletion-blocker {
+.document-deletion-blocker,
+.document-deletion-consequences {
   display: grid;
   grid-column: 1 / -1;
   gap: 0.75rem;
@@ -893,11 +916,22 @@ p {
   padding: 0.9rem;
   background: color-mix(in srgb, var(--warning) 8%, var(--surface));
 }
+.document-deletion-consequence-actions,
+.document-deletion-consequence-actions > * {
+  min-width: 0;
+  max-width: 100%;
+}
 .proposal-review-input {
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
   max-width: 100%;
 }
 .proposal-review-actions {
+  min-width: 0;
+  max-width: 100%;
+}
+.proposal-review-actions > * {
   min-width: 0;
   max-width: 100%;
 }
@@ -1531,22 +1565,31 @@ p {
 }
 @media (max-width: 520px) {
   .document-management-row {
+    width: 100%;
     grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
   }
   .document-management-row > .button {
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
   }
   .proposal-review-actions {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
   .proposal-review-actions .button,
-  .document-deletion-blocker-link {
+  .document-deletion-blocker-link,
+  .document-deletion-consequence-actions .button {
     width: 100%;
     min-width: 0;
     white-space: normal;
   }
   .document-deletion-blocker-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .document-deletion-consequence-actions {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
   }

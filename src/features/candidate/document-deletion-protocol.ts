@@ -1,6 +1,5 @@
-export const ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED =
-  "ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED";
-export const PENDING_APPLICATION_REFERENCES = "PENDING_APPLICATION_REFERENCES";
+export const DOCUMENT_DELETION_CONFIRMATION_REQUIRED =
+  "DOCUMENT_DELETION_CONFIRMATION_REQUIRED";
 export const SUBMITTED_APPLICATION_REFERENCES =
   "SUBMITTED_APPLICATION_REFERENCES";
 
@@ -10,21 +9,23 @@ export interface DocumentDeletionBlockingApplication {
   readonly jobTitle: string;
 }
 
-export type DocumentDeletionBlockerCode =
-  | typeof PENDING_APPLICATION_REFERENCES
-  | typeof SUBMITTED_APPLICATION_REFERENCES;
+export interface DocumentDeletionConsequences {
+  readonly acceptedFactCount: number;
+  readonly applicationCount: number;
+  readonly documentId: string;
+  readonly fileName: string;
+}
 
 export type DocumentDeletionResult =
   | { readonly kind: "DELETED" }
   | {
-      readonly applications: readonly DocumentDeletionBlockingApplication[];
-      readonly code: DocumentDeletionBlockerCode;
-      readonly kind: "APPLICATION_BLOCKER";
+      readonly consequences: DocumentDeletionConsequences;
+      readonly kind: "CONFIRMATION_REQUIRED";
       readonly message: string;
     }
   | {
-      readonly factCount: number;
-      readonly kind: "ACCEPTED_FACTS_CONFIRMATION";
+      readonly applications: readonly DocumentDeletionBlockingApplication[];
+      readonly kind: "SUBMITTED_BLOCKER";
       readonly message: string;
     }
   | { readonly kind: "FAILED"; readonly message: string };
@@ -39,6 +40,10 @@ function message(value: Record<string, unknown>) {
   return typeof value.error === "string" && value.error.trim()
     ? value.error
     : "The document could not be deleted.";
+}
+
+function nonnegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
 function blockingApplications(value: unknown) {
@@ -63,6 +68,22 @@ function blockingApplications(value: unknown) {
   });
 }
 
+function consequences(value: Record<string, unknown>) {
+  return typeof value.documentId === "string" &&
+    value.documentId.trim() &&
+    typeof value.fileName === "string" &&
+    value.fileName.trim() &&
+    nonnegativeInteger(value.applicationCount) &&
+    nonnegativeInteger(value.acceptedFactCount)
+    ? {
+        acceptedFactCount: value.acceptedFactCount,
+        applicationCount: value.applicationCount,
+        documentId: value.documentId,
+        fileName: value.fileName,
+      }
+    : null;
+}
+
 export function interpretDocumentDeletionFailure(
   value: unknown,
 ): Exclude<DocumentDeletionResult, { kind: "DELETED" }> {
@@ -71,37 +92,32 @@ export function interpretDocumentDeletionFailure(
     return { kind: "FAILED", message: "The document could not be deleted." };
 
   const failureMessage = message(payload);
-  if (
-    payload.code === PENDING_APPLICATION_REFERENCES ||
-    payload.code === SUBMITTED_APPLICATION_REFERENCES
-  ) {
-    const applications = blockingApplications(payload.applications);
-    return applications.length
+  if (payload.code === DOCUMENT_DELETION_CONFIRMATION_REQUIRED) {
+    const parsedConsequences = consequences(payload);
+    return parsedConsequences
       ? {
-          applications,
-          code: payload.code,
-          kind: "APPLICATION_BLOCKER",
+          consequences: parsedConsequences,
+          kind: "CONFIRMATION_REQUIRED",
           message: failureMessage,
         }
       : { kind: "FAILED", message: failureMessage };
   }
-  if (payload.code === ACCEPTED_FACTS_DELETE_CONFIRMATION_REQUIRED)
-    return {
-      factCount:
-        typeof payload.factCount === "number" &&
-        Number.isInteger(payload.factCount) &&
-        payload.factCount >= 0
-          ? payload.factCount
-          : 0,
-      kind: "ACCEPTED_FACTS_CONFIRMATION",
-      message: failureMessage,
-    };
+  if (payload.code === SUBMITTED_APPLICATION_REFERENCES) {
+    const applications = blockingApplications(payload.applications);
+    return applications.length
+      ? {
+          applications,
+          kind: "SUBMITTED_BLOCKER",
+          message: failureMessage,
+        }
+      : { kind: "FAILED", message: failureMessage };
+  }
   return { kind: "FAILED", message: failureMessage };
 }
 
 export async function requestCandidateDocumentDeletion(
   input: {
-    readonly confirmAcceptedFacts: boolean;
+    readonly confirmDeletion: boolean;
     readonly documentId: string;
   },
   request: (
@@ -113,10 +129,10 @@ export async function requestCandidateDocumentDeletion(
     `/api/candidate/documents/${input.documentId}`,
     {
       method: "DELETE",
-      ...(input.confirmAcceptedFacts
+      ...(input.confirmDeletion
         ? {
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ confirmAcceptedFacts: true }),
+            body: JSON.stringify({ confirmDeletion: true }),
           }
         : {}),
     },
