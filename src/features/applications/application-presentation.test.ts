@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   APPLICATION_OUTCOME_POLICY_COPY,
+  applicationOverviewCounts,
   applicationNextAction,
   applicationOutcomeActionLabel,
   applicationStateLabel,
@@ -23,6 +24,61 @@ describe("application lifecycle presentation", () => {
     expect(applicationNextAction("SUBMITTED")).toBe(
       "Record a confirmed outcome",
     );
+  });
+
+  it("renders the canonical SUBMITTING row label as Submitting", () => {
+    expect(applicationStateLabel("SUBMITTING")).toBe("Submitting");
+  });
+
+  it("counts one SUBMITTING application only as tracked and submitting", () => {
+    expect(
+      applicationOverviewCounts([
+        { state: "SUBMITTING", submittedAt: new Date("2026-08-28") },
+      ]),
+    ).toEqual({
+      tracked: 1,
+      submitting: 1,
+      submitted: 0,
+      needsAttention: 0,
+    });
+  });
+
+  it("counts one SUBMITTED application only as tracked and submitted", () => {
+    expect(
+      applicationOverviewCounts([{ state: "SUBMITTED", submittedAt: null }]),
+    ).toEqual({
+      tracked: 1,
+      submitting: 0,
+      submitted: 1,
+      needsAttention: 0,
+    });
+  });
+
+  it("aggregates mixed states without changing needs-attention semantics", () => {
+    expect(
+      applicationOverviewCounts([
+        { state: "SUBMITTING", submittedAt: null },
+        { state: "SUBMITTED", submittedAt: new Date("2026-08-28") },
+        { state: "RESPONSE", submittedAt: new Date("2026-08-27") },
+        { state: "NEEDS_REVIEW", submittedAt: null },
+        { state: "FAILED", submittedAt: null },
+        { state: "READY", submittedAt: null },
+      ]),
+    ).toEqual({
+      tracked: 6,
+      submitting: 1,
+      submitted: 2,
+      needsAttention: 2,
+    });
+  });
+
+  it("keeps a zero Submitting count explicit", () => {
+    expect(applicationOverviewCounts([])).toEqual({
+      tracked: 0,
+      submitting: 0,
+      submitted: 0,
+      needsAttention: 0,
+    });
   });
 
   it("presents allowed outcome states as actions without changing enum values", () => {

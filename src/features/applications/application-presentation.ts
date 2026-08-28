@@ -3,6 +3,29 @@ import type { ApplicationState } from "@/core/domain/applications/application-tr
 export const APPLICATION_OUTCOME_POLICY_COPY =
   "RoleProwl does not guess application outcomes.";
 
+export interface ApplicationOverviewItem {
+  readonly state: ApplicationState;
+  readonly submittedAt: Date | null;
+}
+
+export function applicationOverviewCounts(
+  applications: readonly ApplicationOverviewItem[],
+) {
+  return {
+    tracked: applications.length,
+    submitting: applications.filter(({ state }) => state === "SUBMITTING")
+      .length,
+    submitted: applications.filter(
+      ({ state, submittedAt }) =>
+        state !== "SUBMITTING" &&
+        (state === "SUBMITTED" || submittedAt !== null),
+    ).length,
+    needsAttention: applications.filter(({ state }) =>
+      ["NEEDS_REVIEW", "FAILED"].includes(state),
+    ).length,
+  } as const;
+}
+
 export function applicationStateLabel(state: ApplicationState) {
   const labels: Record<ApplicationState, string> = {
     DISCOVERED: "Discovered",

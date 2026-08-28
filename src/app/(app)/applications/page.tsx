@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   APPLICATION_OUTCOME_POLICY_COPY,
+  applicationOverviewCounts,
   applicationNextAction,
   applicationStateLabel,
 } from "@/features/applications/application-presentation";
@@ -28,10 +29,7 @@ export default async function ApplicationsPage() {
     },
     orderBy: { updatedAt: "desc" },
   });
-  const submitted = applications.filter((item) => item.submittedAt).length;
-  const attention = applications.filter((item) =>
-    ["NEEDS_REVIEW", "FAILED"].includes(item.state),
-  ).length;
+  const summary = applicationOverviewCounts(applications);
 
   return (
     <div className="grid gap-7">
@@ -39,11 +37,12 @@ export default async function ApplicationsPage() {
         title="Applications"
         description={APPLICATION_OUTCOME_POLICY_COPY}
       />
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          ["Tracked", applications.length],
-          ["Submitted", submitted],
-          ["Needs attention", attention],
+          ["Tracked", summary.tracked],
+          ["Submitting", summary.submitting],
+          ["Submitted", summary.submitted],
+          ["Needs attention", summary.needsAttention],
         ].map(([name, count]) => (
           <div className="card p-4" key={name}>
             <strong className="text-2xl text-brand">{count}</strong>
