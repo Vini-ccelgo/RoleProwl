@@ -9,53 +9,26 @@ describe("candidate document deletion client protocol", () => {
     expect(
       interpretDocumentDeletionFailure({
         acceptedFactCount: 7,
-        applicationCount: 2,
         code: "DOCUMENT_DELETION_CONFIRMATION_REQUIRED",
-        documentId: "document-1",
         error: "Confirm deletion.",
         fileName: "exact_resume.pdf",
+        preSubmissionApplicationCount: 2,
+        retainedHistoricalApplicationCount: 37,
         storageKey: "not-forwarded",
       }),
     ).toEqual({
       consequences: {
         acceptedFactCount: 7,
-        applicationCount: 2,
-        documentId: "document-1",
         fileName: "exact_resume.pdf",
+        preSubmissionApplicationCount: 2,
+        retainedHistoricalApplicationCount: 37,
       },
       kind: "CONFIRMATION_REQUIRED",
       message: "Confirm deletion.",
     });
   });
 
-  it("retains only safe submitted blockers for actionable rendering", () => {
-    expect(
-      interpretDocumentDeletionFailure({
-        code: "SUBMITTED_APPLICATION_REFERENCES",
-        error: "Submitted history prevents deletion.",
-        applications: [
-          {
-            applicationId: "application-1",
-            company: "Northstar Labs",
-            jobTitle: "Security Engineer",
-            storageKey: "not-forwarded",
-          },
-        ],
-      }),
-    ).toEqual({
-      applications: [
-        {
-          applicationId: "application-1",
-          company: "Northstar Labs",
-          jobTitle: "Security Engineer",
-        },
-      ],
-      kind: "SUBMITTED_BLOCKER",
-      message: "Submitted history prevents deletion.",
-    });
-  });
-
-  it("fails closed for malformed consequence or blocker metadata", () => {
+  it("fails closed for malformed consequence metadata", () => {
     expect(
       interpretDocumentDeletionFailure({
         code: "DOCUMENT_DELETION_CONFIRMATION_REQUIRED",
@@ -63,13 +36,6 @@ describe("candidate document deletion client protocol", () => {
         fileName: "resume.pdf",
       }),
     ).toEqual({ kind: "FAILED", message: "Confirm deletion." });
-    expect(
-      interpretDocumentDeletionFailure({
-        code: "SUBMITTED_APPLICATION_REFERENCES",
-        error: "Deletion remains blocked.",
-        applications: [{ applicationId: "private-only" }],
-      }),
-    ).toEqual({ kind: "FAILED", message: "Deletion remains blocked." });
   });
 
   it("sends only the explicit server confirmation flag", async () => {
@@ -96,11 +62,11 @@ describe("candidate document deletion client protocol", () => {
       Response.json(
         {
           acceptedFactCount: 0,
-          applicationCount: 0,
           code: "DOCUMENT_DELETION_CONFIRMATION_REQUIRED",
-          documentId: "document-1",
           error: "Confirm deletion.",
           fileName: "resume.pdf",
+          preSubmissionApplicationCount: 0,
+          retainedHistoricalApplicationCount: 0,
         },
         { status: 409 },
       ),

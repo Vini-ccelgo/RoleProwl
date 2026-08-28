@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import type { AccountDeletionRepository } from "@/features/privacy/delete-account";
+import { applicationResumeSnapshot } from "@/core/domain/applications/application-resume";
 import { databaseClient } from "@/lib/db/client";
 
 function subjectHash(userId: string) {
@@ -19,13 +20,20 @@ export class PrismaAccountDeletionRepository implements AccountDeletionRepositor
           externalAuthId: true,
           candidateDocuments: { select: { storageKey: true } },
           resumeVersions: { select: { renderedStorageKey: true } },
+          applications: { select: { documentsSnapshot: true } },
         },
       });
       const storageKeys = [
-        ...user.candidateDocuments.map(({ storageKey }) => storageKey),
-        ...user.resumeVersions.map(
-          ({ renderedStorageKey }) => renderedStorageKey,
-        ),
+        ...new Set([
+          ...user.candidateDocuments.map(({ storageKey }) => storageKey),
+          ...user.resumeVersions.map(
+            ({ renderedStorageKey }) => renderedStorageKey,
+          ),
+          ...user.applications.flatMap(({ documentsSnapshot }) => {
+            const resume = applicationResumeSnapshot(documentsSnapshot);
+            return resume ? [resume.storageKey] : [];
+          }),
+        ]),
       ];
       await transaction.auditEvent.create({
         data: {

@@ -30,10 +30,7 @@ vi.mock(
   },
 );
 
-import {
-  CandidateDocumentApplicationReferenceError,
-  DocumentDeletionConfirmationRequiredError,
-} from "@/integrations/candidate/prisma-candidate-document-deletion";
+import { DocumentDeletionConfirmationRequiredError } from "@/integrations/candidate/prisma-candidate-document-deletion";
 import { DELETE } from "./route";
 
 function request(body?: unknown) {
@@ -49,9 +46,9 @@ function request(body?: unknown) {
 
 const consequences = {
   acceptedFactCount: 7,
-  applicationCount: 2,
-  documentId: "document-1",
   fileName: "exact_resume.pdf",
+  preSubmissionApplicationCount: 2,
+  retainedHistoricalApplicationCount: 37,
 };
 
 describe("candidate document DELETE protocol", () => {
@@ -98,36 +95,18 @@ describe("candidate document DELETE protocol", () => {
     });
   });
 
-  it("returns only safe owner-authorized descriptors for submitted blockers", async () => {
-    deleteDocument.mockRejectedValueOnce(
-      new CandidateDocumentApplicationReferenceError([
-        {
-          applicationId: "application-1",
-          company: "Northstar Labs",
-          jobTitle: "Security Engineer",
-        },
-      ]),
-    );
-    const response = await DELETE(request(), {
+  it("does not treat a malformed truthy confirmation as destructive authority", async () => {
+    deleteDocument.mockResolvedValueOnce(undefined);
+    const response = await DELETE(request({ confirmDeletion: "true" }), {
       params: Promise.resolve({ documentId: "document-1" }),
     });
-    expect(response.status).toBe(409);
-    const payload = await response.json();
-    expect(payload).toEqual({
-      applications: [
-        {
-          applicationId: "application-1",
-          company: "Northstar Labs",
-          jobTitle: "Security Engineer",
-        },
-      ],
-      code: "SUBMITTED_APPLICATION_REFERENCES",
-      error:
-        "This résumé is retained because an active or historical submission depends on it.",
+
+    expect(response.status).toBe(204);
+    expect(deleteDocument).toHaveBeenCalledWith({
+      confirmDeletion: false,
+      documentId: "document-1",
+      userId: "user-1",
     });
-    expect(JSON.stringify(payload)).not.toContain("storageKey");
-    expect(JSON.stringify(payload)).not.toContain("candidateId");
-    expect(JSON.stringify(payload)).not.toContain("documentsSnapshot");
   });
 
   it("sanitizes structured failures across production module boundaries", async () => {

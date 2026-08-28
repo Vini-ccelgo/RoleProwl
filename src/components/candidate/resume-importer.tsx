@@ -3,11 +3,9 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, LoaderCircle, Trash2, Upload } from "lucide-react";
-import { DocumentDeletionBlockerNotice } from "@/components/candidate/document-deletion-blocker-notice";
 import { DocumentDeletionConsequenceNotice } from "@/components/candidate/document-deletion-consequence-notice";
 import { InspectableFileName } from "@/components/documents/inspectable-file-name";
 import {
-  type DocumentDeletionBlockingApplication,
   type DocumentDeletionConsequences,
   requestCandidateDocumentDeletion,
 } from "@/features/candidate/document-deletion-protocol";
@@ -33,14 +31,6 @@ export function ResumeImporter({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
   const [selectedFile, setSelectedFile] = useState<File>();
-  const [deletionBlockers, setDeletionBlockers] = useState<
-    Record<
-      string,
-      {
-        applications: readonly DocumentDeletionBlockingApplication[];
-      }
-    >
-  >({});
   const [deletionConsequences, setDeletionConsequences] = useState<
     Record<string, DocumentDeletionConsequences>
   >({});
@@ -91,30 +81,11 @@ export function ResumeImporter({
         confirmDeletion,
         documentId: document.id,
       });
-      if (result.kind === "SUBMITTED_BLOCKER") {
-        const applications = result.applications;
-        setDeletionBlockers((current) => ({
-          ...current,
-          [document.id]: { applications },
-        }));
-        setDeletionConsequences((current) => {
-          const next = { ...current };
-          delete next[document.id];
-          return next;
-        });
-        setMessage(result.message);
-        return;
-      }
       if (result.kind === "CONFIRMATION_REQUIRED") {
         setDeletionConsequences((current) => ({
           ...current,
           [document.id]: result.consequences,
         }));
-        setDeletionBlockers((current) => {
-          const next = { ...current };
-          delete next[document.id];
-          return next;
-        });
         setMessage(result.message);
         return;
       }
@@ -124,11 +95,6 @@ export function ResumeImporter({
           : result.message,
       );
       if (result.kind === "DELETED") {
-        setDeletionBlockers((current) => {
-          const next = { ...current };
-          delete next[document.id];
-          return next;
-        });
         setDeletionConsequences((current) => {
           const next = { ...current };
           delete next[document.id];
@@ -230,7 +196,6 @@ export function ResumeImporter({
           </div>
         ) : (
           documents.map((document) => {
-            const blocker = deletionBlockers[document.id];
             const consequences = deletionConsequences[document.id];
             return (
               <article
@@ -274,15 +239,10 @@ export function ResumeImporter({
                 {consequences ? (
                   <DocumentDeletionConsequenceNotice
                     consequences={consequences}
+                    documentId={document.id}
                     disabled={busy}
                     onCancel={() => cancelDeletion(document.id)}
                     onConfirm={() => remove(document, true)}
-                  />
-                ) : null}
-                {blocker ? (
-                  <DocumentDeletionBlockerNotice
-                    applications={blocker.applications}
-                    fileName={document.originalFileName}
                   />
                 ) : null}
               </article>

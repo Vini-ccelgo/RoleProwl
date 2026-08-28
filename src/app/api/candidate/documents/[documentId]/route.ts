@@ -16,15 +16,13 @@ import {
 
 function structuredDeletionFailure(
   error: unknown,
-): Exclude<DocumentDeletionResult, { kind: "DELETED" | "FAILED" }> | null {
+): Extract<DocumentDeletionResult, { kind: "CONFIRMATION_REQUIRED" }> | null {
   if (!error || typeof error !== "object") return null;
   const candidate = error as {
-    applications?: unknown;
     confirmationCode?: unknown;
     consequences?: unknown;
     message?: unknown;
     protocolKind?: unknown;
-    referenceCode?: unknown;
   };
   if (typeof candidate.message !== "string") return null;
   const consequenceRecord =
@@ -33,22 +31,14 @@ function structuredDeletionFailure(
     !Array.isArray(candidate.consequences)
       ? (candidate.consequences as Record<string, unknown>)
       : {};
-  const parsed = interpretDocumentDeletionFailure(
-    candidate.protocolKind === "CANDIDATE_DOCUMENT_DELETION_CONFIRMATION"
-      ? {
-          ...consequenceRecord,
-          code: candidate.confirmationCode,
-          error: candidate.message,
-        }
-      : candidate.protocolKind === "CANDIDATE_DOCUMENT_APPLICATION_REFERENCE"
-        ? {
-            applications: candidate.applications,
-            code: candidate.referenceCode,
-            error: candidate.message,
-          }
-        : null,
-  );
-  return parsed.kind === "FAILED" ? null : parsed;
+  if (candidate.protocolKind !== "CANDIDATE_DOCUMENT_DELETION_CONFIRMATION")
+    return null;
+  const parsed = interpretDocumentDeletionFailure({
+    ...consequenceRecord,
+    code: candidate.confirmationCode,
+    error: candidate.message,
+  });
+  return parsed.kind === "CONFIRMATION_REQUIRED" ? parsed : null;
 }
 
 export async function DELETE(
@@ -75,20 +65,11 @@ export async function DELETE(
   } catch (error) {
     const structuredFailure = structuredDeletionFailure(error);
     if (structuredFailure) {
-      if (structuredFailure.kind === "CONFIRMATION_REQUIRED")
-        return NextResponse.json(
-          {
-            error: structuredFailure.message,
-            code: "DOCUMENT_DELETION_CONFIRMATION_REQUIRED",
-            ...structuredFailure.consequences,
-          },
-          { status: 409 },
-        );
       return NextResponse.json(
         {
           error: structuredFailure.message,
-          code: "SUBMITTED_APPLICATION_REFERENCES",
-          applications: structuredFailure.applications,
+          code: "DOCUMENT_DELETION_CONFIRMATION_REQUIRED",
+          ...structuredFailure.consequences,
         },
         { status: 409 },
       );

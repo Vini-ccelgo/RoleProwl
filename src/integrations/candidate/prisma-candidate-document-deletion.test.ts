@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "@/generated/prisma/client";
 
 const mocks = vi.hoisted(() => ({
   applicationDeleteMany: vi.fn(async (input) => ({
@@ -30,6 +31,7 @@ function application(
     documentsSnapshot: unknown;
     externalConfirmedAt: Date | null;
     externalSubmissionId: string | null;
+    events: readonly { id: string }[];
     state:
       | "PREPARING"
       | "READY"
@@ -38,7 +40,6 @@ function application(
       | "RESPONSE"
       | "CLOSED"
       | "FAILED";
-    submissionPayloadSnapshot: unknown;
     submittedAt: Date | null;
   }> = {},
 ) {
@@ -48,11 +49,15 @@ function application(
     submittedAt: null,
     externalConfirmedAt: null,
     externalSubmissionId: null,
-    job: { company: `Company ${id}`, title: `Role ${id}` },
+    events: [],
     documentsSnapshot: [
-      { kind: "RESUME", storageKey: "candidate-documents/private" },
+      {
+        kind: "RESUME",
+        fileName: "exact_resume.pdf",
+        contentType: "application/pdf",
+        storageKey: "candidate-documents/private",
+      },
     ],
-    submissionPayloadSnapshot: {},
     ...overrides,
   };
 }
@@ -108,9 +113,9 @@ describe("Prisma candidate document deletion", () => {
       confirmationCode: "DOCUMENT_DELETION_CONFIRMATION_REQUIRED",
       consequences: {
         acceptedFactCount: 0,
-        applicationCount: 0,
-        documentId: "document-1",
         fileName: "exact_resume.pdf",
+        preSubmissionApplicationCount: 0,
+        retainedHistoricalApplicationCount: 0,
       },
     });
     expect(mocks.documentDeleteMany).not.toHaveBeenCalled();
@@ -141,7 +146,7 @@ describe("Prisma candidate document deletion", () => {
     await expect(
       deletion.delete({ documentId: "document-1", userId: "user-1" }),
     ).rejects.toMatchObject({
-      consequences: { applicationCount: 1 },
+      consequences: { preSubmissionApplicationCount: 1 },
     });
     expect(mocks.applicationDeleteMany).not.toHaveBeenCalled();
 
@@ -166,14 +171,16 @@ describe("Prisma candidate document deletion", () => {
     mocks.applicationsFindMany.mockResolvedValue([
       application("application-1"),
       application("application-2", {
-        documentsSnapshot: [],
-        submissionPayloadSnapshot: {
-          resumeStorageKey: "candidate-documents/private",
-        },
+        state: "READY",
       }),
       application("unrelated", {
         documentsSnapshot: [
-          { kind: "RESUME", storageKey: "candidate-documents/other" },
+          {
+            kind: "RESUME",
+            fileName: "other.pdf",
+            contentType: "application/pdf",
+            storageKey: "candidate-documents/other",
+          },
         ],
       }),
     ]);
@@ -245,7 +252,9 @@ describe("Prisma candidate document deletion", () => {
 
     await expect(
       deletion.delete({ documentId: "document-1", userId: "user-1" }),
-    ).rejects.toMatchObject({ consequences: { applicationCount: 1 } });
+    ).rejects.toMatchObject({
+      consequences: { preSubmissionApplicationCount: 1 },
+    });
     await deletion.delete({
       confirmDeletion: true,
       documentId: "document-1",
@@ -259,7 +268,7 @@ describe("Prisma candidate document deletion", () => {
     });
   });
 
-  it("blocks confirmation when a fresh submitted dependency appears after preview", async () => {
+  it("preserves a dependency that becomes submitted after preview and retains its storage object", async () => {
     mocks.applicationsFindMany
       .mockResolvedValueOnce([application("application-1")])
       .mockResolvedValueOnce([
@@ -273,18 +282,17 @@ describe("Prisma candidate document deletion", () => {
 
     await expect(
       deletion.delete({ documentId: "document-1", userId: "user-1" }),
-    ).rejects.toMatchObject({ consequences: { applicationCount: 1 } });
-    await expect(
-      deletion.delete({
-        confirmDeletion: true,
-        documentId: "document-1",
-        userId: "user-1",
-      }),
     ).rejects.toMatchObject({
-      referenceCode: "SUBMITTED_APPLICATION_REFERENCES",
-      applications: [{ applicationId: "new-history" }],
+      consequences: { preSubmissionApplicationCount: 1 },
     });
-    expect(mocks.applicationDeleteMany).not.toHaveBeenCalled();
+    await deletion.delete({
+      confirmDeletion: true,
+      documentId: "document-1",
+      userId: "user-1",
+    });
+    expect(mocks.applicationDeleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ["application-1"] }, userId: "user-1" },
+    });
     expect(objectStorage.delete).not.toHaveBeenCalled();
   });
 
@@ -296,23 +304,131 @@ describe("Prisma candidate document deletion", () => {
       submittedAt: new Date("2026-08-27"),
     }),
     application("submitting", { state: "SUBMITTING" }),
-  ])("hard-blocks protected application $id", async (protectedApplication) => {
+    application("event-history", {
+      state: "CLOSED",
+      events: [{ id: "submission-confirmed-event" }],
+    }),
+  ])("retains protected application $id", async (protectedApplication) => {
     mocks.applicationsFindMany.mockResolvedValue([protectedApplication]);
     const objectStorage = storage();
 
+    await new PrismaCandidateDocumentDeletion(objectStorage as never).delete({
+      confirmDeletion: true,
+      documentId: "document-1",
+      userId: "user-1",
+    });
+    expect(mocks.applicationDeleteMany).not.toHaveBeenCalled();
+    expect(mocks.documentDeleteMany).toHaveBeenCalled();
+    expect(objectStorage.delete).not.toHaveBeenCalled();
+  });
+
+  it("previews retained history separately from disposable dependencies", async () => {
+    mocks.applicationsFindMany.mockResolvedValue([
+      application("draft"),
+      application("submitting", { state: "SUBMITTING" }),
+      application("submitted", { state: "SUBMITTED" }),
+      application("closed-history", {
+        state: "CLOSED",
+        externalSubmissionId: "employer-123",
+      }),
+    ]);
+
     await expect(
-      new PrismaCandidateDocumentDeletion(objectStorage as never).delete({
-        confirmDeletion: true,
+      new PrismaCandidateDocumentDeletion(storage() as never).delete({
         documentId: "document-1",
         userId: "user-1",
       }),
     ).rejects.toMatchObject({
-      referenceCode: "SUBMITTED_APPLICATION_REFERENCES",
-      applications: [{ applicationId: protectedApplication.id }],
+      consequences: {
+        preSubmissionApplicationCount: 1,
+        retainedHistoricalApplicationCount: 3,
+      },
     });
-    expect(mocks.applicationDeleteMany).not.toHaveBeenCalled();
-    expect(mocks.factsDeleteMany).not.toHaveBeenCalled();
+  });
+
+  it("resolves a deterministic mixed 250-application graph in one confirmation", async () => {
+    const disposableApplications = Array.from({ length: 120 }, (_, index) =>
+      application(`application-${index}`, {
+        state:
+          index % 3 === 0 ? "FAILED" : index % 3 === 1 ? "READY" : "CLOSED",
+      }),
+    );
+    const retainedApplications = Array.from({ length: 80 }, (_, index) =>
+      application(`history-${index}`, {
+        state: index % 2 === 0 ? "SUBMITTED" : "CLOSED",
+        submittedAt:
+          index % 2 === 0 ? null : new Date("2026-08-27T12:00:00.000Z"),
+      }),
+    );
+    const unrelatedApplications = Array.from({ length: 50 }, (_, index) =>
+      application(`unrelated-${index}`, {
+        documentsSnapshot: [
+          {
+            kind: "RESUME",
+            fileName: "other.pdf",
+            contentType: "application/pdf",
+            storageKey: "candidate-documents/other",
+          },
+        ],
+      }),
+    );
+    mocks.factCount.mockResolvedValue(60);
+    mocks.applicationsFindMany.mockResolvedValue([
+      ...disposableApplications,
+      ...retainedApplications,
+      ...unrelatedApplications,
+    ]);
+    const objectStorage = storage();
+    const deletion = new PrismaCandidateDocumentDeletion(
+      objectStorage as never,
+    );
+
+    await expect(
+      deletion.delete({ documentId: "document-1", userId: "user-1" }),
+    ).rejects.toMatchObject({
+      consequences: {
+        acceptedFactCount: 60,
+        preSubmissionApplicationCount: 120,
+        retainedHistoricalApplicationCount: 80,
+      },
+    });
+
+    await deletion.delete({
+      confirmDeletion: true,
+      documentId: "document-1",
+      userId: "user-1",
+    });
+
+    expect(mocks.applicationDeleteMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: disposableApplications.map(({ id }) => id) },
+        userId: "user-1",
+      },
+    });
     expect(objectStorage.delete).not.toHaveBeenCalled();
+  });
+
+  it("recomputes a newly accepted fact on confirmation", async () => {
+    mocks.factCount.mockResolvedValueOnce(1).mockResolvedValueOnce(2);
+    const deletion = new PrismaCandidateDocumentDeletion(storage() as never);
+
+    await expect(
+      deletion.delete({ documentId: "document-1", userId: "user-1" }),
+    ).rejects.toMatchObject({ consequences: { acceptedFactCount: 1 } });
+    await deletion.delete({
+      confirmDeletion: true,
+      documentId: "document-1",
+      userId: "user-1",
+    });
+
+    expect(mocks.factCount).toHaveBeenCalledTimes(2);
+    expect(mocks.factsDeleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: "user-1",
+        status: { in: ["ACTIVE", "REMOVED"] },
+        sourceProposal: { documentId: "document-1" },
+      },
+    });
   });
 
   it("does not report complete deletion when private storage fails", async () => {
@@ -328,6 +444,27 @@ describe("Prisma candidate document deletion", () => {
         userId: "user-1",
       }),
     ).rejects.toThrow("provider unavailable");
+  });
+
+  it("maps only an exact serialization conflict to a generic retry-later result", async () => {
+    mocks.transaction.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError("write conflict", {
+        clientVersion: "test",
+        code: "P2034",
+      }),
+    );
+
+    await expect(
+      new PrismaCandidateDocumentDeletion(storage() as never).delete({
+        confirmDeletion: true,
+        documentId: "document-1",
+        userId: "user-1",
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message:
+        "Résumé dependencies changed while deletion was in progress. Try again.",
+    });
   });
 
   it("conceals a foreign document before dependency inspection", async () => {

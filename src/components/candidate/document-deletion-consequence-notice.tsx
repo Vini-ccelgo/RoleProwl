@@ -2,33 +2,37 @@ import type { DocumentDeletionConsequences } from "@/features/candidate/document
 
 export function DocumentDeletionConsequenceNotice({
   consequences,
+  documentId,
   disabled,
   onCancel,
   onConfirm,
 }: {
   readonly consequences: DocumentDeletionConsequences;
+  readonly documentId: string;
   readonly disabled: boolean;
   readonly onCancel: () => void;
   readonly onConfirm: () => void;
 }) {
   return (
     <section
-      aria-labelledby={`delete-consequences-${consequences.documentId}`}
+      aria-labelledby={`delete-consequences-${documentId}`}
       className="document-deletion-consequences"
       role="alertdialog"
     >
       <h4
         className="safe-filename m-0 text-sm font-semibold"
-        id={`delete-consequences-${consequences.documentId}`}
+        id={`delete-consequences-${documentId}`}
       >
         Delete {consequences.fileName}?
       </h4>
       <p className="m-0 text-sm">This will also permanently remove:</p>
       <ul className="m-0 grid gap-1 pl-5 text-sm">
         <li>
-          {consequences.applicationCount} pre-submission{" "}
-          {consequences.applicationCount === 1 ? "application" : "applications"}{" "}
-          using this résumé
+          {consequences.preSubmissionApplicationCount} pre-submission{" "}
+          {consequences.preSubmissionApplicationCount === 1
+            ? "application"
+            : "applications"}{" "}
+          that depend on this résumé
         </li>
         <li>
           {consequences.acceptedFactCount} accepted{" "}
@@ -37,8 +41,16 @@ export function DocumentDeletionConsequenceNotice({
         </li>
       </ul>
       <p className="m-0 text-xs">
-        Its proposal and extraction data will also be removed. Submitted
-        application history is never automatically deleted.
+        Its proposal and extraction data will also be removed.
+      </p>
+      <p className="m-0 text-sm">
+        {consequences.retainedHistoricalApplicationCount} submitted or
+        historical{" "}
+        {consequences.retainedHistoricalApplicationCount === 1
+          ? "application used"
+          : "applications used"}{" "}
+        this résumé. Their immutable submitted résumé artifacts will remain in
+        application history.
       </p>
       <div className="document-deletion-consequence-actions flex flex-wrap gap-2">
         <button

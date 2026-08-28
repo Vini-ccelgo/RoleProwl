@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applicationHasSubmissionHistory,
   applicationIsProtectedFromResumeDeletion,
+  classifyApplicationForResumeDeletion,
 } from "./application-resume-deletion";
 
 function application(
@@ -23,12 +24,14 @@ function application(
   overrides: Partial<{
     externalConfirmedAt: Date | null;
     externalSubmissionId: string | null;
+    hasSubmissionConfirmationEvent: boolean;
     submittedAt: Date | null;
   }> = {},
 ) {
   return {
     externalConfirmedAt: null,
     externalSubmissionId: null,
+    hasSubmissionConfirmationEvent: false,
     state,
     submittedAt: null,
     ...overrides,
@@ -51,6 +54,9 @@ describe("application résumé-deletion boundary", () => {
       expect(applicationIsProtectedFromResumeDeletion(application(state))).toBe(
         false,
       );
+      expect(classifyApplicationForResumeDeletion(application(state))).toBe(
+        "DISPOSABLE_PRE_SUBMISSION",
+      );
     },
   );
 
@@ -60,6 +66,9 @@ describe("application résumé-deletion boundary", () => {
       expect(applicationHasSubmissionHistory(application(state))).toBe(true);
       expect(applicationIsProtectedFromResumeDeletion(application(state))).toBe(
         true,
+      );
+      expect(classifyApplicationForResumeDeletion(application(state))).toBe(
+        "RETAINED_SUBMISSION_HISTORY",
       );
     },
   );
@@ -94,5 +103,13 @@ describe("application résumé-deletion boundary", () => {
         }),
       ),
     ).toBe(true);
+  });
+
+  it("treats a persisted submission-confirmed event as history even when scalar evidence is absent", () => {
+    expect(
+      classifyApplicationForResumeDeletion(
+        application("CLOSED", { hasSubmissionConfirmationEvent: true }),
+      ),
+    ).toBe("RETAINED_SUBMISSION_HISTORY");
   });
 });

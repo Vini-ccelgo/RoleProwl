@@ -1,5 +1,10 @@
 import Link from "next/link";
-import type { DocumentDeletionBlockingApplication } from "@/features/candidate/document-deletion-protocol";
+
+interface DocumentDeletionBlockingApplication {
+  readonly applicationId: string;
+  readonly company: string;
+  readonly jobTitle: string;
+}
 
 export function DocumentDeletionBlockerNotice({
   applications,
