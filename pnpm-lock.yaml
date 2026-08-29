@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  deepmerge-ts: 8.0.2
   hono: 4.13.2
   lodash: 4.18.1
 
@@ -65,6 +66,9 @@ importers:
       unpdf:
         specifier: ^1.8.1
         version: 1.8.1
+      yauzl:
+        specifier: 3.4.0
+        version: 3.4.0
       zod:
         specifier: ^4.0.0
         version: 4.4.3
@@ -87,6 +91,9 @@ importers:
       "@types/react-dom":
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.14)
+      "@types/yauzl":
+        specifier: 3.4.0
+        version: 3.4.0
       eslint:
         specifier: ^9.0.0
         version: 9.39.5(jiti@2.7.0)
@@ -99,6 +106,9 @@ importers:
       jiti:
         specifier: ^2.7.0
         version: 2.7.0
+      jszip:
+        specifier: 3.10.1
+        version: 3.10.1
       pdf-lib:
         specifier: ^1.17.1
         version: 1.17.1
@@ -2926,6 +2936,12 @@ packages:
         integrity: sha512-KHPsfX/FoVbUGbyYvk1q9MMQHLPeRZhRJZdO45Q4YjvFkv4hMNghCWTvy7rdKessBsmtz4euWCWAB6/tVpI1Iw==,
       }
 
+  "@types/yauzl@3.4.0":
+    resolution:
+      {
+        integrity: sha512-NRPn5w6h8dhcnmx3YIRQcqMywY/+nND/uOkJessedcrowO3C0AssHp3tMJpxKAwOhFOo0OV1y9VtsC5hbKKBAw==,
+      }
+
   "@typescript-eslint/eslint-plugin@8.66.0":
     resolution:
       {
@@ -3922,12 +3938,12 @@ packages:
         integrity: sha512-oIPzksmTg4/MriiaYGO+okXDT7ztn/w3Eptv/+gSIdMdKsJo0u4CfYNFJPy+4SKMuCqGw2wxnA+URMg3t8a/bQ==,
       }
 
-  deepmerge-ts@7.1.5:
+  deepmerge-ts@8.0.2:
     resolution:
       {
-        integrity: sha512-HOJkrhaYsweh+W+e74Yn7YStZOilkoPb6fycpwNLKzSPtruFs48nYis0zy5yJz1+ktUhHxoRDJ27RQAWLIJVJw==,
+        integrity: sha512-uqbvqLUMrc6p0MO+WBRtTxY55hmyh94WRwI5a++PZe54X+bfVh59FSN7uWCBCW1CCVjzjnrwzfI8zidE2obMMw==,
       }
-    engines: { node: ">=16.0.0" }
+    engines: { node: ">=16.9.0" }
 
   define-data-property@1.1.4:
     resolution:
@@ -4323,6 +4339,7 @@ packages:
         integrity: sha512-DgZS62aPLXKlnxILS/AYCoRvHaZeXceIzlXPkkGGzJWSow1aEk0lbTlxUSlyjC8jcaKxAdOnTDz+o1JFSBsyjw==,
       }
     engines: { node: ^18.18.0 || ^20.9.0 || >=21.1.0 }
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: "*"
@@ -5905,6 +5922,12 @@ packages:
         integrity: sha512-V/mpyJAoTsN4cnP31vc0wfNA1+p20evqqnap0KLoRUN0Yk/p3wN52DOEsL4oBFcLdb76hlpKPtzJIgo67j/XLw==,
       }
 
+  pend@1.2.0:
+    resolution:
+      {
+        integrity: sha512-F3asv42UuXchdzt+xXqfW1OGlVBe+mxa2mqI0pg5yAHZPvFmY3Y6drSf/GQ1A86WgWEN9Kzh/WrgKa6iGcHXLg==,
+      }
+
   perfect-debounce@2.1.0:
     resolution:
       {
@@ -7243,6 +7266,13 @@ packages:
     resolution:
       {
         integrity: sha512-GZtjxm/J/4TSxuL3FNYjCmLktBTnIw/rVmKSIyKeYAZpmJB2ig9VauCC5xsa82GNKVKDAqpOn3KVzNt0zmrU0g==,
+      }
+    engines: { node: ">=12" }
+
+  yauzl@3.4.0:
+    resolution:
+      {
+        integrity: sha512-jIH9yLR9wqr0wOS0TpBvo/g/2UgZH5qePVbjgRliiF0BYvOZyaBknKsF+x9Iht0O6sqgnB93rCICdOZFecJuDw==,
       }
     engines: { node: ">=12" }
 
@@ -8717,7 +8747,7 @@ snapshots:
   "@prisma/config@7.9.1":
     dependencies:
       c12: 3.3.4
-      deepmerge-ts: 7.1.5
+      deepmerge-ts: 8.0.2
       effect: 3.20.0
       empathic: 2.0.0
     transitivePeerDependencies:
@@ -9201,6 +9231,10 @@ snapshots:
   "@types/retry@0.12.0": {}
 
   "@types/tedious@4.0.14":
+    dependencies:
+      "@types/node": 24.13.3
+
+  "@types/yauzl@3.4.0":
     dependencies:
       "@types/node": 24.13.3
 
@@ -9837,7 +9871,7 @@ snapshots:
 
   deep-is@0.1.4: {}
 
-  deepmerge-ts@7.1.5: {}
+  deepmerge-ts@8.0.2: {}
 
   define-data-property@1.1.4:
     dependencies:
@@ -11167,6 +11201,8 @@ snapshots:
       pako: 1.0.11
       tslib: 1.14.1
 
+  pend@1.2.0: {}
+
   perfect-debounce@2.1.0: {}
 
   pg-cloudflare@1.4.0:
@@ -12045,6 +12081,10 @@ snapshots:
       string-width: 4.2.3
       y18n: 5.0.8
       yargs-parser: 21.1.1
+
+  yauzl@3.4.0:
+    dependencies:
+      pend: 1.2.0
 
   yocto-queue@0.1.0: {}
 

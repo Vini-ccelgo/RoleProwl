@@ -30,6 +30,17 @@ export class PrismaUserAccountRepository implements UserAccountRepository {
     };
   }
 
+  async refreshActiveIdentity(identity: ExternalIdentity): Promise<void> {
+    await databaseClient().user.updateMany({
+      where: {
+        authProvider: identity.provider,
+        externalAuthId: identity.externalId,
+        deletedAt: null,
+      },
+      data: { email: identity.email },
+    });
+  }
+
   async deactivateIdentity(
     provider: AuthenticationProviderName,
     externalId: string,

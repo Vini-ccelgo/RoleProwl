@@ -10,7 +10,7 @@ import {
   type SupportedProposalFactType,
 } from "./proposal-destinations";
 
-export const MAX_RESUME_BYTES = 5 * 1024 * 1024;
+export const MAX_RESUME_BYTES = 4 * 1024 * 1024;
 
 export type ResumeFormat = "PDF" | "DOCX";
 
@@ -56,7 +56,7 @@ export function validateResumeUpload(input: {
     throw new ValidationError("Choose a non-empty PDF or DOCX résumé.");
   }
   if (bytes.byteLength > maximumBytes) {
-    throw new ValidationError("The résumé exceeds the 5 MB upload limit.");
+    throw new ValidationError("The résumé exceeds the 4 MB upload limit.");
   }
 
   const format = (Object.keys(FORMAT_RULES) as ResumeFormat[]).find(

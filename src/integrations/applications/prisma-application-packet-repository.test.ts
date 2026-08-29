@@ -56,6 +56,7 @@ const application = {
   jobId: "job-1",
   state: "NEEDS_REVIEW",
   submittedAt: null,
+  updatedAt: new Date("2026-08-23T12:00:00Z"),
   submissionDestination: "https://job-boards.greenhouse.io/acme/jobs/42",
   documentsSnapshot: [
     {
@@ -147,6 +148,9 @@ describe("Prisma application packet repository", () => {
     );
     expect(mocks.applicationUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: expect.objectContaining({
+          updatedAt: application.updatedAt,
+        }),
         data: expect.objectContaining({
           state: "READY",
           documentsSnapshot: [
@@ -160,6 +164,32 @@ describe("Prisma application packet repository", () => {
         }),
       }),
     );
+  });
+
+  it("rejects a stale refresh instead of overwriting newer application input", async () => {
+    mocks.applicationUpdateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(
+      new PrismaApplicationPacketRepository(
+        vi.fn(async () => Response.json({ questions: [] })),
+      ).refresh({
+        applicationId: "application-1",
+        userId: "user-1",
+        reviewed: false,
+      }),
+    ).rejects.toThrow("changed while its packet was rebuilt");
+    expect(mocks.applicationUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: "application-1",
+          userId: "user-1",
+          state: "NEEDS_REVIEW",
+          updatedAt: application.updatedAt,
+          submittedAt: null,
+        }),
+      }),
+    );
+    expect(mocks.applicationEventCreate).not.toHaveBeenCalled();
+    expect(mocks.auditCreate).not.toHaveBeenCalled();
   });
 
   it("selects the job-tailored résumé but keeps it unresolved before candidate review", async () => {

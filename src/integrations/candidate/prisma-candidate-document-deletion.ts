@@ -30,16 +30,25 @@ function applicationUsesResumeStorageKey(
   );
 }
 
+interface CandidateDocumentDeletionInput {
+  readonly confirmDeletion?: boolean;
+  readonly documentId: string;
+  readonly userId: string;
+}
+
 export class PrismaCandidateDocumentDeletion {
   constructor(
     private readonly storage: ObjectStorageProvider = documentStorage(),
   ) {}
 
-  async delete(input: {
-    readonly confirmDeletion?: boolean;
-    readonly documentId: string;
-    readonly userId: string;
-  }) {
+  async delete(input: CandidateDocumentDeletionInput) {
+    await this.deleteAttempt(input, 3);
+  }
+
+  private async deleteAttempt(
+    input: CandidateDocumentDeletionInput,
+    attemptsRemaining: number,
+  ): Promise<void> {
     const database = databaseClient();
     try {
       await database.$transaction(
@@ -158,10 +167,14 @@ export class PrismaCandidateDocumentDeletion {
         { isolationLevel: "Serializable" },
       );
     } catch (error) {
-      if (
+      const retryableConflict =
         error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2034"
-      )
+        error.code === "P2034";
+      if (retryableConflict && attemptsRemaining > 1) {
+        await this.deleteAttempt(input, attemptsRemaining - 1);
+        return;
+      }
+      if (retryableConflict)
         throw new ConflictError(
           "Résumé dependencies changed while deletion was in progress. Try again.",
         );

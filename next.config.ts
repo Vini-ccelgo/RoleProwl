@@ -11,7 +11,7 @@ const contentSecurityPolicy = [
   "frame-src https://*.clerk.accounts.dev https://challenges.cloudflare.com",
   "worker-src 'self' blob:",
   "object-src 'none'",
-  "base-uri 'self'",
+  "base-uri 'none'",
   "form-action 'self' https://*.clerk.accounts.dev",
   "frame-ancestors 'none'",
   ...(development ? [] : ["upgrade-insecure-requests"]),

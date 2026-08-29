@@ -46,7 +46,7 @@ describe("resume upload validation", () => {
         fileName: "resume.pdf",
         mimeType: "application/pdf",
       }),
-    ).toThrow("5 MB");
+    ).toThrow("4 MB");
   });
 
   it("rejects duplicates and conceals foreign documents", () => {

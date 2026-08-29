@@ -1,6 +1,5 @@
 import { verifyWebhook } from "@clerk/nextjs/webhooks";
 import type { NextRequest } from "next/server";
-import { resolveUserAccount } from "@/features/accounts/resolve-user-account";
 import { identityFromClerkUser } from "@/integrations/auth/clerk-webhook";
 import { PrismaUserAccountRepository } from "@/integrations/auth/prisma-user-account-repository";
 import { logger } from "@/lib/logging/logger";
@@ -17,14 +16,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  let event: Awaited<ReturnType<typeof verifyWebhook>>;
   try {
     assertContentType(request, "application/json");
     assertContentLength(request, 512 * 1024);
-    const event = await verifyWebhook(request);
+    event = await verifyWebhook(request);
+  } catch (error) {
+    logger.log("warn", "Clerk webhook verification failed", {
+      errorType: error instanceof Error ? error.name : "UnknownError",
+    });
+    return Response.json({ error: "Invalid webhook" }, { status: 400 });
+  }
+
+  try {
     const repository = new PrismaUserAccountRepository();
 
     if (event.type === "user.created" || event.type === "user.updated") {
-      await resolveUserAccount(identityFromClerkUser(event.data), repository);
+      await repository.refreshActiveIdentity(identityFromClerkUser(event.data));
     } else if (event.type === "user.deleted" && event.data.id) {
       await repository.deactivateIdentity("CLERK", event.data.id);
     }
@@ -34,9 +42,13 @@ export async function POST(request: NextRequest) {
     });
     return Response.json({ received: true });
   } catch (error) {
-    logger.log("warn", "Clerk webhook verification failed", {
+    logger.log("error", "Clerk identity webhook processing failed", {
       errorType: error instanceof Error ? error.name : "UnknownError",
+      eventType: event.type,
     });
-    return Response.json({ error: "Invalid webhook" }, { status: 400 });
+    return Response.json(
+      { error: "Webhook processing failed" },
+      { status: 500 },
+    );
   }
 }

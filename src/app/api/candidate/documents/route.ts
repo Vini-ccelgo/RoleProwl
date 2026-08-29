@@ -37,7 +37,7 @@ import {
 } from "@/lib/security/request-security";
 
 const rateLimiter = new PrismaRateLimiter();
-const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
+const MULTIPART_OVERHEAD_BYTES = 256 * 1024;
 
 export const runtime = "nodejs";
 

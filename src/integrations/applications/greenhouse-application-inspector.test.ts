@@ -106,7 +106,10 @@ describe("Greenhouse application inspector", () => {
     expect(questions).toHaveLength(5);
     expect(request).toHaveBeenCalledWith(
       "https://boards-api.greenhouse.io/v1/boards/acme/jobs/42?questions=true",
-      expect.objectContaining({ headers: { accept: "application/json" } }),
+      expect.objectContaining({
+        headers: { accept: "application/json" },
+        redirect: "error",
+      }),
     );
   });
 });

@@ -444,10 +444,37 @@ describe("Prisma candidate document deletion", () => {
         userId: "user-1",
       }),
     ).rejects.toThrow("provider unavailable");
+    expect(mocks.transaction).toHaveBeenCalledTimes(1);
+    expect(deleteObject).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries an idempotent storage delete when the SQL commit conflicts", async () => {
+    const deleteObject = vi.fn(async () => undefined);
+    const transaction = mocks.transaction.getMockImplementation();
+    mocks.transaction.mockImplementationOnce(async (...args) => {
+      await transaction?.(...args);
+      throw new Prisma.PrismaClientKnownRequestError("commit conflict", {
+        clientVersion: "test",
+        code: "P2034",
+      });
+    });
+
+    await expect(
+      new PrismaCandidateDocumentDeletion(
+        storage(deleteObject) as never,
+      ).delete({
+        confirmDeletion: true,
+        documentId: "document-1",
+        userId: "user-1",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(mocks.transaction).toHaveBeenCalledTimes(2);
+    expect(deleteObject).toHaveBeenCalledTimes(2);
   });
 
   it("maps only an exact serialization conflict to a generic retry-later result", async () => {
-    mocks.transaction.mockRejectedValueOnce(
+    mocks.transaction.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError("write conflict", {
         clientVersion: "test",
         code: "P2034",
@@ -465,6 +492,7 @@ describe("Prisma candidate document deletion", () => {
       message:
         "Résumé dependencies changed while deletion was in progress. Try again.",
     });
+    expect(mocks.transaction).toHaveBeenCalledTimes(3);
   });
 
   it("conceals a foreign document before dependency inspection", async () => {

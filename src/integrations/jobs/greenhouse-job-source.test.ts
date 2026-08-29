@@ -81,6 +81,7 @@ describe("Greenhouse job source", () => {
       { boardToken: "acme", company: "Acme" },
       async (_input, init) => {
         expect(init?.signal).toBeInstanceOf(AbortSignal);
+        expect(init?.redirect).toBe("error");
         const error = new Error("request aborted");
         error.name = "AbortError";
         throw error;

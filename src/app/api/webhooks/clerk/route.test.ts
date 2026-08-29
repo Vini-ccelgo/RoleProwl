@@ -3,26 +3,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   deactivateIdentity: vi.fn(),
   logger: { log: vi.fn() },
-  resolveUserAccount: vi.fn(),
+  refreshActiveIdentity: vi.fn(),
   verifyWebhook: vi.fn(),
 }));
 
 vi.mock("@clerk/nextjs/webhooks", () => ({
   verifyWebhook: mocks.verifyWebhook,
 }));
-vi.mock("@/features/accounts/resolve-user-account", () => ({
-  resolveUserAccount: mocks.resolveUserAccount,
-}));
 vi.mock("@/integrations/auth/clerk-webhook", () => ({
   identityFromClerkUser: vi.fn(() => ({
     email: "synthetic@example.test",
     provider: "CLERK",
-    subject: "user_synthetic",
+    externalId: "user_synthetic",
   })),
 }));
 vi.mock("@/integrations/auth/prisma-user-account-repository", () => ({
   PrismaUserAccountRepository: class {
     deactivateIdentity = mocks.deactivateIdentity;
+    refreshActiveIdentity = mocks.refreshActiveIdentity;
   },
 }));
 vi.mock("@/lib/logging/logger", () => ({ logger: mocks.logger }));
@@ -66,7 +64,11 @@ describe("Clerk webhook route", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.verifyWebhook).toHaveBeenCalledOnce();
-    expect(mocks.resolveUserAccount).toHaveBeenCalledOnce();
+    expect(mocks.refreshActiveIdentity).toHaveBeenCalledWith({
+      email: "synthetic@example.test",
+      externalId: "user_synthetic",
+      provider: "CLERK",
+    });
   });
 
   it("returns a non-2xx response when verification fails", async () => {
@@ -75,6 +77,44 @@ describe("Clerk webhook route", () => {
     const response = await POST(webhookRequest() as never);
 
     expect(response.status).toBe(400);
-    expect(mocks.resolveUserAccount).not.toHaveBeenCalled();
+    expect(mocks.refreshActiveIdentity).not.toHaveBeenCalled();
+  });
+
+  it("returns a retryable server error when verified-event processing fails", async () => {
+    mocks.verifyWebhook.mockResolvedValue({
+      type: "user.updated",
+      data: { id: "user_synthetic" },
+    });
+    mocks.refreshActiveIdentity.mockRejectedValueOnce(
+      new Error("database unavailable"),
+    );
+
+    const response = await POST(webhookRequest() as never);
+
+    expect(response.status).toBe(500);
+    expect(mocks.logger.log).toHaveBeenCalledWith(
+      "error",
+      "Clerk identity webhook processing failed",
+      expect.objectContaining({
+        errorType: "Error",
+        eventType: "user.updated",
+      }),
+    );
+  });
+
+  it("deactivates an existing identity for a verified deletion event", async () => {
+    mocks.verifyWebhook.mockResolvedValue({
+      type: "user.deleted",
+      data: { id: "user_synthetic" },
+    });
+
+    const response = await POST(webhookRequest() as never);
+
+    expect(response.status).toBe(200);
+    expect(mocks.deactivateIdentity).toHaveBeenCalledWith(
+      "CLERK",
+      "user_synthetic",
+    );
+    expect(mocks.refreshActiveIdentity).not.toHaveBeenCalled();
   });
 });

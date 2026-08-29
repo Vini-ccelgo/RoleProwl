@@ -72,6 +72,7 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
         jobId: true,
         state: true,
         submittedAt: true,
+        updatedAt: true,
         submissionDestination: true,
         documentsSnapshot: true,
         resumeVersionId: true,
@@ -366,6 +367,7 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
           userId: input.userId,
           state: application.state,
           submittedAt: null,
+          updatedAt: application.updatedAt,
         },
         data: {
           state: desiredState,

@@ -128,7 +128,7 @@ export function ResumeImporter({
           <div className="min-w-0">
             <h2 className="text-lg font-semibold">Import a résumé</h2>
             <p className="mt-1 text-sm">
-              PDF with selectable text or DOCX, up to 5 MB. OCR is not included.
+              PDF with selectable text or DOCX, up to 4 MB. OCR is not included.
             </p>
           </div>
         </div>

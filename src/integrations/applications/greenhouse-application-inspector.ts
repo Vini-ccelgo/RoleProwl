@@ -130,6 +130,7 @@ export async function fetchGreenhouseApplicationQuestions(
   try {
     const response = await request(url.toString(), {
       headers: { accept: "application/json" },
+      redirect: "error",
       signal: controller.signal,
     });
     if (!response.ok)

@@ -73,6 +73,9 @@ describe("RP-029 static security boundaries", () => {
     ]) {
       expect(configuration).toContain(header);
     }
+    expect(configuration).toContain("object-src 'none'");
+    expect(configuration).toContain("base-uri 'none'");
+    expect(configuration).toContain("frame-ancestors 'none'");
     expect(configuration).toContain("poweredByHeader: false");
   });
 });

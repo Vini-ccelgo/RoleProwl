@@ -78,7 +78,11 @@ export class GreenhouseJobSource implements JobSourceAdapter {
     try {
       const response = await this.request(
         `${GREENHOUSE_BASE_URL}/${encodeURIComponent(this.configuration.boardToken)}${path}`,
-        { headers: { accept: "application/json" }, signal: controller.signal },
+        {
+          headers: { accept: "application/json" },
+          redirect: "error",
+          signal: controller.signal,
+        },
       );
       if (!response.ok) {
         throw new SourceAdapterError(
