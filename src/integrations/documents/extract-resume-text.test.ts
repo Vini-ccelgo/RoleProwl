@@ -2,7 +2,11 @@ import { Document, Packer, Paragraph } from "docx";
 import JSZip from "jszip";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { describe, expect, it } from "vitest";
-import { MAX_RESUME_PDF_PAGES, extractResumeText } from "./extract-resume-text";
+import {
+  MAX_RESUME_PDF_PAGES,
+  extractResumeText,
+  inspectResumeDocumentForAcceptance,
+} from "./extract-resume-text";
 import {
   MAX_DOCX_ARCHIVE_ENTRIES,
   MAX_DOCX_XML_ENTRY_BYTES,
@@ -169,18 +173,21 @@ describe("resume text extraction", () => {
   });
 
   it.each(["PDF", "DOCX"] as const)(
-    "returns an actionable unsupported error for malformed %s content",
+    "classifies malformed %s content as an invalid document",
     async (format) => {
       await expect(
         extractResumeText(format, new Uint8Array([1, 2, 3, 4])),
-      ).rejects.toMatchObject({ code: "EXTRACTION_UNSUPPORTED" });
+      ).rejects.toMatchObject({ code: "INVALID_DOCUMENT" });
     },
   );
 
-  it("rejects a valid but text-empty PDF without invoking OCR", async () => {
+  it("keeps a valid but text-empty PDF distinct from an invalid PDF", async () => {
     await expect(
-      extractResumeText("PDF", await syntheticPdf("")),
-    ).rejects.toThrow("no machine-readable text");
+      inspectResumeDocumentForAcceptance("PDF", await syntheticPdf("")),
+    ).resolves.toMatchObject({
+      classification: "VALID_EXTRACTION_UNSUPPORTED",
+      error: { code: "EXTRACTION_UNSUPPORTED" },
+    });
   });
 
   it("rejects a PDF before extraction when its page count exceeds the limit", async () => {
@@ -200,9 +207,10 @@ describe("resume text extraction", () => {
     );
 
     expect(bomb.byteLength).toBeLessThan(20_000);
-    await expect(extractResumeText("DOCX", bomb)).rejects.toThrow(
-      "safe document-processing limits",
-    );
+    await expect(extractResumeText("DOCX", bomb)).rejects.toMatchObject({
+      cause: { message: expect.stringContaining("safe document-processing") },
+      code: "INVALID_DOCUMENT",
+    });
   });
 
   it("rejects an arbitrary ZIP archive that merely has a DOCX signature", async () => {
@@ -221,9 +229,10 @@ describe("resume text extraction", () => {
       MAX_DOCX_ARCHIVE_ENTRIES,
     );
 
-    await expect(extractResumeText("DOCX", archive)).rejects.toThrow(
-      "too many archive entries",
-    );
+    await expect(extractResumeText("DOCX", archive)).rejects.toMatchObject({
+      cause: { message: expect.stringContaining("too many archive entries") },
+      code: "INVALID_DOCUMENT",
+    });
   });
 
   it("rejects compressed data whose actual expansion exceeds falsified metadata", async () => {
@@ -236,8 +245,8 @@ describe("resume text extraction", () => {
       100,
     );
 
-    await expect(extractResumeText("DOCX", falsified)).rejects.toThrow(
-      /malformed|inconsistent|safe document-processing limits/iu,
-    );
+    await expect(extractResumeText("DOCX", falsified)).rejects.toMatchObject({
+      code: "INVALID_DOCUMENT",
+    });
   });
 });

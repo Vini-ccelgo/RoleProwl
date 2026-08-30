@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import type { Entry } from "yauzl";
 import { fromBufferPromise } from "yauzl";
-import { ExtractionUnsupportedError } from "@/core/errors/application-errors";
+import { InvalidResumeDocumentError } from "@/core/errors/application-errors";
 
 export const MAX_DOCX_ARCHIVE_ENTRIES = 1_000;
 export const MAX_DOCX_ENTRY_BYTES = 10 * 1024 * 1024;
@@ -15,7 +15,10 @@ const DOCX_MAIN_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml";
 
 function rejectDocx(message: string, cause?: unknown): never {
-  throw new ExtractionUnsupportedError(message, cause);
+  throw new InvalidResumeDocumentError(
+    "This file is not a valid DOCX document.",
+    cause ?? new Error(message),
+  );
 }
 
 function isDirectory(entry: Entry) {
@@ -167,7 +170,7 @@ export async function assertDocxArchiveIsSafe(bytes: Uint8Array) {
       );
     }
   } catch (error) {
-    if (error instanceof ExtractionUnsupportedError) throw error;
+    if (error instanceof InvalidResumeDocumentError) throw error;
     rejectDocx(
       "This DOCX archive is malformed or has inconsistent compressed data.",
       error,

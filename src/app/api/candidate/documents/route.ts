@@ -22,7 +22,7 @@ import {
   removeFailedResumeRecord,
   type ResumePersistenceSubstage,
 } from "@/integrations/candidate/prisma-resume-ingestion";
-import { extractResumeText } from "@/integrations/documents/extract-resume-text";
+import { inspectResumeDocumentForAcceptance } from "@/integrations/documents/extract-resume-text";
 import { documentStorage } from "@/integrations/storage/document-storage";
 import { storageFailureLogContext } from "@/integrations/storage/storage-diagnostics";
 import { PrismaRateLimiter } from "@/integrations/security/prisma-rate-limiter";
@@ -67,9 +67,11 @@ function errorResponse(error: unknown, logUnexpected = true) {
         status:
           error.code === "VALIDATION"
             ? 400
-            : error.code === "CONFLICT"
-              ? 409
-              : 500,
+            : error.code === "INVALID_DOCUMENT"
+              ? 422
+              : error.code === "CONFLICT"
+                ? 409
+                : 500,
       },
     );
   }
@@ -109,10 +111,10 @@ export async function GET() {
 type IngestionStage =
   | "upload"
   | "validation"
+  | "document_inspection"
   | "storage_write"
   | "storage_retrieval"
   | "document_persistence"
-  | "text_extraction"
   | "extraction_failure_persistence"
   | "truth_vault_persistence";
 
@@ -183,6 +185,12 @@ export async function POST(request: Request) {
       bodyLengthExplicit: true,
       mediaType: validated.mimeType,
     };
+    pipelineState.stage = "document_inspection";
+    const acceptance = await inspectResumeDocumentForAcceptance(
+      validated.format,
+      new Uint8Array(validated.bytes),
+    );
+
     db = databaseClient();
     const duplicate = await db.candidateDocument.findUnique({
       where: {
@@ -197,15 +205,11 @@ export async function POST(request: Request) {
 
     const storage = documentStorage();
     storedKey = validated.storageKey;
-    const storedBytes = await storeAndRetrieveResume(
-      storage,
-      validated,
-      (storageStage) => {
-        pipelineState.stage = storageStage;
-        pipelineState.storageOperation =
-          storageStage === "storage_write" ? "put" : "get";
-      },
-    );
+    await storeAndRetrieveResume(storage, validated, (storageStage) => {
+      pipelineState.stage = storageStage;
+      pipelineState.storageOperation =
+        storageStage === "storage_write" ? "put" : "get";
+    });
     pipelineState.storageOperation = null;
     pipelineState.stage = "document_persistence";
     pipelineState.persistenceSubstage = "document_record_create";
@@ -224,12 +228,8 @@ export async function POST(request: Request) {
     });
     pipelineState.persistenceSubstage = null;
 
-    pipelineState.stage = "text_extraction";
-    let extraction: Awaited<ReturnType<typeof extractResumeText>>;
-    try {
-      extraction = await extractResumeText(validated.format, storedBytes);
-    } catch (error) {
-      if (!(error instanceof ExtractionUnsupportedError)) throw error;
+    if (acceptance.classification === "VALID_EXTRACTION_UNSUPPORTED") {
+      const error = acceptance.error;
       pipelineState.stage = "extraction_failure_persistence";
       pipelineState.persistenceSubstage = "document_status_update";
       await db.$transaction(
@@ -252,10 +252,10 @@ export async function POST(request: Request) {
         { timeout: RESUME_PERSISTENCE_TRANSACTION_TIMEOUT_MS },
       );
       pipelineState.persistenceSubstage = null;
-      pipelineState.stage = "text_extraction";
       throw error;
     }
 
+    const extraction = acceptance.extraction;
     const drafts = proposeFactsFromResumeText(extraction.text);
     const interpretation = assessResumeInterpretation(extraction.text, drafts);
     pipelineState.stage = "truth_vault_persistence";

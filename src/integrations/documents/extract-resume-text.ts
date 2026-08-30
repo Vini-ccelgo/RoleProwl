@@ -1,7 +1,11 @@
 import "server-only";
 import * as mammoth from "mammoth";
 import { getDocumentProxy } from "unpdf";
-import { ExtractionUnsupportedError } from "@/core/errors/application-errors";
+import {
+  ApplicationError,
+  ExtractionUnsupportedError,
+  InvalidResumeDocumentError,
+} from "@/core/errors/application-errors";
 import type { ResumeFormat } from "@/core/domain/candidate/resume-import";
 import { normalizeExtractedResumeText } from "@/core/domain/candidate/resume-text-normalization";
 import { assertDocxArchiveIsSafe } from "./inspect-docx-archive";
@@ -14,6 +18,16 @@ export interface ResumeTextExtraction {
   readonly pageCount: number | null;
   readonly text: string;
 }
+
+export type ResumeDocumentAcceptance =
+  | {
+      readonly classification: "VALID_EXTRACTED";
+      readonly extraction: ResumeTextExtraction;
+    }
+  | {
+      readonly classification: "VALID_EXTRACTION_UNSUPPORTED";
+      readonly error: ExtractionUnsupportedError;
+    };
 
 function assertExtractedTextIsBounded(text: string) {
   if (text.length > MAX_EXTRACTED_RESUME_CHARACTERS) {
@@ -106,10 +120,32 @@ export async function extractResumeText(
     assertExtractedTextIsBounded(text);
     return { text, pageCount: null };
   } catch (error) {
-    if (error instanceof ExtractionUnsupportedError) throw error;
-    throw new ExtractionUnsupportedError(
-      `RoleProwl could not extract this ${format}. Confirm that it is a valid, unencrypted document with selectable text.`,
+    if (error instanceof ApplicationError) throw error;
+    throw new InvalidResumeDocumentError(
+      format === "PDF"
+        ? "This file is not a valid PDF."
+        : "This file is not a valid DOCX document.",
       error,
     );
+  }
+}
+
+export async function inspectResumeDocumentForAcceptance(
+  format: ResumeFormat,
+  bytes: Uint8Array,
+): Promise<ResumeDocumentAcceptance> {
+  try {
+    return {
+      classification: "VALID_EXTRACTED",
+      extraction: await extractResumeText(format, bytes),
+    };
+  } catch (error) {
+    if (error instanceof ExtractionUnsupportedError) {
+      return {
+        classification: "VALID_EXTRACTION_UNSUPPORTED",
+        error,
+      };
+    }
+    throw error;
   }
 }

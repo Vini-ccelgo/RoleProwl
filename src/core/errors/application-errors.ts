@@ -5,6 +5,7 @@ export type ApplicationErrorCode =
   | "INTEGRATION"
   | "CONFIGURATION"
   | "CONFLICT"
+  | "INVALID_DOCUMENT"
   | "EXTRACTION_UNSUPPORTED"
   | "AI_REFUSAL"
   | "AI_INVALID_OUTPUT"
@@ -53,6 +54,11 @@ export class ConfigurationError extends ApplicationError {
 export class ExtractionUnsupportedError extends ApplicationError {
   constructor(message: string, cause?: unknown) {
     super(message, "EXTRACTION_UNSUPPORTED", cause);
+  }
+}
+export class InvalidResumeDocumentError extends ApplicationError {
+  constructor(message: string, cause?: unknown) {
+    super(message, "INVALID_DOCUMENT", cause);
   }
 }
 export class ConflictError extends ApplicationError {
