@@ -85,6 +85,7 @@ vi.mock("@/lib/db/client", () => ({
         count: vi.fn(async () => 0),
         deleteMany: vi.fn(async () => ({ count: 0 })),
       },
+      jobMatchAnalysis: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       notification: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     };
     return {

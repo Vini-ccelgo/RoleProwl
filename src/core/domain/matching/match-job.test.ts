@@ -59,7 +59,7 @@ const job: JobMatchSnapshot = {
   remoteType: "REMOTE",
 };
 
-describe("matching engine v1", () => {
+describe("grounded matching engine v1.2", () => {
   it("scores a highly suitable role with evidence", () => {
     const result = matchCandidateToJob(candidate, job);
     expect(result.qualificationScore).toBeGreaterThanOrEqual(90);
@@ -112,7 +112,7 @@ describe("matching engine v1", () => {
     expect(result.overallFit).toBeLessThanOrEqual(20);
   });
 
-  it("preserves unknown requirements and lowers confidence", () => {
+  it("preserves unknown requirements and lowers coverage without diluting determinacy", () => {
     const result = matchCandidateToJob(
       { ...candidate, authorizationCountries: null, licenses: null },
       { ...job, requiredLicenses: ["PE"] },
@@ -123,7 +123,8 @@ describe("matching engine v1", () => {
         expect.objectContaining({ code: "LICENSE_UNKNOWN" }),
       ]),
     );
-    expect(result.confidence).toBeLessThan(1);
+    expect(result.evidenceCoverage).toBeLessThan(1);
+    expect(result.confidence).toBe(1);
   });
 
   it.each([
@@ -186,7 +187,7 @@ describe("matching engine v1", () => {
       ...job,
       excludedSkills: ["Java"],
     });
-    expect(result.hardConflicts).toEqual(
+    expect(result.unknowns).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: "CONTRADICTORY_JOB_REQUIREMENTS" }),
       ]),
@@ -202,7 +203,10 @@ describe("matching engine v1", () => {
     ) as unknown as JobMatchSnapshot;
     const result = matchCandidateToJob(candidate, sparse);
     expect(result.confidence).toBe(0);
-    expect(result.preferenceScore).toBe(50);
+    expect(result.evidenceCoverage).toBe(0);
+    expect(result.preferenceScore).toBeNull();
+    expect(result.qualificationScore).toBeNull();
+    expect(result.overallFit).toBeNull();
   });
 
   it("treats absent candidate skill evidence as unknown, not a gap", () => {
@@ -289,12 +293,15 @@ describe("matching engine v1", () => {
         seniority: null,
       },
     );
-    expect(result.qualificationScore).toBe(100);
-    expect(result.overallFit).toBe(100);
-    expect(result.confidence).toBeCloseTo(1 / 3, 2);
+    expect(result.qualificationScore).toBeNull();
+    expect(result.overallFit).toBeNull();
+    expect(result.evidenceCoverage).toBeCloseTo(1 / 3, 2);
+    expect(result.confidence).toBe(1);
     expect(result.strengths).toHaveLength(1);
     expect(result.unknowns).toHaveLength(2);
-    expect(hasSufficientEvidenceForHighFit(result.confidence)).toBe(false);
+    expect(hasSufficientEvidenceForHighFit(result.evidenceCoverage)).toBe(
+      false,
+    );
   });
 
   it("keeps actual not-met evidence as a gap", () => {
@@ -309,7 +316,10 @@ describe("matching engine v1", () => {
     );
     expect(result.gaps).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ assessment: "GAP", code: "EXPERIENCE" }),
+        expect.objectContaining({
+          assessment: "GAP",
+          code: "EXPERIENCE_GAP",
+        }),
       ]),
     );
   });
@@ -317,6 +327,158 @@ describe("matching engine v1", () => {
   it("allows high-fit classification only with sufficient evidence", () => {
     const result = matchCandidateToJob(candidate, job);
     expect(result.confidence).toBeGreaterThanOrEqual(0.5);
-    expect(hasSufficientEvidenceForHighFit(result.confidence)).toBe(true);
+    expect(hasSufficientEvidenceForHighFit(result.evidenceCoverage)).toBe(true);
+  });
+
+  it("produces stable grounded outputs for identical evidence", () => {
+    const first = matchCandidateToJob(candidate, job);
+    const second = matchCandidateToJob(candidate, job);
+    expect(second).toEqual(first);
+    expect(first.scoringVersion).toBe("match-v1.2");
+  });
+
+  it("keeps an unstated education requirement out of qualification gaps", () => {
+    const result = matchCandidateToJob(
+      { ...candidate, educationLevels: [] },
+      {
+        ...job,
+        educationLevels: null,
+        requiredSkills: null,
+        preferredSkills: null,
+        minimumExperienceMonths: null,
+        seniority: null,
+      },
+    );
+    expect(result.gaps.some(({ code }) => code.startsWith("EDUCATION"))).toBe(
+      false,
+    );
+  });
+
+  it("classifies explicit work-mode preference disagreement as a preference conflict", () => {
+    const result = matchCandidateToJob(
+      { ...candidate, preferredRemoteTypes: ["REMOTE"] },
+      { ...job, remoteType: "ONSITE" },
+    );
+    expect(result.conflicts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assessment: "CONFLICT",
+          category: "PREFERENCE",
+          code: "REMOTE_PREFERENCE_CONFLICT",
+        }),
+      ]),
+    );
+    expect(result.gaps).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "REMOTE_PREFERENCE_CONFLICT" }),
+      ]),
+    );
+  });
+
+  it("keeps missing salary as an unknown preference rather than a conflict", () => {
+    const result = matchCandidateToJob(candidate, {
+      ...job,
+      maximumSalary: null,
+    });
+    expect(result.unknowns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "COMPENSATION_UNKNOWN" }),
+      ]),
+    );
+    expect(result.conflicts).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "COMPENSATION_CONFLICT" }),
+      ]),
+    );
+  });
+
+  it("classifies published compensation below a hard floor as a preference conflict", () => {
+    const result = matchCandidateToJob(candidate, {
+      ...job,
+      maximumSalary: 90_000,
+    });
+    expect(result.hardConflicts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          category: "PREFERENCE",
+          code: "COMPENSATION_CONFLICT",
+        }),
+      ]),
+    );
+  });
+
+  it("keeps unstated sponsorship unknown and explicit incompatibility hard", () => {
+    const needsSponsorship = {
+      ...candidate,
+      authorizationCountries: null,
+      requiresSponsorship: true,
+    };
+    const unknown = matchCandidateToJob(needsSponsorship, {
+      ...job,
+      authorizationCountries: null,
+      sponsorshipAvailable: null,
+    });
+    expect(unknown.unknowns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "SPONSORSHIP_UNKNOWN" }),
+      ]),
+    );
+    const conflict = matchCandidateToJob(needsSponsorship, {
+      ...job,
+      authorizationCountries: null,
+      sponsorshipAvailable: false,
+    });
+    expect(conflict.hardConflicts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "SPONSORSHIP_CONFLICT" }),
+      ]),
+    );
+  });
+
+  it("assigns materially higher coverage to rich evidence than sparse evidence", () => {
+    const rich = matchCandidateToJob(candidate, job);
+    const sparse = matchCandidateToJob(candidate, {
+      ...job,
+      authorizationCountries: null,
+      educationLevels: null,
+      industry: null,
+      locations: null,
+      maximumSalary: null,
+      minimumExperienceMonths: null,
+      preferredSkills: null,
+      remoteType: null,
+      requiredLanguages: null,
+      requiredSkills: [
+        {
+          name: "Unknown skill",
+          minimumExperienceMonths: null,
+          minimumProficiency: null,
+        },
+      ],
+      roleFamily: null,
+      seniority: null,
+    });
+    expect(rich.evidenceCoverage).toBeGreaterThan(sparse.evidenceCoverage);
+    expect(rich.overallFit).not.toBeNull();
+    expect(sparse.overallFit).toBeNull();
+  });
+
+  it("retains auditable job and candidate evidence references", () => {
+    const result = matchCandidateToJob(candidate, job);
+    expect(result.strengths).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assessment: "MATCH",
+          candidateEvidence: expect.arrayContaining([
+            expect.objectContaining({ field: expect.any(String) }),
+          ]),
+          jobEvidence: expect.objectContaining({
+            field: expect.any(String),
+            origin: expect.any(String),
+          }),
+        }),
+      ]),
+    );
+    expect(result.scoringVersion).toBe("match-v1.2");
   });
 });

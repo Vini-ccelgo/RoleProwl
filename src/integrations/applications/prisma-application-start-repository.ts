@@ -152,6 +152,7 @@ export class PrismaApplicationStartRepository implements ApplicationStartReposit
             const fitSnapshot = analysis
               ? {
                   confidence: analysis.confidence,
+                  evidenceCoverage: analysis.evidenceCoverage,
                   overallFit: analysis.overallFit,
                   preferenceScore: analysis.preferenceScore,
                   qualificationScore: analysis.qualificationScore,

@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   factCount: vi.fn(),
   factsDeleteMany: vi.fn(async () => ({ count: 0 })),
   notificationDeleteMany: vi.fn(async () => ({ count: 0 })),
+  matchDeleteMany: vi.fn(async () => ({ count: 1 })),
   readyFindMany: vi.fn(async () => []),
   transaction: vi.fn(),
 }));
@@ -97,6 +98,7 @@ describe("Prisma candidate document deletion", () => {
         },
         applicationEvent: { create: mocks.eventCreate },
         notification: { deleteMany: mocks.notificationDeleteMany },
+        jobMatchAnalysis: { deleteMany: mocks.matchDeleteMany },
       }),
     );
   });

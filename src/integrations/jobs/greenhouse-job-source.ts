@@ -7,6 +7,10 @@ import type {
   RawSourceJob,
 } from "@/core/contracts/job-source-adapter";
 import { canonicalJobSchema } from "@/core/domain/jobs/job";
+import {
+  explicitRemoteTypeFromLocation,
+  extractExplicitJobCriteria,
+} from "@/core/domain/jobs/job-evidence";
 import { readableJobDescription } from "@/core/domain/jobs/job-description";
 import { SourceAdapterError } from "@/core/errors/source-adapter-error";
 import { sourceCapabilities } from "@/core/integrations/capability-registry";
@@ -159,23 +163,25 @@ export class GreenhouseJobSource implements JobSourceAdapter {
     }
     const payload = job.payload as unknown as GreenhouseJob;
     const location = payload.location?.name?.trim();
+    const description = readableJobDescription(payload.content);
+    const criteria = extractExplicitJobCriteria(description);
     return {
       source: job,
       canonical: canonicalJobSchema.parse({
         company: this.configuration.company,
         title: payload.title,
-        description: readableJobDescription(payload.content),
+        description,
         canonicalApplicationUrl: job.applicationUrl,
         locations: location ? [location] : null,
-        remoteType: null,
+        remoteType: explicitRemoteTypeFromLocation(location),
         employmentType: null,
         seniority: null,
         salaryMin: null,
         salaryMax: null,
         salaryCurrency: null,
         salaryInterval: null,
-        requirements: null,
-        preferredRequirements: null,
+        requirements: criteria.required,
+        preferredRequirements: criteria.preferred,
         skills: null,
         educationRequirements: null,
         experienceRequirements: null,

@@ -28,7 +28,7 @@ describe("match snapshot evidence boundaries", () => {
     );
     expect(snapshot.roleFamilies).toBeNull();
     expect(snapshot.preferredRoleFamilies).toEqual(["Product"]);
-    expect(snapshot.authorizationCountries).toBeNull();
+    expect(snapshot.authorizationCountries).toEqual([]);
     expect(snapshot.requiresSponsorship).toBe(true);
   });
 
@@ -49,9 +49,44 @@ describe("match snapshot evidence boundaries", () => {
     expect(snapshot.requiredSkills).toBeNull();
     expect(snapshot.preferredSkills).toEqual([
       {
+        evidence: {
+          field: "skills",
+          origin: "SOURCE_STRUCTURED_FIELD",
+          statement: "TypeScript",
+        },
         name: "TypeScript",
         minimumExperienceMonths: null,
         minimumProficiency: null,
+      },
+    ]);
+  });
+
+  it("uses only exact structured project and verified résumé skill facts", () => {
+    const snapshot = buildCandidateMatchSnapshot({
+      authorization: null,
+      candidateFacts: [
+        { factType: "SKILL_TEXT", value: { text: "Python" } },
+        { factType: "EDUCATION_TEXT", value: { text: "Rust" } },
+      ],
+      educationRecords: [],
+      preferences: null,
+      projects: [{ skills: ["TypeScript"] }],
+      skills: [],
+      workExperiences: [],
+    });
+
+    expect(snapshot.skills).toEqual([
+      {
+        evidenceCount: 0,
+        experienceMonths: null,
+        name: "TypeScript",
+        proficiency: null,
+      },
+      {
+        evidenceCount: 1,
+        experienceMonths: null,
+        name: "Python",
+        proficiency: null,
       },
     ]);
   });

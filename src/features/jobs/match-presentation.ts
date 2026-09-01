@@ -51,13 +51,16 @@ export function splitMatchEvidence(groups: {
   readonly unknowns: readonly MatchEvidence[];
 }) {
   const preferences = [
+    ...groups.conflicts,
     ...groups.strengths,
     ...groups.partials,
     ...groups.gaps,
     ...groups.unknowns,
   ].filter((item) => item.category === "PREFERENCE");
   return {
-    conflicts: groups.conflicts,
+    conflicts: groups.conflicts.filter(
+      (item) => item.category !== "PREFERENCE",
+    ),
     gaps: groups.gaps.filter((item) => item.category !== "PREFERENCE"),
     partials: groups.partials.filter((item) => item.category !== "PREFERENCE"),
     preferences,

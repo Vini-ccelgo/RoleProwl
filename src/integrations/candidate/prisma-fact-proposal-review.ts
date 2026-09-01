@@ -5,6 +5,7 @@ import {
 } from "@/core/domain/candidate/fact-verification";
 import { ConflictError } from "@/core/errors/application-errors";
 import type { Prisma } from "@/generated/prisma/client";
+import { invalidateCandidateJobMatchAnalyses } from "@/integrations/jobs/invalidate-job-match-analyses";
 
 export interface PersistFactProposalDecisionInput {
   readonly decision: ProposalDecision;
@@ -88,5 +89,6 @@ export async function persistFactProposalDecision(
           : { factType: proposal!.factType, source: "RESUME_EXTRACTED" },
     },
   });
+  await invalidateCandidateJobMatchAnalyses(transaction, input.userId);
   return { status: decision.status, canonicalFactId: fact.id };
 }

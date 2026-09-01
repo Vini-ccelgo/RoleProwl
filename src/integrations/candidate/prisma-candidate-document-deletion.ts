@@ -6,6 +6,7 @@ import { applicationResumeSnapshot } from "@/core/domain/applications/applicatio
 import { Prisma } from "@/generated/prisma/client";
 import { invalidateReadyApplicationPackets } from "@/integrations/applications/invalidate-application-packets";
 import { documentStorage } from "@/integrations/storage/document-storage";
+import { invalidateCandidateJobMatchAnalyses } from "@/integrations/jobs/invalidate-job-match-analyses";
 import { databaseClient } from "@/lib/db/client";
 import {
   DOCUMENT_DELETION_CONFIRMATION_REQUIRED,
@@ -156,6 +157,7 @@ export class PrismaCandidateDocumentDeletion {
             );
 
           await invalidateReadyApplicationPackets(transaction, input.userId);
+          await invalidateCandidateJobMatchAnalyses(transaction, input.userId);
           if (retainedReferences.length === 0) {
             // Keep the provider call last inside the transaction: a storage
             // failure rejects the operation and rolls every staged database

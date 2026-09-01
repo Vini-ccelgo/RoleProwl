@@ -74,7 +74,10 @@ export default async function DashboardPage() {
       where: { userId: actor.id, state: "INTERVIEW" },
     }),
     database.jobMatchAnalysis.findMany({
-      where: activeEvidenceAwareMatchWhere(actor.id),
+      where: {
+        ...activeEvidenceAwareMatchWhere(actor.id),
+        overallFit: { not: null },
+      },
       orderBy: [{ overallFit: "desc" }, { updatedAt: "desc" }],
       take: 5,
       include: {
@@ -165,12 +168,13 @@ export default async function DashboardPage() {
                   </div>
                   <div className="text-right">
                     <span className="badge">
-                      {hasSufficientEvidenceForHighFit(match.confidence)
+                      {hasSufficientEvidenceForHighFit(match.evidenceCoverage)
                         ? `${match.overallFit}% fit`
                         : "Preliminary fit"}
                     </span>
                     <p className="m-0 text-xs text-foreground-muted">
-                      {Math.round(match.confidence * 100)}% evidence coverage
+                      {Math.round(match.evidenceCoverage * 100)}% evidence
+                      coverage
                     </p>
                   </div>
                 </li>

@@ -175,10 +175,12 @@ model JobMatchAnalysis {
   id                 String          @id @default(cuid())
   userId             String
   jobId              String
-  qualificationScore Int
-  preferenceScore    Int
-  overallFit         Int
+  qualificationScore Int?
+  preferenceScore    Int?
+  overallFit         Int?
   confidence         Float
+  evidenceCoverage   Float
+  conflicts          Json
   hardConflicts      Json
   strengths          Json
   partialMatches     Json

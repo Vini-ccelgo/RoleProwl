@@ -1,9 +1,12 @@
 import type { Prisma } from "@/generated/prisma/client";
 import type {
   CandidateMatchSnapshot,
+  JobEvidenceOrigin,
   JobMatchSnapshot,
+  OtherJobCriterion,
   SkillRequirement,
 } from "@/core/domain/matching/match-job";
+import { normalizeSkillName } from "@/core/domain/candidate/truth-vault";
 
 function stringArray(value: Prisma.JsonValue | null): string[] | null {
   return Array.isArray(value)
@@ -17,37 +20,127 @@ function object(value: Prisma.JsonValue | null) {
     : null;
 }
 
-function explicitSkillRequirements(value: Prisma.JsonValue | null) {
-  if (!Array.isArray(value)) return null;
-  const skills: SkillRequirement[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    if (item.type !== "SKILL" || typeof item.name !== "string") continue;
-    skills.push({
-      name: item.name,
-      minimumExperienceMonths:
-        typeof item.minimumExperienceMonths === "number"
-          ? item.minimumExperienceMonths
-          : null,
-      minimumProficiency:
-        item.minimumProficiency === "FAMILIAR" ||
-        item.minimumProficiency === "WORKING" ||
-        item.minimumProficiency === "ADVANCED" ||
-        item.minimumProficiency === "EXPERT"
-          ? item.minimumProficiency
-          : null,
-    });
-  }
-  return skills.length ? skills : null;
+function criterionOrigin(value: unknown): JobEvidenceOrigin {
+  return value === "SOURCE_TEXT_EXPLICIT" || value === "SAFE_CANONICALIZATION"
+    ? value
+    : "SOURCE_STRUCTURED_FIELD";
 }
 
-function monthsBetween(start: Date, end: Date) {
-  return Math.max(
-    0,
-    (end.getUTCFullYear() - start.getUTCFullYear()) * 12 +
-      end.getUTCMonth() -
-      start.getUTCMonth(),
-  );
+function criterionCode(statement: string, index: number) {
+  const normalized = statement
+    .normalize("NFKC")
+    .toLocaleLowerCase("en-US")
+    .replace(/[^a-z0-9]+/gu, "_")
+    .replace(/^_|_$/gu, "")
+    .slice(0, 64);
+  return `EXPLICIT_CRITERION_${normalized || index}`;
+}
+
+function requirementSet(
+  value: Prisma.JsonValue | null,
+  field: "requirements" | "preferredRequirements",
+) {
+  const skills: SkillRequirement[] = [];
+  const other: OtherJobCriterion[] = [];
+  let minimumExperienceMonths: number | null = null;
+  if (!Array.isArray(value))
+    return { skills: null, other: null, minimumExperienceMonths };
+  value.forEach((item, index) => {
+    const record =
+      item && typeof item === "object" && !Array.isArray(item)
+        ? (item as Record<string, Prisma.JsonValue>)
+        : null;
+    const statement =
+      typeof item === "string"
+        ? item.trim()
+        : typeof record?.statement === "string"
+          ? record.statement.trim()
+          : typeof record?.sourceText === "string"
+            ? record.sourceText.trim()
+            : "";
+    const kind =
+      typeof record?.kind === "string"
+        ? record.kind
+        : typeof record?.type === "string"
+          ? record.type
+          : "OTHER";
+    const evidence = {
+      field:
+        typeof record?.sourceField === "string" ? record.sourceField : field,
+      origin: criterionOrigin(record?.origin),
+      ...(statement ? { statement } : {}),
+    };
+    const name =
+      typeof record?.skillName === "string"
+        ? record.skillName
+        : typeof record?.name === "string"
+          ? record.name
+          : typeof record?.value === "string" && kind === "SKILL"
+            ? record.value
+            : null;
+    if (kind === "SKILL" && name?.trim()) {
+      skills.push({
+        name: name.trim(),
+        minimumExperienceMonths:
+          typeof record?.minimumExperienceMonths === "number"
+            ? record.minimumExperienceMonths
+            : null,
+        minimumProficiency:
+          record?.minimumProficiency === "FAMILIAR" ||
+          record?.minimumProficiency === "WORKING" ||
+          record?.minimumProficiency === "ADVANCED" ||
+          record?.minimumProficiency === "EXPERT"
+            ? record.minimumProficiency
+            : null,
+        evidence,
+        statement: statement || name.trim(),
+      });
+      return;
+    }
+    if (
+      kind === "EXPERIENCE" &&
+      typeof record?.minimumExperienceMonths === "number"
+    ) {
+      minimumExperienceMonths = Math.max(
+        minimumExperienceMonths ?? 0,
+        record.minimumExperienceMonths,
+      );
+      return;
+    }
+    if (!statement) return;
+    other.push({
+      code: criterionCode(statement, index),
+      evidence,
+      label: statement,
+    });
+  });
+  return {
+    skills: skills.length ? skills : null,
+    other: other.length ? other : null,
+    minimumExperienceMonths,
+  };
+}
+
+function distinctExperienceMonths(
+  work: readonly { startDate: Date; endDate: Date | null }[],
+  now: Date,
+) {
+  const months = new Set<number>();
+  for (const item of work) {
+    const start =
+      item.startDate.getUTCFullYear() * 12 + item.startDate.getUTCMonth();
+    const endDate = item.endDate ?? now;
+    const end = endDate.getUTCFullYear() * 12 + endDate.getUTCMonth();
+    for (let month = start; month < end; month += 1) months.add(month);
+  }
+  return months.size;
+}
+
+function candidateFactText(value: Prisma.JsonValue) {
+  const record = object(value);
+  return typeof record?.text === "string" && record.text.trim()
+    ? record.text.trim()
+    : null;
 }
 
 export function buildCandidateMatchSnapshot(
@@ -56,6 +149,12 @@ export function buildCandidateMatchSnapshot(
       canonicalName: string;
       proficiency: string | null;
       experienceMonths: number | null;
+      evidenceCount?: number;
+    }[];
+    readonly projects?: readonly { readonly skills: readonly string[] }[];
+    readonly candidateFacts?: readonly {
+      readonly factType: string;
+      readonly value: Prisma.JsonValue;
     }[];
     readonly workExperiences: readonly {
       startDate: Date;
@@ -69,6 +168,9 @@ export function buildCandidateMatchSnapshot(
       remotePreference: string | null;
       locationPreferences: readonly string[];
       salaryMinimum: number | null;
+      employmentTypes?: readonly string[];
+      seniorities?: readonly string[];
+      exclusions?: readonly string[];
     } | null;
     readonly authorization: {
       countryCode: string;
@@ -84,19 +186,56 @@ export function buildCandidateMatchSnapshot(
   const explicitlyAuthorized =
     authorizationStatus?.includes("authorized") &&
     !authorizationStatus.includes("not authorized");
+  const explicitlyUnauthorized =
+    authorizationStatus?.includes("not authorized") ||
+    authorizationStatus?.includes("unauthorized");
   const remote = input.preferences?.remotePreference?.toUpperCase();
+  const skills = new Map(
+    input.skills.map((skill) => [
+      normalizeSkillName(skill.canonicalName),
+      skill,
+    ]),
+  );
+  for (const projectSkill of input.projects?.flatMap(
+    (project) => project.skills,
+  ) ?? []) {
+    const normalized = normalizeSkillName(projectSkill);
+    if (normalized && !skills.has(normalized)) {
+      skills.set(normalized, {
+        canonicalName: projectSkill,
+        proficiency: null,
+        experienceMonths: null,
+        evidenceCount: 0,
+      });
+    }
+  }
+  for (const fact of input.candidateFacts ?? []) {
+    if (fact.factType !== "SKILL_TEXT") continue;
+    const factSkill = candidateFactText(fact.value);
+    if (!factSkill) continue;
+    const normalized = normalizeSkillName(factSkill);
+    const current = skills.get(normalized);
+    skills.set(normalized, {
+      canonicalName: current?.canonicalName ?? factSkill,
+      proficiency: current?.proficiency ?? null,
+      experienceMonths: current?.experienceMonths ?? null,
+      evidenceCount: Math.max(current?.evidenceCount ?? 0, 1),
+    });
+  }
   return {
-    authorizationCountries:
-      input.authorization && explicitlyAuthorized
+    authorizationCountries: !input.authorization
+      ? null
+      : explicitlyAuthorized
         ? [input.authorization.countryCode]
-        : null,
+        : explicitlyUnauthorized
+          ? []
+          : null,
     requiresSponsorship: input.authorization?.requiresSponsorship ?? null,
     clearances: null,
     languages: null,
     licenses: null,
-    locationExclusions: null,
     requiredSalaryMinimum: input.preferences?.salaryMinimum ?? null,
-    skills: input.skills.map((skill) => ({
+    skills: [...skills.values()].map((skill) => ({
       name: skill.canonicalName,
       proficiency:
         skill.proficiency === "FAMILIAR" ||
@@ -106,13 +245,10 @@ export function buildCandidateMatchSnapshot(
           ? skill.proficiency
           : null,
       experienceMonths: skill.experienceMonths,
+      evidenceCount: skill.evidenceCount,
     })),
     experienceMonths: input.workExperiences.length
-      ? input.workExperiences.reduce(
-          (total, work) =>
-            total + monthsBetween(work.startDate, work.endDate ?? now),
-          0,
-        )
+      ? distinctExperienceMonths(input.workExperiences, now)
       : null,
     roleFamilies: null,
     industries: null,
@@ -129,6 +265,9 @@ export function buildCandidateMatchSnapshot(
         : null,
     preferredIndustries: input.preferences?.industries ?? null,
     preferredLocations: input.preferences?.locationPreferences ?? null,
+    preferredEmploymentTypes: input.preferences?.employmentTypes ?? null,
+    preferredSeniorities: input.preferences?.seniorities ?? null,
+    locationExclusions: input.preferences?.exclusions ?? null,
   };
 }
 
@@ -142,13 +281,18 @@ export function buildJobMatchSnapshot(job: {
   readonly sponsorship: Prisma.JsonValue | null;
   readonly locations: Prisma.JsonValue | null;
   readonly remoteType: "ONSITE" | "HYBRID" | "REMOTE" | null;
+  readonly employmentType?: string | null;
   readonly salaryMax: { toNumber(): number } | null;
   readonly seniority: string | null;
 }): JobMatchSnapshot {
   const authorization = object(job.workAuthorization);
   const sponsorship = object(job.sponsorship);
   const experience = object(job.experienceRequirements);
-  const explicitlyRequired = explicitSkillRequirements(job.requirements);
+  const required = requirementSet(job.requirements, "requirements");
+  const preferred = requirementSet(
+    job.preferredRequirements,
+    "preferredRequirements",
+  );
   const generalSkills = stringArray(job.skills);
   return {
     authorizationCountries: stringArray(
@@ -166,24 +310,32 @@ export function buildJobMatchSnapshot(job: {
     requiredLicenses: null,
     locations: stringArray(job.locations),
     maximumSalary: job.salaryMax?.toNumber() ?? null,
-    requiredSkills: explicitlyRequired,
+    requiredSkills: required.skills,
     preferredSkills:
-      explicitSkillRequirements(job.preferredRequirements) ??
+      preferred.skills ??
       generalSkills?.map((name) => ({
         name,
         minimumExperienceMonths: null,
         minimumProficiency: null,
+        evidence: {
+          field: "skills",
+          origin: "SOURCE_STRUCTURED_FIELD" as const,
+          statement: name,
+        },
       })) ??
       null,
+    otherRequiredCriteria: required.other,
+    otherPreferredCriteria: preferred.other,
     excludedSkills: null,
     minimumExperienceMonths:
       typeof experience?.minimumMonths === "number"
         ? experience.minimumMonths
-        : null,
+        : required.minimumExperienceMonths,
     roleFamily: null,
     industry: null,
     educationLevels: stringArray(job.educationRequirements),
     seniority: job.seniority,
     remoteType: job.remoteType,
+    employmentType: job.employmentType ?? null,
   };
 }

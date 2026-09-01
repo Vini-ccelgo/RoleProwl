@@ -24,6 +24,7 @@ import {
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 import { invalidateReadyApplicationPackets } from "@/integrations/applications/invalidate-application-packets";
+import { invalidateCandidateJobMatchAnalyses } from "@/integrations/jobs/invalidate-job-match-analyses";
 
 function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "");
@@ -58,6 +59,7 @@ async function success(
   userId: string,
 ): Promise<CandidateFormState> {
   await invalidateReadyApplicationPackets(databaseClient(), userId);
+  await invalidateCandidateJobMatchAnalyses(databaseClient(), userId);
   revalidatePath("/profile");
   revalidatePath("/applications");
   revalidatePath("/dashboard");
@@ -427,6 +429,7 @@ export async function deleteCandidateEntity(
               : await database.credential.deleteMany({ where });
   requireOwnedMutation(result.count);
   await invalidateReadyApplicationPackets(database, actor.id);
+  await invalidateCandidateJobMatchAnalyses(database, actor.id);
   revalidatePath("/profile");
   revalidatePath("/applications");
   revalidatePath("/dashboard");
@@ -500,6 +503,7 @@ export async function removeCandidateFact(id: string): Promise<void> {
     });
   });
   await invalidateReadyApplicationPackets(database, actor.id);
+  await invalidateCandidateJobMatchAnalyses(database, actor.id);
   revalidatePath("/profile");
   revalidatePath("/applications");
   revalidatePath("/dashboard");

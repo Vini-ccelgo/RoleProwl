@@ -20,6 +20,6 @@ export function confirmedHighFitWhere(userId: string, threshold: number) {
   return {
     ...activeEvidenceAwareMatchWhere(userId),
     overallFit: { gte: threshold },
-    confidence: { gte: MINIMUM_HIGH_FIT_EVIDENCE_COVERAGE },
+    evidenceCoverage: { gte: MINIMUM_HIGH_FIT_EVIDENCE_COVERAGE },
   };
 }

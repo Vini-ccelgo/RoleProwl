@@ -33,6 +33,7 @@ describe("Greenhouse job source", () => {
         title: "Product Manager",
         description: "Build & improve products",
         locations: ["Remote - US"],
+        remoteType: "REMOTE",
         salaryMin: null,
         sponsorship: null,
       }),
@@ -44,6 +45,44 @@ describe("Greenhouse job source", () => {
         "REQUIRES_USER_INTERACTION",
         "REQUIRES_PARTNER_AUTH",
       ]),
+    );
+  });
+
+  it("retains provenance for explicit requirement bullets without promoting narrative mentions", async () => {
+    const source = new GreenhouseJobSource(
+      { boardToken: "acme", company: "Acme Inc." },
+      async () => Response.json(fixture),
+    );
+    const normalized = await source.normalize({
+      applicationUrl: "https://boards.greenhouse.io/acme/jobs/43",
+      externalId: "43",
+      payload: {
+        id: 43,
+        title: "Engineer",
+        absolute_url: "https://boards.greenhouse.io/acme/jobs/43",
+        content:
+          "<p>We use Go.</p><h2>Requirements</h2><ul><li>5+ years of Python required.</li><li>A relevant degree</li></ul>",
+      },
+      source: "GREENHOUSE",
+      sourceUrl: "https://boards.greenhouse.io/acme/jobs/43",
+    });
+
+    expect(normalized.canonical.requirements).toEqual([
+      expect.objectContaining({
+        kind: "SKILL",
+        minimumExperienceMonths: 60,
+        origin: "SOURCE_TEXT_EXPLICIT",
+        skillName: "Python",
+        sourceField: "description.requirements",
+      }),
+      expect.objectContaining({
+        kind: "OTHER",
+        origin: "SOURCE_TEXT_EXPLICIT",
+        statement: "A relevant degree",
+      }),
+    ]);
+    expect(normalized.canonical.requirements).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ skillName: "Go" })]),
     );
   });
 

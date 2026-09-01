@@ -4,6 +4,21 @@ import { z } from "zod";
 const optionalArray = <T extends z.ZodType>(item: T) =>
   z.array(item).nullable();
 
+export const canonicalJobCriterionSchema = z.object({
+  kind: z.enum(["SKILL", "EXPERIENCE", "OTHER"]),
+  statement: z.string().trim().min(1).max(2_000),
+  origin: z.enum([
+    "SOURCE_STRUCTURED_FIELD",
+    "SOURCE_TEXT_EXPLICIT",
+    "SAFE_CANONICALIZATION",
+  ]),
+  sourceField: z.string().trim().min(1).max(256),
+  skillName: z.string().trim().min(1).max(256).optional(),
+  minimumExperienceMonths: z.number().int().nonnegative().optional(),
+});
+
+export type CanonicalJobCriterion = z.infer<typeof canonicalJobCriterionSchema>;
+
 const safeApplicationUrl = z.url().refine((value) => {
   const parsed = new URL(value);
   return parsed.protocol === "https:" && !parsed.username && !parsed.password;
@@ -23,8 +38,12 @@ export const canonicalJobSchema = z
     salaryMax: z.number().nonnegative().nullable(),
     salaryCurrency: z.string().length(3).nullable(),
     salaryInterval: z.string().nullable(),
-    requirements: optionalArray(z.string()),
-    preferredRequirements: optionalArray(z.string()),
+    requirements: optionalArray(
+      z.union([z.string().trim().min(1), canonicalJobCriterionSchema]),
+    ),
+    preferredRequirements: optionalArray(
+      z.union([z.string().trim().min(1), canonicalJobCriterionSchema]),
+    ),
     skills: optionalArray(z.string()),
     educationRequirements: optionalArray(z.string()),
     experienceRequirements: optionalArray(z.string()),
@@ -69,8 +88,14 @@ export function canonicalJobContentHash(job: CanonicalJobInput) {
     salaryMin: job.salaryMin,
     salaryMax: job.salaryMax,
     salaryCurrency: job.salaryCurrency,
+    salaryInterval: job.salaryInterval,
     requirements: job.requirements,
+    preferredRequirements: job.preferredRequirements,
     skills: job.skills,
+    educationRequirements: job.educationRequirements,
+    experienceRequirements: job.experienceRequirements,
+    workAuthorization: job.workAuthorization,
+    sponsorship: job.sponsorship,
   });
   return createHash("sha256").update(stable).digest("hex");
 }

@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import type { DeduplicationCandidate } from "@/core/domain/jobs/deduplication";
 import {
   normalizeCompany,
@@ -13,8 +13,42 @@ function rawHash(payload: Readonly<Record<string, unknown>>) {
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 
-function json(value: unknown): Prisma.InputJsonValue | undefined {
-  return value === null ? undefined : (value as Prisma.InputJsonValue);
+function json(value: unknown) {
+  return value === null ? Prisma.DbNull : (value as Prisma.InputJsonValue);
+}
+
+function canonicalData(
+  canonical: Parameters<
+    JobIngestionRepository["createCanonicalWithSource"]
+  >[0]["normalized"]["canonical"],
+  contentHash: string,
+) {
+  return {
+    company: canonical.company,
+    normalizedCompany: normalizeCompany(canonical.company),
+    title: canonical.title,
+    normalizedTitle: normalizeJobTitle(canonical.title),
+    description: canonical.description,
+    canonicalApplicationUrl: canonical.canonicalApplicationUrl,
+    locations: json(canonical.locations),
+    remoteType: canonical.remoteType,
+    employmentType: canonical.employmentType,
+    seniority: canonical.seniority,
+    salaryMin: canonical.salaryMin,
+    salaryMax: canonical.salaryMax,
+    salaryCurrency: canonical.salaryCurrency,
+    salaryInterval: canonical.salaryInterval,
+    requirements: json(canonical.requirements),
+    preferredRequirements: json(canonical.preferredRequirements),
+    skills: json(canonical.skills),
+    educationRequirements: json(canonical.educationRequirements),
+    experienceRequirements: json(canonical.experienceRequirements),
+    workAuthorization: json(canonical.workAuthorization),
+    sponsorship: json(canonical.sponsorship),
+    postedAt: canonical.postedAt,
+    expiresAt: canonical.expiresAt,
+    contentHash,
+  };
 }
 
 function candidate(
@@ -102,30 +136,7 @@ export class PrismaJobIngestionRepository implements JobIngestionRepository {
     const { canonical, source } = input.normalized;
     const created = await databaseClient().job.create({
       data: {
-        company: canonical.company,
-        normalizedCompany: normalizeCompany(canonical.company),
-        title: canonical.title,
-        normalizedTitle: normalizeJobTitle(canonical.title),
-        description: canonical.description,
-        canonicalApplicationUrl: canonical.canonicalApplicationUrl,
-        locations: json(canonical.locations),
-        remoteType: canonical.remoteType,
-        employmentType: canonical.employmentType,
-        seniority: canonical.seniority,
-        salaryMin: canonical.salaryMin,
-        salaryMax: canonical.salaryMax,
-        salaryCurrency: canonical.salaryCurrency,
-        salaryInterval: canonical.salaryInterval,
-        requirements: json(canonical.requirements),
-        preferredRequirements: json(canonical.preferredRequirements),
-        skills: json(canonical.skills),
-        educationRequirements: json(canonical.educationRequirements),
-        experienceRequirements: json(canonical.experienceRequirements),
-        workAuthorization: json(canonical.workAuthorization),
-        sponsorship: json(canonical.sponsorship),
-        postedAt: canonical.postedAt,
-        expiresAt: canonical.expiresAt,
-        contentHash: input.contentHash,
+        ...canonicalData(canonical, input.contentHash),
         firstSeenAt: input.observedAt,
         lastSeenAt: input.observedAt,
         lastVerifiedAt: input.observedAt,
@@ -151,18 +162,43 @@ export class PrismaJobIngestionRepository implements JobIngestionRepository {
   async mergeSourceAssociation(
     input: Parameters<JobIngestionRepository["mergeSourceAssociation"]>[0],
   ) {
-    const { source } = input.normalized;
+    const { canonical, source } = input.normalized;
     const db = databaseClient();
-    await db.$transaction([
-      db.job.update({
+    await db.$transaction(async (transaction) => {
+      const current = await transaction.job.findUniqueOrThrow({
+        where: { id: input.canonicalJobId },
+        select: {
+          contentHash: true,
+          sourceRecords: {
+            orderBy: { firstSeenAt: "asc" },
+            select: { externalId: true, source: true },
+            take: 1,
+          },
+        },
+      });
+      const canonicalSource = current.sourceRecords[0];
+      const refreshesCanonicalSource =
+        canonicalSource?.source === source.source &&
+        canonicalSource.externalId === source.externalId;
+      const contentChanged =
+        refreshesCanonicalSource && current.contentHash !== input.contentHash;
+      await transaction.job.update({
         where: { id: input.canonicalJobId },
         data: {
+          ...(refreshesCanonicalSource
+            ? canonicalData(canonical, input.contentHash)
+            : {}),
           lastSeenAt: input.observedAt,
           lastVerifiedAt: input.observedAt,
           status: "ACTIVE",
         },
-      }),
-      db.jobSourceRecord.upsert({
+      });
+      if (contentChanged) {
+        await transaction.jobMatchAnalysis.deleteMany({
+          where: { jobId: input.canonicalJobId },
+        });
+      }
+      await transaction.jobSourceRecord.upsert({
         where: {
           source_externalId: {
             source: source.source,
@@ -189,7 +225,7 @@ export class PrismaJobIngestionRepository implements JobIngestionRepository {
           lastSeenAt: input.observedAt,
           lastVerifiedAt: input.observedAt,
         },
-      }),
-    ]);
+      });
+    });
   }
 }

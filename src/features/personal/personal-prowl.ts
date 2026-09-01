@@ -805,8 +805,9 @@ function combineResult(
 ): Omit<PersonalJobResult, "rank"> {
   const snapshot = jobSnapshot(canonical);
   const local = localEvidence(canonical, snapshot, preferences);
+  const groundedMatchScore = match.overallFit ?? local.alignment.score;
   const rawScore = Math.round(
-    match.overallFit * 0.75 + local.alignment.score * 0.25,
+    groundedMatchScore * 0.75 + local.alignment.score * 0.25,
   );
   const result = {
     id: stableJobId(canonical),

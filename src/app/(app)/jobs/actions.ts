@@ -38,12 +38,25 @@ export async function analyzeJobAction(formData: FormData) {
             canonicalName: true,
             proficiency: true,
             experienceMonths: true,
+            evidence: {
+              where: { verificationState: "VERIFIED" },
+              select: { id: true },
+            },
           },
         },
         workExperiences: {
           select: { startDate: true, endDate: true, isCurrent: true },
         },
         educationRecords: { select: { credential: true } },
+        projects: { select: { skills: true } },
+        candidateFacts: {
+          where: {
+            factType: "SKILL_TEXT",
+            status: "ACTIVE",
+            verificationState: "VERIFIED",
+          },
+          select: { factType: true, value: true },
+        },
         candidatePreferences: {
           select: {
             roleFamilies: true,
@@ -51,6 +64,9 @@ export async function analyzeJobAction(formData: FormData) {
             remotePreference: true,
             locationPreferences: true,
             salaryMinimum: true,
+            employmentTypes: true,
+            seniorities: true,
+            exclusions: true,
           },
         },
         workAuthorizationProfile: {
@@ -66,9 +82,14 @@ export async function analyzeJobAction(formData: FormData) {
   if (!job || !candidate) return;
   const result = matchCandidateToJob(
     buildCandidateMatchSnapshot({
-      skills: candidate.skills,
+      skills: candidate.skills.map(({ evidence, ...skill }) => ({
+        ...skill,
+        evidenceCount: evidence.length,
+      })),
       workExperiences: candidate.workExperiences,
       educationRecords: candidate.educationRecords,
+      projects: candidate.projects,
+      candidateFacts: candidate.candidateFacts,
       preferences: candidate.candidatePreferences,
       authorization: candidate.workAuthorizationProfile,
     }),
@@ -87,6 +108,7 @@ export async function analyzeJobAction(formData: FormData) {
       jobId,
       ...result,
       hardConflicts: asJson(result.hardConflicts),
+      conflicts: asJson(result.conflicts),
       strengths: asJson(result.strengths),
       partialMatches: asJson(result.partialMatches),
       gaps: asJson(result.gaps),
@@ -95,6 +117,7 @@ export async function analyzeJobAction(formData: FormData) {
     update: {
       ...result,
       hardConflicts: asJson(result.hardConflicts),
+      conflicts: asJson(result.conflicts),
       strengths: asJson(result.strengths),
       partialMatches: asJson(result.partialMatches),
       gaps: asJson(result.gaps),

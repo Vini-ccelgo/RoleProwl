@@ -8,14 +8,16 @@ describe("match analysis summary", () => {
     const markup = renderToStaticMarkup(
       createElement(MatchAnalysisSummary, {
         analysis: {
-          confidence: 0.25,
+          confidence: 1,
+          conflicts: [],
+          evidenceCoverage: 0.25,
           gaps: [],
           hardConflicts: [],
-          overallFit: 90,
+          overallFit: null,
           partialMatches: [],
-          preferenceScore: 50,
-          qualificationScore: 90,
-          scoringVersion: "match-v1.1",
+          preferenceScore: null,
+          qualificationScore: null,
+          scoringVersion: "match-v1.2",
           strengths: [
             {
               assessment: "SUPPORTED",
@@ -37,11 +39,10 @@ describe("match analysis summary", () => {
         },
       }),
     );
-    expect(markup).toContain("Estimated fit");
-    expect(markup).toContain("90%");
+    expect(markup).toContain("Not enough evidence to estimate fit");
     expect(markup).toContain("Evidence coverage");
     expect(markup).toContain("25%");
-    expect(markup).toContain("Preliminary");
+    expect(markup).not.toContain("Estimated fit");
     expect(markup).toContain("Unknown / missing evidence");
     expect(markup).toContain("Improve this assessment");
     expect(markup).toContain("/profile#education");
@@ -53,13 +54,15 @@ describe("match analysis summary", () => {
       createElement(MatchAnalysisSummary, {
         analysis: {
           confidence: 0,
+          conflicts: [],
+          evidenceCoverage: 0,
           gaps: [],
           hardConflicts: [],
-          overallFit: 50,
+          overallFit: null,
           partialMatches: [],
-          preferenceScore: 50,
-          qualificationScore: 50,
-          scoringVersion: "match-v1.1",
+          preferenceScore: null,
+          qualificationScore: null,
+          scoringVersion: "match-v1.2",
           strengths: [],
           unknowns: [
             {

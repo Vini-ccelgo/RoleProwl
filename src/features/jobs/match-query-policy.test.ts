@@ -8,7 +8,7 @@ describe("evidence-aware dashboard match queries", () => {
   it("excludes candidate-rejected jobs and stale scoring versions", () => {
     expect(activeEvidenceAwareMatchWhere("user-1")).toEqual({
       userId: "user-1",
-      scoringVersion: "match-v1.1",
+      scoringVersion: "match-v1.2",
       job: {
         status: "ACTIVE",
         candidateDispositions: {
@@ -22,7 +22,7 @@ describe("evidence-aware dashboard match queries", () => {
     expect(confirmedHighFitWhere("user-1", 72)).toEqual(
       expect.objectContaining({
         overallFit: { gte: 72 },
-        confidence: { gte: 0.5 },
+        evidenceCoverage: { gte: 0.5 },
       }),
     );
   });

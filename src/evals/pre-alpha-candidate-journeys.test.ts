@@ -423,7 +423,10 @@ describe("RP-031 synthetic candidate journeys", () => {
     const ranking = [
       { id: "weak", fit: weak },
       { id: "strong", fit: strong },
-    ].sort((left, right) => right.fit.overallFit - left.fit.overallFit);
+    ].sort(
+      (left, right) =>
+        (right.fit.overallFit ?? -1) - (left.fit.overallFit ?? -1),
+    );
 
     expect(discovered.jobs).toHaveLength(1);
     expect(normalized.canonical.description).toContain("TypeScript systems");

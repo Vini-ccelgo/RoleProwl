@@ -22,6 +22,7 @@ function transactionFixture() {
   );
   const proposalUpdate = vi.fn(async () => ({ count: 1 }));
   const auditCreate = vi.fn(async () => ({}));
+  const matchDeleteMany = vi.fn(async () => ({ count: 1 }));
   const transaction = {
     candidateFactProposal: {
       findFirst: vi.fn(
@@ -34,8 +35,15 @@ function transactionFixture() {
     },
     candidateFact: { create: factCreate },
     auditEvent: { create: auditCreate },
+    jobMatchAnalysis: { deleteMany: matchDeleteMany },
   };
-  return { auditCreate, factCreate, proposalUpdate, transaction };
+  return {
+    auditCreate,
+    factCreate,
+    matchDeleteMany,
+    proposalUpdate,
+    transaction,
+  };
 }
 
 describe("Prisma fact proposal review persistence", () => {
@@ -67,6 +75,9 @@ describe("Prisma fact proposal review persistence", () => {
     expect(result).toEqual({
       status: "ACCEPTED",
       canonicalFactId: "fact-proposal-1",
+    });
+    expect(fixture.matchDeleteMany).toHaveBeenCalledWith({
+      where: { userId: "user-1" },
     });
   });
 

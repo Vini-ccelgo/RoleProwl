@@ -175,10 +175,11 @@ describe("Phase C reusable safety evaluation", () => {
         remoteType: null,
       },
     );
-    expect(result.hardConflicts).toEqual(
+    expect(result.unknowns).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: "CONTRADICTORY_JOB_REQUIREMENTS" }),
       ]),
     );
+    expect(result.hardConflicts).toHaveLength(0);
   });
 });
