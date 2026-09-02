@@ -39,6 +39,69 @@ describe("grounded job evidence extraction", () => {
     ).toEqual({ required: null, preferred: null });
   });
 
+  it("recognizes explicit heading variants, safe bullet forms, and paragraph criteria", () => {
+    expect(
+      extractExplicitJobCriteria(
+        [
+          "What You’ll Need",
+          "- 3+ years of Python",
+          "▪ Experience with network automation",
+          "Bachelor’s degree or equivalent experience",
+          "Preferred Skills",
+          "* Knowledge of Terraform",
+          "Responsibilities",
+          "- Operate production services",
+        ].join("\n"),
+      ),
+    ).toEqual({
+      required: [
+        expect.objectContaining({
+          kind: "SKILL",
+          minimumExperienceMonths: 36,
+          skillName: "Python",
+        }),
+        expect.objectContaining({
+          kind: "SKILL",
+          skillName: "network automation",
+        }),
+        expect.objectContaining({
+          kind: "OTHER",
+          statement: "Bachelor’s degree or equivalent experience",
+        }),
+      ],
+      preferred: [
+        expect.objectContaining({
+          kind: "SKILL",
+          skillName: "Terraform",
+        }),
+      ],
+    });
+  });
+
+  it("does not carry requirements across a non-qualification section", () => {
+    expect(
+      extractExplicitJobCriteria(
+        "Requirements\n• Python required\nOur Culture\n• Be curious\n• Be kind",
+      ),
+    ).toEqual({
+      required: [expect.objectContaining({ statement: "Python required" })],
+      preferred: null,
+    });
+  });
+
+  it("keeps general duration evidence as experience rather than inventing a skill", () => {
+    expect(
+      extractExplicitJobCriteria(
+        "Minimum Qualifications\n- 4+ years of relevant professional experience",
+      ).required,
+    ).toEqual([
+      expect.objectContaining({
+        kind: "EXPERIENCE",
+        minimumExperienceMonths: 48,
+      }),
+    ]);
+  });
+
   it("derives work mode only from an explicit location token", () => {
     expect(explicitRemoteTypeFromLocation("Remote - Brazil")).toBe("REMOTE");
     expect(explicitRemoteTypeFromLocation("Hybrid — São Paulo")).toBe("HYBRID");

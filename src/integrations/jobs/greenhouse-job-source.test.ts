@@ -86,6 +86,59 @@ describe("Greenhouse job source", () => {
     );
   });
 
+  it("normalizes strong headings, hyphen bullets, nested list HTML, and preferred criteria", async () => {
+    const source = new GreenhouseJobSource(
+      { boardToken: "acme", company: "Acme Inc." },
+      async () => Response.json(fixture),
+    );
+    const normalized = await source.normalize({
+      applicationUrl: "https://boards.greenhouse.io/acme/jobs/44",
+      externalId: "44",
+      payload: {
+        id: 44,
+        title: "Engineer",
+        absolute_url: "https://boards.greenhouse.io/acme/jobs/44",
+        content: [
+          "<p>We use Go.</p>",
+          "<p><strong>Qualifications</strong><br>",
+          "- Experience with Python required<br>",
+          "- Bachelor’s degree</p>",
+          "<p><strong>Preferred Qualifications</strong></p>",
+          "<ul><li><span>Knowledge of <em>Terraform</em></span></li></ul>",
+          "<p><strong>Responsibilities</strong></p>",
+          "<ul><li>Operate production services</li></ul>",
+        ].join(""),
+      },
+      source: "GREENHOUSE",
+      sourceUrl: "https://boards.greenhouse.io/acme/jobs/44",
+    });
+
+    expect(normalized.canonical.requirements).toEqual([
+      expect.objectContaining({
+        kind: "SKILL",
+        origin: "SOURCE_TEXT_EXPLICIT",
+        skillName: "Python",
+        statement: "Experience with Python required",
+      }),
+      expect.objectContaining({
+        kind: "OTHER",
+        statement: "Bachelor’s degree",
+      }),
+    ]);
+    expect(normalized.canonical.preferredRequirements).toEqual([
+      expect.objectContaining({
+        kind: "SKILL",
+        skillName: "Terraform",
+        statement: "Knowledge of Terraform",
+      }),
+    ]);
+    expect(normalized.canonical.requirements).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ statement: "Operate production services" }),
+      ]),
+    );
+  });
+
   it("filters query and location deterministically", async () => {
     const source = new GreenhouseJobSource(
       { boardToken: "acme", company: "Acme" },

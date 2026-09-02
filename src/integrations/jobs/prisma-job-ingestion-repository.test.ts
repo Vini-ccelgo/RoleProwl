@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const jobFindUniqueOrThrow = vi.fn();
+  const jobCreate = vi.fn(async () => ({ id: "job-created" }));
   const jobUpdate = vi.fn(async () => ({ id: "job-1" }));
   const matchDeleteMany = vi.fn(async () => ({ count: 1 }));
   const sourceUpsert = vi.fn(async () => ({ id: "source-1" }));
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => {
   };
   return {
     jobFindUniqueOrThrow,
+    jobCreate,
     jobUpdate,
     matchDeleteMany,
     sourceUpsert,
@@ -27,7 +29,10 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/db/client", () => ({
-  databaseClient: () => ({ $transaction: mocks.transaction }),
+  databaseClient: () => ({
+    $transaction: mocks.transaction,
+    job: { create: mocks.jobCreate },
+  }),
 }));
 
 import type { NormalizedSourceJob } from "@/core/contracts/job-source-adapter";
@@ -69,6 +74,25 @@ const normalized: NormalizedSourceJob = {
 describe("PrismaJobIngestionRepository job evidence refresh", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("persists explicit criteria and their provenance on fresh canonical creation", async () => {
+    await expect(
+      new PrismaJobIngestionRepository().createCanonicalWithSource({
+        contentHash: "new-hash",
+        normalized,
+        observedAt: new Date("2026-09-02T00:00:00.000Z"),
+      }),
+    ).resolves.toBe("job-created");
+
+    expect(mocks.jobCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          contentHash: "new-hash",
+          requirements: normalized.canonical.requirements,
+        }),
+      }),
+    );
   });
 
   it("invalidates existing analyses when canonical job evidence changes", async () => {

@@ -26,6 +26,12 @@ describe("readable job descriptions", () => {
     ).toBe("Security & Risk — use care.");
   });
 
+  it("normalizes common encoded bullet markers", () => {
+    expect(readableJobDescription("Requirements<br>&bull; Python")).toBe(
+      "Requirements\n• Python",
+    );
+  });
+
   it("removes scripts, event handlers, embeds, and remote tracking images", () => {
     const value = readableJobDescription(
       '<p onclick="steal()">Safe role</p><script>alert(1)</script><img src="https://tracker.test/pixel"><iframe src="https://tracker.test"></iframe>',
