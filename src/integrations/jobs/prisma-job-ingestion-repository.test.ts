@@ -89,6 +89,7 @@ describe("PrismaJobIngestionRepository job evidence refresh", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           contentHash: "new-hash",
+          evidenceVersion: "job-evidence-v2",
           requirements: normalized.canonical.requirements,
         }),
       }),
@@ -98,6 +99,7 @@ describe("PrismaJobIngestionRepository job evidence refresh", () => {
   it("invalidates existing analyses when canonical job evidence changes", async () => {
     mocks.jobFindUniqueOrThrow.mockResolvedValue({
       contentHash: "old-hash",
+      evidenceVersion: "job-evidence-v2",
       sourceRecords: [{ externalId: "1", source: "GREENHOUSE" }],
     });
     await new PrismaJobIngestionRepository().mergeSourceAssociation({
@@ -124,6 +126,7 @@ describe("PrismaJobIngestionRepository job evidence refresh", () => {
   it("keeps current analyses when the canonical evidence hash is unchanged", async () => {
     mocks.jobFindUniqueOrThrow.mockResolvedValue({
       contentHash: "same-hash",
+      evidenceVersion: "job-evidence-v2",
       sourceRecords: [{ externalId: "1", source: "GREENHOUSE" }],
     });
     await new PrismaJobIngestionRepository().mergeSourceAssociation({
@@ -137,9 +140,36 @@ describe("PrismaJobIngestionRepository job evidence refresh", () => {
     expect(mocks.sourceUpsert).toHaveBeenCalledOnce();
   });
 
+  it("invalidates analyses when unchanged source content was normalized by an older evidence version", async () => {
+    mocks.jobFindUniqueOrThrow.mockResolvedValue({
+      contentHash: "same-hash",
+      evidenceVersion: null,
+      sourceRecords: [{ externalId: "1", source: "GREENHOUSE" }],
+    });
+    await new PrismaJobIngestionRepository().mergeSourceAssociation({
+      canonicalJobId: "job-1",
+      contentHash: "same-hash",
+      normalized,
+      observedAt: new Date("2026-09-01T00:00:00.000Z"),
+    });
+
+    expect(mocks.jobUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          contentHash: "same-hash",
+          evidenceVersion: "job-evidence-v2",
+        }),
+      }),
+    );
+    expect(mocks.matchDeleteMany).toHaveBeenCalledWith({
+      where: { jobId: "job-1" },
+    });
+  });
+
   it("does not let a secondary source overwrite canonical evidence authority", async () => {
     mocks.jobFindUniqueOrThrow.mockResolvedValue({
       contentHash: "canonical-hash",
+      evidenceVersion: null,
       sourceRecords: [{ externalId: "primary", source: "MANUAL" }],
     });
     await new PrismaJobIngestionRepository().mergeSourceAssociation({

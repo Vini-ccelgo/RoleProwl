@@ -6,7 +6,7 @@ import {
   IntegrationError,
   NotFoundError,
 } from "@/core/errors/application-errors";
-import { MATCH_SCORING_VERSION } from "@/core/domain/matching/match-job";
+import { currentMatchAnalysisWhere } from "@/features/jobs/match-query-policy";
 import { selectApplicationResume } from "@/core/domain/applications/application-resume";
 import type { ApplicationStartRepository } from "@/features/applications/start-application";
 import { Prisma } from "@/generated/prisma/client";
@@ -53,10 +53,7 @@ export class PrismaApplicationStartRepository implements ApplicationStartReposit
                   take: 1,
                 },
                 matchAnalyses: {
-                  where: {
-                    userId: input.userId,
-                    scoringVersion: MATCH_SCORING_VERSION,
-                  },
+                  where: currentMatchAnalysisWhere(input.userId),
                   orderBy: { updatedAt: "desc" },
                   take: 1,
                 },

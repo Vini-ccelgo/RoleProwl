@@ -2,25 +2,35 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PrivateBetaAccessError } from "@/core/errors/application-errors";
 
 const {
+  analysisFindFirst,
+  analysisUpsert,
   deleteMany,
+  jobFindFirst,
   findUnique,
   redirect,
+  refreshJobEvidence,
   refreshApplicationPacket,
   requireAuthenticatedActor,
   revalidatePath,
   startApplication,
   trackProductEvent,
   upsert,
+  userFindUnique,
 } = vi.hoisted(() => ({
+  analysisFindFirst: vi.fn(),
+  analysisUpsert: vi.fn(async () => undefined),
   deleteMany: vi.fn(async () => ({ count: 1 })),
+  jobFindFirst: vi.fn(),
   findUnique: vi.fn(),
   redirect: vi.fn(),
+  refreshJobEvidence: vi.fn(),
   refreshApplicationPacket: vi.fn(async () => undefined),
   requireAuthenticatedActor: vi.fn(async () => ({ id: "user-1" })),
   revalidatePath: vi.fn(),
   startApplication: vi.fn(),
   trackProductEvent: vi.fn(async () => undefined),
   upsert: vi.fn(async () => undefined),
+  userFindUnique: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -41,6 +51,9 @@ vi.mock("@/features/applications/start-application", () => ({
 vi.mock("@/features/applications/refresh-application-packet", () => ({
   refreshApplicationPacket,
 }));
+vi.mock("@/features/jobs/refresh-job-evidence", () => ({
+  refreshJobEvidence,
+}));
 vi.mock(
   "@/integrations/applications/prisma-application-packet-repository",
   () => ({ PrismaApplicationPacketRepository: class {} }),
@@ -52,14 +65,26 @@ vi.mock(
 vi.mock("@/integrations/analytics/prisma-product-analytics-provider", () => ({
   PrismaProductAnalyticsProvider: class {},
 }));
+vi.mock("@/integrations/jobs/prisma-job-ingestion-repository", () => ({
+  PrismaJobIngestionRepository: class {},
+}));
 vi.mock("@/lib/db/client", () => ({
   databaseClient: vi.fn(() => ({
     candidateJobDisposition: { deleteMany, upsert },
-    job: { findUnique },
+    job: { findFirst: jobFindFirst, findUnique },
+    jobMatchAnalysis: {
+      findFirst: analysisFindFirst,
+      upsert: analysisUpsert,
+    },
+    user: { findUnique: userFindUnique },
   })),
 }));
 
-import { setJobDispositionAction, startApplicationAction } from "./actions";
+import {
+  analyzeJobAction,
+  setJobDispositionAction,
+  startApplicationAction,
+} from "./actions";
 
 function dispositionForm(status: string) {
   const form = new FormData();
@@ -77,6 +102,97 @@ describe("candidate job disposition action", () => {
       created: true,
       state: "PREPARING",
     });
+    refreshJobEvidence.mockResolvedValue({
+      canonicalJobId: "job-1",
+      evidenceChanged: false,
+    });
+    analysisFindFirst.mockResolvedValue({ id: "analysis-current" });
+  });
+
+  it("refreshes authoritative job evidence before reusing a current analysis", async () => {
+    const form = new FormData();
+    form.set("jobId", "job-1");
+
+    await analyzeJobAction(form);
+
+    expect(refreshJobEvidence).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: "job-1" }),
+    );
+    expect(analysisFindFirst).toHaveBeenCalledWith({
+      where: {
+        jobId: "job-1",
+        job: { evidenceVersion: "job-evidence-v2" },
+        scoringVersion: "match-v1.2",
+        userId: "user-1",
+      },
+      select: { id: true },
+    });
+    expect(jobFindFirst).not.toHaveBeenCalled();
+    expect(analysisUpsert).not.toHaveBeenCalled();
+  });
+
+  it("recomputes match-v1.2 from refreshed current evidence without changing application state", async () => {
+    refreshJobEvidence.mockResolvedValueOnce({
+      canonicalJobId: "job-1",
+      evidenceChanged: true,
+    });
+    analysisFindFirst.mockResolvedValueOnce(null);
+    jobFindFirst.mockResolvedValueOnce({
+      educationRequirements: null,
+      employmentType: null,
+      experienceRequirements: null,
+      id: "job-1",
+      locations: null,
+      preferredRequirements: null,
+      remoteType: null,
+      requirements: [
+        {
+          kind: "SKILL",
+          origin: "SOURCE_TEXT_EXPLICIT",
+          skillName: "Python",
+          sourceField: "description.requirements",
+          statement: "Experience with Python",
+        },
+      ],
+      salaryMax: null,
+      seniority: null,
+      skills: null,
+      sponsorship: null,
+      workAuthorization: null,
+    });
+    userFindUnique.mockResolvedValueOnce({
+      candidateFacts: [],
+      candidatePreferences: null,
+      educationRecords: [],
+      projects: [],
+      skills: [],
+      workAuthorizationProfile: null,
+      workExperiences: [],
+    });
+    const form = new FormData();
+    form.set("jobId", "job-1");
+
+    await analyzeJobAction(form);
+
+    expect(jobFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          evidenceVersion: "job-evidence-v2",
+          id: "job-1",
+        },
+      }),
+    );
+    expect(analysisUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          evidenceCoverage: 0,
+          overallFit: null,
+          scoringVersion: "match-v1.2",
+        }),
+      }),
+    );
+    expect(startApplication).not.toHaveBeenCalled();
+    expect(refreshApplicationPacket).not.toHaveBeenCalled();
   });
 
   it("opens the durable application returned by an idempotent start", async () => {

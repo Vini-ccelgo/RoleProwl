@@ -5,7 +5,7 @@ import { MatchAnalysisSummary } from "@/components/jobs/match-analysis-summary";
 import { PageHeader } from "@/components/ui/page-header";
 import { candidateDispositionLabel } from "@/core/domain/jobs/job-disposition";
 import { readableJobDescription } from "@/core/domain/jobs/job-description";
-import { MATCH_SCORING_VERSION } from "@/core/domain/matching/match-job";
+import { currentMatchAnalysisWhere } from "@/features/jobs/match-query-policy";
 import { requireWorkspacePageActor } from "@/features/accounts/require-workspace-page-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
@@ -39,7 +39,7 @@ export default async function JobDetailPage({
         },
       },
       matchAnalyses: {
-        where: { userId: actor.id, scoringVersion: MATCH_SCORING_VERSION },
+        where: currentMatchAnalysisWhere(actor.id),
         take: 1,
       },
       candidateDispositions: { where: { userId: actor.id }, take: 1 },

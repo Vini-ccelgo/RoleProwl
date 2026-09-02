@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { GreenhouseJobSource } from "./greenhouse-job-source";
+import {
+  GreenhouseJobSource,
+  greenhouseBoardConfigurationForJob,
+  greenhouseBoardTokenFromUrl,
+} from "./greenhouse-job-source";
 
 const fixture = {
   jobs: [
@@ -16,6 +20,29 @@ const fixture = {
 };
 
 describe("Greenhouse job source", () => {
+  it("derives a bounded board token from canonical Greenhouse URLs", () => {
+    expect(
+      greenhouseBoardTokenFromUrl(
+        "https://job-boards.greenhouse.io/acme/jobs/42",
+      ),
+    ).toBe("acme");
+    expect(
+      greenhouseBoardTokenFromUrl(
+        "https://boards-api.greenhouse.io/v1/boards/acme/jobs/42",
+      ),
+    ).toBe("acme");
+    expect(
+      greenhouseBoardConfigurationForJob({
+        applicationUrl: "https://boards.greenhouse.io/acme/jobs/42",
+        company: "Acme Inc.",
+        sourceUrl: null,
+      }),
+    ).toEqual({ boardToken: "acme", company: "Acme Inc." });
+    expect(
+      greenhouseBoardTokenFromUrl("https://example.com/acme/jobs/42"),
+    ).toBeNull();
+  });
+
   it("discovers and normalizes public published jobs without inventing unknowns", async () => {
     const source = new GreenhouseJobSource(
       { boardToken: "acme", company: "Acme Inc." },

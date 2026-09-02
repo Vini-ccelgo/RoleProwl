@@ -1,5 +1,7 @@
 import type { CanonicalJobCriterion } from "./job";
 
+export const JOB_EVIDENCE_VERSION = "job-evidence-v2" as const;
+
 const REQUIRED_HEADINGS = new Set([
   "minimum qualifications",
   "qualifications",

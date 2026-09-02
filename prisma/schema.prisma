@@ -131,6 +131,7 @@ model Job {
   postedAt                DateTime?
   expiresAt               DateTime?
   contentHash             String
+  evidenceVersion         String?
   firstSeenAt             DateTime                     @default(now())
   lastSeenAt              DateTime                     @default(now())
   lastVerifiedAt          DateTime?

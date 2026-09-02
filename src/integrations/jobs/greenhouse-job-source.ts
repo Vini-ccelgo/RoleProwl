@@ -46,6 +46,58 @@ export type JobSourceFetch = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+const GREENHOUSE_BOARD_HOSTS = new Set([
+  "boards.greenhouse.io",
+  "job-boards.greenhouse.io",
+]);
+
+export function greenhouseBoardTokenFromUrl(value: string | null) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return null;
+    if (GREENHOUSE_BOARD_HOSTS.has(url.hostname)) {
+      const token =
+        url.searchParams.get("for") ??
+        url.pathname.split("/").filter(Boolean)[0];
+      return token && /^[a-zA-Z0-9_-]+$/u.test(token) ? token : null;
+    }
+    if (url.hostname === "boards-api.greenhouse.io") {
+      const segments = url.pathname.split("/").filter(Boolean);
+      const boardsIndex = segments.indexOf("boards");
+      const token = boardsIndex >= 0 ? segments[boardsIndex + 1] : null;
+      return token && /^[a-zA-Z0-9_-]+$/u.test(token) ? token : null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+export function greenhouseBoardConfigurationForJob(input: {
+  readonly applicationUrl: string | null;
+  readonly company: string;
+  readonly configuredBoards?: readonly GreenhouseBoardConfiguration[];
+  readonly sourceUrl: string | null;
+}): GreenhouseBoardConfiguration {
+  const boardToken =
+    greenhouseBoardTokenFromUrl(input.applicationUrl) ??
+    greenhouseBoardTokenFromUrl(input.sourceUrl) ??
+    input.configuredBoards?.find(
+      (board) =>
+        board.company.trim().toLocaleLowerCase("en-US") ===
+        input.company.trim().toLocaleLowerCase("en-US"),
+    )?.boardToken;
+  if (!boardToken) {
+    throw new SourceAdapterError(
+      "GREENHOUSE",
+      "INVALID_CONFIGURATION",
+      "The Greenhouse board for this canonical job cannot be identified.",
+    );
+  }
+  return { boardToken, company: input.company };
+}
+
 function toRawJob(job: GreenhouseJob): RawSourceJob {
   return {
     source: "GREENHOUSE",

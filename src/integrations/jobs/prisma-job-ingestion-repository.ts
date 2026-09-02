@@ -6,6 +6,7 @@ import {
   normalizeCompany,
   normalizeJobTitle,
 } from "@/core/domain/jobs/normalization";
+import { JOB_EVIDENCE_VERSION } from "@/core/domain/jobs/job-evidence";
 import type { JobIngestionRepository } from "@/features/jobs/ingest-normalized-job";
 import { databaseClient } from "@/lib/db/client";
 
@@ -48,6 +49,7 @@ function canonicalData(
     postedAt: canonical.postedAt,
     expiresAt: canonical.expiresAt,
     contentHash,
+    evidenceVersion: JOB_EVIDENCE_VERSION,
   };
 }
 
@@ -96,6 +98,36 @@ function candidate(
 }
 
 export class PrismaJobIngestionRepository implements JobIngestionRepository {
+  async findCanonicalRefreshTarget(jobId: string) {
+    const job = await databaseClient().job.findFirst({
+      where: { id: jobId, status: "ACTIVE" },
+      select: {
+        id: true,
+        company: true,
+        contentHash: true,
+        evidenceVersion: true,
+        sourceRecords: {
+          orderBy: { firstSeenAt: "asc" },
+          take: 1,
+          select: {
+            applicationUrl: true,
+            externalId: true,
+            source: true,
+            sourceUrl: true,
+          },
+        },
+      },
+    });
+    if (!job?.sourceRecords[0]) return null;
+    return {
+      id: job.id,
+      company: job.company,
+      contentHash: job.contentHash,
+      evidenceVersion: job.evidenceVersion,
+      primarySource: job.sourceRecords[0],
+    };
+  }
+
   async findDeduplicationCandidates(input: {
     applicationUrl: string | null;
     company: string;
@@ -169,6 +201,7 @@ export class PrismaJobIngestionRepository implements JobIngestionRepository {
         where: { id: input.canonicalJobId },
         select: {
           contentHash: true,
+          evidenceVersion: true,
           sourceRecords: {
             orderBy: { firstSeenAt: "asc" },
             select: { externalId: true, source: true },
@@ -181,7 +214,9 @@ export class PrismaJobIngestionRepository implements JobIngestionRepository {
         canonicalSource?.source === source.source &&
         canonicalSource.externalId === source.externalId;
       const contentChanged =
-        refreshesCanonicalSource && current.contentHash !== input.contentHash;
+        refreshesCanonicalSource &&
+        (current.contentHash !== input.contentHash ||
+          current.evidenceVersion !== JOB_EVIDENCE_VERSION);
       await transaction.job.update({
         where: { id: input.canonicalJobId },
         data: {

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { Prisma } from "@/generated/prisma/client";
 import { requireLegitimateDestination } from "@/core/domain/applications/submission";
+import { JOB_EVIDENCE_VERSION } from "@/core/domain/jobs/job-evidence";
 import { matchCandidateToJob } from "@/core/domain/matching/match-job";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { startApplication } from "@/features/applications/start-application";
@@ -11,10 +12,19 @@ import {
   buildCandidateMatchSnapshot,
   buildJobMatchSnapshot,
 } from "@/features/jobs/build-match-snapshots";
+import { parseGreenhouseBoards } from "@/features/jobs/manual-discovery";
+import { currentMatchAnalysisWhere } from "@/features/jobs/match-query-policy";
+import { refreshJobEvidence } from "@/features/jobs/refresh-job-evidence";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { PrismaProductAnalyticsProvider } from "@/integrations/analytics/prisma-product-analytics-provider";
 import { PrismaApplicationStartRepository } from "@/integrations/applications/prisma-application-start-repository";
 import { PrismaApplicationPacketRepository } from "@/integrations/applications/prisma-application-packet-repository";
+import {
+  GreenhouseJobSource,
+  greenhouseBoardConfigurationForJob,
+  greenhouseBoardTokenFromUrl,
+} from "@/integrations/jobs/greenhouse-job-source";
+import { PrismaJobIngestionRepository } from "@/integrations/jobs/prisma-job-ingestion-repository";
 import { refreshApplicationPacket } from "@/features/applications/refresh-application-packet";
 import { trackProductEvent } from "@/features/analytics/track-product-event";
 import { databaseClient } from "@/lib/db/client";
@@ -28,8 +38,50 @@ export async function analyzeJobAction(formData: FormData) {
   const jobId = String(formData.get("jobId") ?? "");
   if (!jobId) return;
   const db = databaseClient();
+  const refreshed = await refreshJobEvidence({
+    jobId,
+    repository: new PrismaJobIngestionRepository(),
+    createAdapter: (target) => {
+      if (target.primarySource.source !== "GREENHOUSE") {
+        throw new Error("The canonical job source does not support refresh.");
+      }
+      const directBoardToken =
+        greenhouseBoardTokenFromUrl(target.primarySource.applicationUrl) ??
+        greenhouseBoardTokenFromUrl(target.primarySource.sourceUrl);
+      const configuration = greenhouseBoardConfigurationForJob({
+        applicationUrl: target.primarySource.applicationUrl,
+        company: target.company,
+        configuredBoards: directBoardToken
+          ? undefined
+          : parseGreenhouseBoards(process.env.GREENHOUSE_BOARDS_JSON),
+        sourceUrl: target.primarySource.sourceUrl,
+      });
+      return new GreenhouseJobSource(configuration);
+    },
+  });
+  if (!refreshed) return;
+
+  const existing = await db.jobMatchAnalysis.findFirst({
+    where: {
+      ...currentMatchAnalysisWhere(actor.id),
+      jobId: refreshed.canonicalJobId,
+    },
+    select: { id: true },
+  });
+  if (existing && !refreshed.evidenceChanged) {
+    revalidatePath("/jobs");
+    revalidatePath(`/jobs/${jobId}`);
+    revalidatePath("/dashboard");
+    return;
+  }
+
   const [job, candidate] = await Promise.all([
-    db.job.findUnique({ where: { id: jobId } }),
+    db.job.findFirst({
+      where: {
+        id: refreshed.canonicalJobId,
+        evidenceVersion: JOB_EVIDENCE_VERSION,
+      },
+    }),
     db.user.findUnique({
       where: { id: actor.id },
       select: {
