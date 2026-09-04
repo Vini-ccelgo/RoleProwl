@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { MatchAnalysisSummary } from "@/components/jobs/match-analysis-summary";
+import { JobCardActions } from "@/components/jobs/job-card-actions";
 import { PageHeader } from "@/components/ui/page-header";
 import { candidateDispositionLabel } from "@/core/domain/jobs/job-disposition";
 import { readableJobDescription } from "@/core/domain/jobs/job-description";
@@ -43,10 +44,17 @@ export default async function JobDetailPage({
         take: 1,
       },
       candidateDispositions: { where: { userId: actor.id }, take: 1 },
+      applications: {
+        where: { userId: actor.id },
+        select: { id: true },
+        take: 1,
+      },
     },
   });
   if (!job) notFound();
   const analysis = job.matchAnalyses[0];
+  const application = job.applications[0];
+  const disposition = job.candidateDispositions[0]?.status;
   const description = readableJobDescription(job.description);
 
   return (
@@ -136,6 +144,16 @@ export default async function JobDetailPage({
             No fit analysis has been recorded for this candidate and job yet.
           </p>
         )}
+        <JobCardActions
+          analysisExists={Boolean(analysis)}
+          applicationId={application?.id}
+          disposition={disposition}
+          jobId={job.id}
+          preparationAvailable={job.sourceRecords.some(
+            (source) => source.applicationUrl != null,
+          )}
+          view="all"
+        />
       </section>
       <section className="card grid gap-3 p-5">
         <h2 className="text-lg font-semibold">Sources</h2>

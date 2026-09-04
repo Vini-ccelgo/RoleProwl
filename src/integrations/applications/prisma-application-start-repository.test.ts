@@ -104,6 +104,37 @@ describe("Prisma application start repository", () => {
     expect(applicationCreate).not.toHaveBeenCalled();
   });
 
+  it("does not select a stale match-v1.2 analysis for the application snapshot", async () => {
+    applicationFindFirst.mockResolvedValue(null);
+    jobFindFirst.mockResolvedValue({ ...job, matchAnalyses: [] });
+
+    await new PrismaApplicationStartRepository().createOrGet({
+      jobId: "job-1",
+      userId: "user-1",
+    });
+
+    expect(jobFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          matchAnalyses: expect.objectContaining({
+            where: {
+              job: { evidenceVersion: "job-evidence-v2" },
+              scoringVersion: "match-v1.2",
+              userId: "user-1",
+            },
+          }),
+        }),
+      }),
+    );
+    expect(applicationCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          fitSnapshot: { status: "NOT_ANALYZED" },
+        }),
+      }),
+    );
+  });
+
   it("snapshots a tailored résumé with its canonical document kind", async () => {
     applicationFindFirst.mockResolvedValue(null);
     jobFindFirst.mockResolvedValue({
