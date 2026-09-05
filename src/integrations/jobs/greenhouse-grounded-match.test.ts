@@ -55,7 +55,6 @@ describe("fresh Greenhouse grounded match pipeline", () => {
 
     const candidate = buildCandidateMatchSnapshot({
       authorization: null,
-      candidateFacts: [{ factType: "SKILL_TEXT", value: { text: "Python" } }],
       educationRecords: [],
       preferences: null,
       projects: [],
@@ -141,11 +140,24 @@ describe("fresh Greenhouse grounded match pipeline", () => {
     });
     const candidate = buildCandidateMatchSnapshot({
       authorization: null,
-      candidateFacts: [{ factType: "SKILL_TEXT", value: { text: "Python" } }],
       educationRecords: [],
       preferences: null,
       projects: [],
-      skills: [],
+      skills: [
+        {
+          canonicalName: "Python",
+          evidence: [
+            {
+              evidenceId: "fact-python",
+              evidenceType: "CANDIDATE_FACT",
+              id: "evidence-python",
+              source: "RESUME_EXTRACTED",
+            },
+          ],
+          experienceMonths: null,
+          proficiency: null,
+        },
+      ],
       workExperiences: [],
     });
     const job = buildJobMatchSnapshot({
@@ -257,11 +269,24 @@ describe("fresh Greenhouse grounded match pipeline", () => {
     const withPython = matchCandidateToJob(
       buildCandidateMatchSnapshot({
         authorization: null,
-        candidateFacts: [{ factType: "SKILL_TEXT", value: { text: "Python" } }],
         educationRecords: [],
         preferences: null,
         projects: [],
-        skills: [],
+        skills: [
+          {
+            canonicalName: "Python",
+            evidence: [
+              {
+                evidenceId: "fact-python",
+                evidenceType: "CANDIDATE_FACT",
+                id: "evidence-python",
+                source: "RESUME_EXTRACTED",
+              },
+            ],
+            experienceMonths: null,
+            proficiency: null,
+          },
+        ],
         workExperiences: [],
       }),
       job,
@@ -304,7 +329,6 @@ describe("fresh Greenhouse grounded match pipeline", () => {
     const withoutPython = matchCandidateToJob(
       buildCandidateMatchSnapshot({
         authorization: null,
-        candidateFacts: [],
         educationRecords: [],
         preferences: null,
         projects: [],

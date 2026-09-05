@@ -122,31 +122,50 @@ describe("match snapshot evidence boundaries", () => {
     ]);
   });
 
-  it("uses only exact structured project and verified résumé skill facts", () => {
+  it("uses only structured project skills and canonical verified skill evidence", () => {
     const snapshot = buildCandidateMatchSnapshot({
       authorization: null,
-      candidateFacts: [
-        { factType: "SKILL_TEXT", value: { text: "Python" } },
-        { factType: "EDUCATION_TEXT", value: { text: "Rust" } },
-      ],
       educationRecords: [],
       preferences: null,
       projects: [{ skills: ["TypeScript"] }],
-      skills: [],
+      skills: [
+        {
+          canonicalName: "Python",
+          evidence: [
+            {
+              evidenceId: "fact-python",
+              evidenceType: "CANDIDATE_FACT",
+              id: "evidence-python",
+              source: "RESUME_EXTRACTED",
+            },
+          ],
+          experienceMonths: null,
+          proficiency: null,
+        },
+      ],
       workExperiences: [],
     });
 
     expect(snapshot.skills).toEqual([
       {
-        evidenceCount: 0,
-        experienceMonths: null,
-        name: "TypeScript",
-        proficiency: null,
-      },
-      {
+        evidence: [
+          {
+            evidenceId: "fact-python",
+            evidenceType: "CANDIDATE_FACT",
+            field: "candidateFacts.fact-python",
+            origin: "CANDIDATE_VERIFIED_FACT",
+            source: "RESUME_EXTRACTED",
+          },
+        ],
         evidenceCount: 1,
         experienceMonths: null,
         name: "Python",
+        proficiency: null,
+      },
+      {
+        evidenceCount: 0,
+        experienceMonths: null,
+        name: "TypeScript",
         proficiency: null,
       },
     ]);

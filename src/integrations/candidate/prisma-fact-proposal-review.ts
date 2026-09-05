@@ -6,6 +6,7 @@ import {
 import { ConflictError } from "@/core/errors/application-errors";
 import type { Prisma } from "@/generated/prisma/client";
 import { invalidateCandidateJobMatchAnalyses } from "@/integrations/jobs/invalidate-job-match-analyses";
+import { synchronizeVerifiedCandidateSkills } from "./sync-verified-candidate-skills";
 
 export interface PersistFactProposalDecisionInput {
   readonly decision: ProposalDecision;
@@ -70,6 +71,9 @@ export async function persistFactProposalDecision(
   });
   if (updated.count !== 1) {
     throw new ConflictError("This proposal has already been reviewed.");
+  }
+  if (proposal!.factType === "SKILL_TEXT") {
+    await synchronizeVerifiedCandidateSkills(transaction, input.userId);
   }
   await transaction.auditEvent.create({
     data: {

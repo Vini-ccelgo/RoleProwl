@@ -25,6 +25,7 @@ import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 import { invalidateReadyApplicationPackets } from "@/integrations/applications/invalidate-application-packets";
 import { invalidateCandidateJobMatchAnalyses } from "@/integrations/jobs/invalidate-job-match-analyses";
+import { synchronizeVerifiedCandidateSkills } from "@/integrations/candidate/sync-verified-candidate-skills";
 
 function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "");
@@ -459,6 +460,9 @@ export async function editCandidateFact(
         data: { value: { text: factValue } },
       });
       requireOwnedMutation(updated.count);
+      if (current!.factType === "SKILL_TEXT") {
+        await synchronizeVerifiedCandidateSkills(transaction, actor.id);
+      }
       await transaction.auditEvent.create({
         data: {
           actorUserId: actor.id,
@@ -492,6 +496,9 @@ export async function removeCandidateFact(id: string): Promise<void> {
       data: { status: "REMOVED", removedAt: new Date() },
     });
     requireOwnedMutation(removed.count);
+    if (current!.factType === "SKILL_TEXT") {
+      await synchronizeVerifiedCandidateSkills(transaction, actor.id);
+    }
     await transaction.auditEvent.create({
       data: {
         actorUserId: actor.id,

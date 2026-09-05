@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   applicationDeleteMany: vi.fn(async (input) => ({
     count: input.where.id.in.length,
   })),
+  applicationUpdateMany: vi.fn(async () => ({ count: 0 })),
   applicationsFindMany: vi.fn(),
   documentDeleteMany: vi.fn(async () => ({ count: 1 })),
   documentFindFirst: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   notificationDeleteMany: vi.fn(async () => ({ count: 0 })),
   matchDeleteMany: vi.fn(async () => ({ count: 1 })),
   readyFindMany: vi.fn(async () => []),
+  skillSynchronization: vi.fn(async () => ({ changed: true })),
   transaction: vi.fn(),
 }));
 
@@ -22,6 +24,9 @@ vi.mock("@/lib/db/client", () => ({
   databaseClient: vi.fn(() => ({
     $transaction: mocks.transaction,
   })),
+}));
+vi.mock("./sync-verified-candidate-skills", () => ({
+  synchronizeVerifiedCandidateSkills: mocks.skillSynchronization,
 }));
 
 import { PrismaCandidateDocumentDeletion } from "./prisma-candidate-document-deletion";
@@ -94,7 +99,7 @@ describe("Prisma candidate document deletion", () => {
               ? mocks.readyFindMany()
               : mocks.applicationsFindMany(input),
           ),
-          updateMany: vi.fn(),
+          updateMany: mocks.applicationUpdateMany,
         },
         applicationEvent: { create: mocks.eventCreate },
         notification: { deleteMany: mocks.notificationDeleteMany },
@@ -208,6 +213,9 @@ describe("Prisma candidate document deletion", () => {
       mocks.applicationDeleteMany.mock.invocationCallOrder[0],
     ).toBeLessThan(mocks.factsDeleteMany.mock.invocationCallOrder[0]);
     expect(mocks.factsDeleteMany.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.skillSynchronization.mock.invocationCallOrder[0],
+    );
+    expect(mocks.skillSynchronization.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.documentDeleteMany.mock.invocationCallOrder[0],
     );
     expect(mocks.documentDeleteMany.mock.invocationCallOrder[0]).toBeLessThan(
@@ -241,6 +249,10 @@ describe("Prisma candidate document deletion", () => {
         sourceProposal: { documentId: "document-1" },
       },
     });
+    expect(mocks.skillSynchronization).toHaveBeenCalledWith(
+      expect.anything(),
+      "user-1",
+    );
   });
 
   it("uses fresh dependencies when confirmation follows the preview", async () => {
@@ -322,6 +334,7 @@ describe("Prisma candidate document deletion", () => {
     expect(mocks.applicationDeleteMany).not.toHaveBeenCalled();
     expect(mocks.documentDeleteMany).toHaveBeenCalled();
     expect(objectStorage.delete).not.toHaveBeenCalled();
+    expect(mocks.applicationUpdateMany).not.toHaveBeenCalled();
   });
 
   it("previews retained history separately from disposable dependencies", async () => {

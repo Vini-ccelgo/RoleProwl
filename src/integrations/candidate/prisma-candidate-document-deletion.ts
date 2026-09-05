@@ -12,6 +12,7 @@ import {
   DOCUMENT_DELETION_CONFIRMATION_REQUIRED,
   type DocumentDeletionConsequences,
 } from "@/features/candidate/document-deletion-protocol";
+import { synchronizeVerifiedCandidateSkills } from "./sync-verified-candidate-skills";
 
 export class DocumentDeletionConfirmationRequiredError extends ConflictError {
   readonly confirmationCode = DOCUMENT_DELETION_CONFIRMATION_REQUIRED;
@@ -147,6 +148,7 @@ export class PrismaCandidateDocumentDeletion {
               sourceProposal: { documentId: document.id },
             },
           });
+          await synchronizeVerifiedCandidateSkills(transaction, input.userId);
           const deletedDocument =
             await transaction.candidateDocument.deleteMany({
               where: { id: document.id, userId: input.userId },

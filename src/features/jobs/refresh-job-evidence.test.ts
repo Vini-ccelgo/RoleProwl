@@ -171,7 +171,6 @@ describe("versioned persisted job evidence refresh", () => {
     });
     const emptyCandidate = buildCandidateMatchSnapshot({
       authorization: null,
-      candidateFacts: [],
       educationRecords: [],
       preferences: null,
       projects: [],
@@ -197,7 +196,6 @@ describe("versioned persisted job evidence refresh", () => {
 
     const evidencedCandidate = buildCandidateMatchSnapshot({
       authorization: null,
-      candidateFacts: [],
       educationRecords: [],
       preferences: null,
       projects: [],

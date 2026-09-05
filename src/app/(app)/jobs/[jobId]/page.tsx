@@ -9,6 +9,7 @@ import { readableJobDescription } from "@/core/domain/jobs/job-description";
 import { currentMatchAnalysisWhere } from "@/features/jobs/match-query-policy";
 import { requireWorkspacePageActor } from "@/features/accounts/require-workspace-page-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
+import { ensureCurrentCandidateSkills } from "@/integrations/candidate/sync-verified-candidate-skills";
 import { databaseClient } from "@/lib/db/client";
 
 function Unknown({ value }: { readonly value: React.ReactNode }) {
@@ -27,7 +28,9 @@ export default async function JobDetailPage({
   await connection();
   const actor = await requireWorkspacePageActor(currentAuthProvider());
   const { jobId } = await params;
-  const job = await databaseClient().job.findFirst({
+  const database = databaseClient();
+  await ensureCurrentCandidateSkills(database, actor.id);
+  const job = await database.job.findFirst({
     where: { id: jobId, status: "ACTIVE" },
     include: {
       sourceRecords: {

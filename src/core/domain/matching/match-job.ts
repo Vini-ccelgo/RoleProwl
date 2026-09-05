@@ -5,6 +5,7 @@ export interface CandidateSkillSnapshot {
   readonly proficiency: "FAMILIAR" | "WORKING" | "ADVANCED" | "EXPERT" | null;
   readonly experienceMonths: number | null;
   readonly evidenceCount?: number;
+  readonly evidence?: readonly CandidateEvidenceReference[];
 }
 
 export interface CandidateMatchSnapshot {
@@ -45,6 +46,10 @@ export interface CandidateEvidenceReference {
     | "CANDIDATE_STRUCTURED_FIELD"
     | "CANDIDATE_VERIFIED_FACT"
     | "CANDIDATE_PREFERENCE";
+  readonly evidenceId?: string;
+  readonly evidenceType?: string;
+  readonly source?:
+    "USER_ENTERED" | "RESUME_EXTRACTED" | "IMPORT" | "SYSTEM_COMPUTED";
 }
 
 export interface SkillRequirement {
@@ -181,12 +186,16 @@ function skillResult(
       candidateEvidence: [] as CandidateEvidenceReference[],
     };
 
-  const evidenceOrigin = skill.evidenceCount
-    ? "CANDIDATE_VERIFIED_FACT"
-    : "CANDIDATE_STRUCTURED_FIELD";
-  const candidateEvidence = [
-    candidateReference(`skills.${requiredName}`, evidenceOrigin),
-  ];
+  const candidateEvidence = skill.evidence?.length
+    ? skill.evidence
+    : [
+        candidateReference(
+          `skills.${requiredName}`,
+          skill.evidenceCount
+            ? "CANDIDATE_VERIFIED_FACT"
+            : "CANDIDATE_STRUCTURED_FIELD",
+        ),
+      ];
   if (
     requirement.minimumProficiency &&
     (!skill.proficiency ||

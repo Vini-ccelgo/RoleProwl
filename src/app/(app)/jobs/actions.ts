@@ -25,6 +25,7 @@ import {
   greenhouseBoardTokenFromUrl,
 } from "@/integrations/jobs/greenhouse-job-source";
 import { PrismaJobIngestionRepository } from "@/integrations/jobs/prisma-job-ingestion-repository";
+import { ensureCurrentCandidateSkills } from "@/integrations/candidate/sync-verified-candidate-skills";
 import { refreshApplicationPacket } from "@/features/applications/refresh-application-packet";
 import { trackProductEvent } from "@/features/analytics/track-product-event";
 import { databaseClient } from "@/lib/db/client";
@@ -61,6 +62,10 @@ export async function analyzeJobAction(formData: FormData) {
   });
   if (!refreshed) return;
 
+  const candidateEvidenceChanged = (
+    await ensureCurrentCandidateSkills(db, actor.id)
+  ).changed;
+
   const existing = await db.jobMatchAnalysis.findFirst({
     where: {
       ...currentMatchAnalysisWhere(actor.id),
@@ -68,7 +73,7 @@ export async function analyzeJobAction(formData: FormData) {
     },
     select: { id: true },
   });
-  if (existing && !refreshed.evidenceChanged) {
+  if (existing && !refreshed.evidenceChanged && !candidateEvidenceChanged) {
     revalidatePath("/jobs");
     revalidatePath(`/jobs/${jobId}`);
     revalidatePath("/dashboard");
@@ -92,7 +97,12 @@ export async function analyzeJobAction(formData: FormData) {
             experienceMonths: true,
             evidence: {
               where: { verificationState: "VERIFIED" },
-              select: { id: true },
+              select: {
+                evidenceId: true,
+                evidenceType: true,
+                id: true,
+                source: true,
+              },
             },
           },
         },
@@ -101,14 +111,6 @@ export async function analyzeJobAction(formData: FormData) {
         },
         educationRecords: { select: { credential: true } },
         projects: { select: { skills: true } },
-        candidateFacts: {
-          where: {
-            factType: "SKILL_TEXT",
-            status: "ACTIVE",
-            verificationState: "VERIFIED",
-          },
-          select: { factType: true, value: true },
-        },
         candidatePreferences: {
           select: {
             roleFamilies: true,
@@ -134,14 +136,10 @@ export async function analyzeJobAction(formData: FormData) {
   if (!job || !candidate) return;
   const result = matchCandidateToJob(
     buildCandidateMatchSnapshot({
-      skills: candidate.skills.map(({ evidence, ...skill }) => ({
-        ...skill,
-        evidenceCount: evidence.length,
-      })),
+      skills: candidate.skills,
       workExperiences: candidate.workExperiences,
       educationRecords: candidate.educationRecords,
       projects: candidate.projects,
-      candidateFacts: candidate.candidateFacts,
       preferences: candidate.candidatePreferences,
       authorization: candidate.workAuthorizationProfile,
     }),

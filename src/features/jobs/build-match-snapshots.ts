@@ -139,13 +139,6 @@ function distinctExperienceMonths(
   return months.size;
 }
 
-function candidateFactText(value: Prisma.JsonValue) {
-  const record = object(value);
-  return typeof record?.text === "string" && record.text.trim()
-    ? record.text.trim()
-    : null;
-}
-
 export function buildCandidateMatchSnapshot(
   input: {
     readonly skills: readonly {
@@ -153,12 +146,14 @@ export function buildCandidateMatchSnapshot(
       proficiency: string | null;
       experienceMonths: number | null;
       evidenceCount?: number;
+      evidence?: readonly {
+        readonly evidenceId: string;
+        readonly evidenceType: string;
+        readonly id: string;
+        readonly source: string;
+      }[];
     }[];
     readonly projects?: readonly { readonly skills: readonly string[] }[];
-    readonly candidateFacts?: readonly {
-      readonly factType: string;
-      readonly value: Prisma.JsonValue;
-    }[];
     readonly workExperiences: readonly {
       startDate: Date;
       endDate: Date | null;
@@ -212,19 +207,6 @@ export function buildCandidateMatchSnapshot(
       });
     }
   }
-  for (const fact of input.candidateFacts ?? []) {
-    if (fact.factType !== "SKILL_TEXT") continue;
-    const factSkill = candidateFactText(fact.value);
-    if (!factSkill) continue;
-    const normalized = normalizeSkillName(factSkill);
-    const current = skills.get(normalized);
-    skills.set(normalized, {
-      canonicalName: current?.canonicalName ?? factSkill,
-      proficiency: current?.proficiency ?? null,
-      experienceMonths: current?.experienceMonths ?? null,
-      evidenceCount: Math.max(current?.evidenceCount ?? 0, 1),
-    });
-  }
   return {
     authorizationCountries: !input.authorization
       ? null
@@ -248,7 +230,26 @@ export function buildCandidateMatchSnapshot(
           ? skill.proficiency
           : null,
       experienceMonths: skill.experienceMonths,
-      evidenceCount: skill.evidenceCount,
+      evidenceCount: skill.evidence?.length ?? skill.evidenceCount,
+      ...(skill.evidence?.length
+        ? {
+            evidence: skill.evidence.map((evidence) => ({
+              evidenceId: evidence.evidenceId,
+              evidenceType: evidence.evidenceType,
+              field:
+                evidence.evidenceType === "CANDIDATE_FACT"
+                  ? `candidateFacts.${evidence.evidenceId}`
+                  : `skillEvidence.${evidence.id}`,
+              origin: "CANDIDATE_VERIFIED_FACT" as const,
+              ...(evidence.source === "USER_ENTERED" ||
+              evidence.source === "RESUME_EXTRACTED" ||
+              evidence.source === "IMPORT" ||
+              evidence.source === "SYSTEM_COMPUTED"
+                ? { source: evidence.source }
+                : {}),
+            })),
+          }
+        : {}),
     })),
     experienceMonths: input.workExperiences.length
       ? distinctExperienceMonths(input.workExperiences, now)

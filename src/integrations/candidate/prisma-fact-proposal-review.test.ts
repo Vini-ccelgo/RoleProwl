@@ -1,5 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+const synchronizeVerifiedCandidateSkills = vi.hoisted(() =>
+  vi.fn(async () => ({ changed: true })),
+);
+vi.mock("./sync-verified-candidate-skills", () => ({
+  synchronizeVerifiedCandidateSkills,
+}));
 import { persistFactProposalDecision } from "./prisma-fact-proposal-review";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 function transactionFixture() {
   const proposals = new Map(
@@ -79,6 +89,11 @@ describe("Prisma fact proposal review persistence", () => {
     expect(fixture.matchDeleteMany).toHaveBeenCalledWith({
       where: { userId: "user-1" },
     });
+    expect(fixture.matchDeleteMany).toHaveBeenCalledTimes(1);
+    expect(synchronizeVerifiedCandidateSkills).toHaveBeenCalledWith(
+      fixture.transaction,
+      "user-1",
+    );
   });
 
   it("persists edited values and the edited review state", async () => {
@@ -116,6 +131,7 @@ describe("Prisma fact proposal review persistence", () => {
 
     expect(fixture.factCreate).not.toHaveBeenCalled();
     expect(fixture.auditCreate).not.toHaveBeenCalled();
+    expect(synchronizeVerifiedCandidateSkills).not.toHaveBeenCalled();
     expect(fixture.proposalUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: "REJECTED" }),

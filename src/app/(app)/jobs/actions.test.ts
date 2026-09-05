@@ -13,6 +13,7 @@ const {
   requireAuthenticatedActor,
   revalidatePath,
   startApplication,
+  ensureCurrentCandidateSkills,
   trackProductEvent,
   upsert,
   userFindUnique,
@@ -28,6 +29,7 @@ const {
   requireAuthenticatedActor: vi.fn(async () => ({ id: "user-1" })),
   revalidatePath: vi.fn(),
   startApplication: vi.fn(),
+  ensureCurrentCandidateSkills: vi.fn(async () => ({ changed: false })),
   trackProductEvent: vi.fn(async () => undefined),
   upsert: vi.fn(async () => undefined),
   userFindUnique: vi.fn(),
@@ -53,6 +55,9 @@ vi.mock("@/features/applications/refresh-application-packet", () => ({
 }));
 vi.mock("@/features/jobs/refresh-job-evidence", () => ({
   refreshJobEvidence,
+}));
+vi.mock("@/integrations/candidate/sync-verified-candidate-skills", () => ({
+  ensureCurrentCandidateSkills,
 }));
 vi.mock(
   "@/integrations/applications/prisma-application-packet-repository",
@@ -106,6 +111,7 @@ describe("candidate job disposition action", () => {
       canonicalJobId: "job-1",
       evidenceChanged: false,
     });
+    ensureCurrentCandidateSkills.mockResolvedValue({ changed: false });
     analysisFindFirst.mockResolvedValue({ id: "analysis-current" });
   });
 
@@ -118,6 +124,10 @@ describe("candidate job disposition action", () => {
     expect(refreshJobEvidence).toHaveBeenCalledWith(
       expect.objectContaining({ jobId: "job-1" }),
     );
+    expect(ensureCurrentCandidateSkills).toHaveBeenCalledWith(
+      expect.anything(),
+      "user-1",
+    );
     expect(analysisFindFirst).toHaveBeenCalledWith({
       where: {
         jobId: "job-1",
@@ -129,6 +139,19 @@ describe("candidate job disposition action", () => {
     });
     expect(jobFindFirst).not.toHaveBeenCalled();
     expect(analysisUpsert).not.toHaveBeenCalled();
+  });
+
+  it("recomputes when existing facts gain canonical skill evidence", async () => {
+    ensureCurrentCandidateSkills.mockResolvedValueOnce({ changed: true });
+    jobFindFirst.mockResolvedValueOnce(null);
+    const form = new FormData();
+    form.set("jobId", "job-1");
+
+    await analyzeJobAction(form);
+
+    expect(analysisFindFirst).toHaveBeenCalled();
+    expect(startApplication).not.toHaveBeenCalled();
+    expect(refreshApplicationPacket).not.toHaveBeenCalled();
   });
 
   it("recomputes match-v1.2 from refreshed current evidence without changing application state", async () => {
@@ -161,7 +184,6 @@ describe("candidate job disposition action", () => {
       workAuthorization: null,
     });
     userFindUnique.mockResolvedValueOnce({
-      candidateFacts: [],
       candidatePreferences: null,
       educationRecords: [],
       projects: [],

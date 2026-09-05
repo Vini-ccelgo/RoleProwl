@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
 }));
 
 const mocks = vi.hoisted(() => ({
+  skillSynchronization: vi.fn(async () => ({ changed: false })),
   storageDelete: vi.fn(async (storageKey: string) => {
     state.objects.delete(storageKey);
   }),
@@ -37,6 +38,9 @@ vi.mock("@/integrations/storage/document-storage", () => ({
     get: mocks.storageGet,
     put: vi.fn(),
   })),
+}));
+vi.mock("./sync-verified-candidate-skills", () => ({
+  synchronizeVerifiedCandidateSkills: mocks.skillSynchronization,
 }));
 vi.mock("@/lib/db/client", () => ({
   databaseClient: vi.fn(() => {

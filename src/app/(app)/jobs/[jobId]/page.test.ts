@@ -1,13 +1,19 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { connection, findFirst, notFound, requireWorkspacePageActor } =
-  vi.hoisted(() => ({
-    connection: vi.fn(async () => undefined),
-    findFirst: vi.fn(),
-    notFound: vi.fn(),
-    requireWorkspacePageActor: vi.fn(async () => ({ id: "candidate-1" })),
-  }));
+const {
+  connection,
+  ensureCurrentCandidateSkills,
+  findFirst,
+  notFound,
+  requireWorkspacePageActor,
+} = vi.hoisted(() => ({
+  connection: vi.fn(async () => undefined),
+  ensureCurrentCandidateSkills: vi.fn(async () => ({ changed: false })),
+  findFirst: vi.fn(),
+  notFound: vi.fn(),
+  requireWorkspacePageActor: vi.fn(async () => ({ id: "candidate-1" })),
+}));
 
 vi.mock("next/server", () => ({ connection }));
 vi.mock("next/navigation", () => ({
@@ -19,6 +25,9 @@ vi.mock("@/features/accounts/require-workspace-page-actor", () => ({
 }));
 vi.mock("@/integrations/auth/clerk-auth-provider", () => ({
   currentAuthProvider: vi.fn(() => ({})),
+}));
+vi.mock("@/integrations/candidate/sync-verified-candidate-skills", () => ({
+  ensureCurrentCandidateSkills,
 }));
 vi.mock("@/lib/db/client", () => ({
   databaseClient: vi.fn(() => ({ job: { findFirst } })),
@@ -166,5 +175,12 @@ describe("job detail current-analysis action boundary", () => {
         }),
       }),
     );
+    expect(ensureCurrentCandidateSkills).toHaveBeenCalledWith(
+      expect.objectContaining({ job: { findFirst } }),
+      "candidate-1",
+    );
+    expect(
+      ensureCurrentCandidateSkills.mock.invocationCallOrder[0],
+    ).toBeLessThan(findFirst.mock.invocationCallOrder[0]!);
   });
 });
