@@ -182,6 +182,41 @@ describe("grounded matching engine v1.2", () => {
     );
   });
 
+  it("keeps an explicit skill duration unknown when only skill presence is evidenced", () => {
+    const result = matchCandidateToJob(
+      {
+        ...candidate,
+        skills: [{ name: "Python", proficiency: null, experienceMonths: null }],
+      },
+      {
+        ...job,
+        requiredSkills: [
+          {
+            name: "Python",
+            minimumExperienceMonths: 36,
+            minimumProficiency: null,
+          },
+        ],
+        preferredSkills: null,
+      },
+    );
+
+    expect(result.unknowns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assessment: "UNKNOWN",
+          code: "REQUIRED_SKILL_python",
+          evidence: "Candidate skill duration is not recorded",
+        }),
+      ]),
+    );
+    expect(result.gaps).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "REQUIRED_SKILL_python" }),
+      ]),
+    );
+  });
+
   it("flags contradictory job requirements", () => {
     const result = matchCandidateToJob(candidate, {
       ...job,

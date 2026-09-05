@@ -1,6 +1,6 @@
 import type { CanonicalJobCriterion } from "./job";
 
-export const JOB_EVIDENCE_VERSION = "job-evidence-v2" as const;
+export const JOB_EVIDENCE_VERSION = "job-evidence-v3" as const;
 
 const REQUIRED_HEADINGS = new Set([
   "minimum qualifications",
@@ -76,23 +76,195 @@ function likelyUnrecognizedSectionHeading(
   );
 }
 
-function criterion(
+type CriterionSourceField =
+  "description.requirements" | "description.preferredRequirements";
+
+function baseCriterion(statement: string, sourceField: CriterionSourceField) {
+  return {
+    statement,
+    origin: "SOURCE_TEXT_EXPLICIT" as const,
+    sourceField,
+  };
+}
+
+function otherCriterion(
   statement: string,
-  sourceField: "description.requirements" | "description.preferredRequirements",
+  sourceField: CriterionSourceField,
+  logicalContext?: CanonicalJobCriterion["logicalContext"],
 ): CanonicalJobCriterion {
+  return {
+    kind: "OTHER",
+    ...baseCriterion(statement, sourceField),
+    ...(logicalContext ? { logicalContext } : {}),
+  };
+}
+
+function skillCriterion(
+  skillName: string,
+  statement: string,
+  sourceField: CriterionSourceField,
+  options?: {
+    readonly evaluationMode?: CanonicalJobCriterion["evaluationMode"];
+    readonly logicalContext?: CanonicalJobCriterion["logicalContext"];
+    readonly minimumExperienceMonths?: number;
+  },
+): CanonicalJobCriterion {
+  return {
+    kind: "SKILL",
+    ...baseCriterion(statement, sourceField),
+    skillName,
+    ...(options?.evaluationMode
+      ? { evaluationMode: options.evaluationMode }
+      : {}),
+    ...(options?.logicalContext
+      ? { logicalContext: options.logicalContext }
+      : {}),
+    ...(options?.minimumExperienceMonths != null
+      ? { minimumExperienceMonths: options.minimumExperienceMonths }
+      : {}),
+  };
+}
+
+function atomicSkillName(value: string) {
+  const candidate = value
+    .trim()
+    .replace(/^(?:strong|advanced|working)\s+/iu, "")
+    .replace(/[.;:]$/u, "")
+    .trim();
+  if (
+    !candidate ||
+    candidate.length > 80 ||
+    /[,;]/u.test(candidate) ||
+    /\b(?:and|or|alternatively|including|such as|with the ability)\b/iu.test(
+      candidate,
+    ) ||
+    candidate.split(/\s+/u).length > 4
+  )
+    return null;
+  return candidate;
+}
+
+function namedTechnologyList(value: string, separator: RegExp) {
+  return value
+    .split(separator)
+    .map((item) => atomicSkillName(item))
+    .filter((item): item is string => item !== null);
+}
+
+function compoundCriteria(
+  statement: string,
+  sourceField: CriterionSourceField,
+): CanonicalJobCriterion[] | null {
+  if (
+    /\b(?:alternatively|equivalent professional experience)\b/iu.test(
+      statement,
+    ) &&
+    /\b(?:bachelor'?s?|master'?s?|phd|doctorate)\b/iu.test(statement)
+  ) {
+    return [otherCriterion(statement, sourceField, "ALTERNATIVE")];
+  }
+
+  const developmentExperience = statement.match(
+    /^(?:strong\s+)?(.+?)\s+development experience\b/iu,
+  );
+  const developmentSkill = developmentExperience
+    ? atomicSkillName(developmentExperience[1])
+    : null;
+  if (developmentSkill) {
+    return [
+      skillCriterion(developmentSkill, statement, sourceField),
+      otherCriterion(statement, sourceField, "AND"),
+    ];
+  }
+
+  const proficiency = statement.match(
+    /^(?:working\s+)?proficiency\s+in\s+(.+?)(?:,\s+with\b|[.;]?$)/iu,
+  );
+  if (proficiency) {
+    const skills = namedTechnologyList(proficiency[1], /\s+and\s+/iu);
+    if (skills.length) {
+      return [
+        ...skills.map((skill) =>
+          skillCriterion(skill, statement, sourceField, {
+            logicalContext: skills.length > 1 ? "AND" : undefined,
+          }),
+        ),
+        otherCriterion(statement, sourceField, "AND"),
+      ];
+    }
+  }
+
+  const familiarityAndKnowledge = statement.match(
+    /^familiarity\s+with\s+(.+?)\s+and\s+a\s+working\s+knowledge\s+of\s+(.+?)(?:,|[.;]?$)/iu,
+  );
+  if (familiarityAndKnowledge) {
+    const alternative = familiarityAndKnowledge[1]
+      .replace(/\s+or\s+similar\b.*$/iu, "")
+      .trim();
+    const alternatives = namedTechnologyList(alternative, /\s*\/\s*/u);
+    const requiredSkill = atomicSkillName(familiarityAndKnowledge[2]);
+    return [
+      ...alternatives.map((skill) =>
+        skillCriterion(skill, statement, sourceField, {
+          evaluationMode: "CONTEXT_ONLY",
+          logicalContext: "OR",
+        }),
+      ),
+      ...(requiredSkill
+        ? [
+            skillCriterion(requiredSkill, statement, sourceField, {
+              logicalContext: "AND",
+            }),
+          ]
+        : []),
+      otherCriterion(statement, sourceField, "OR"),
+    ];
+  }
+
+  const examples = statement.match(
+    /\b(?:frameworks?|technologies|tools)\s+such as\s+(.+?)(?:[.;]|$)/iu,
+  );
+  if (examples) {
+    const names = namedTechnologyList(examples[1], /\s*,?\s+or\s+|\s*,\s*/iu);
+    return [
+      ...names.map((skill) =>
+        skillCriterion(skill, statement, sourceField, {
+          evaluationMode: "CONTEXT_ONLY",
+          logicalContext: "EXAMPLE",
+        }),
+      ),
+      otherCriterion(statement, sourceField, "EXAMPLE"),
+    ];
+  }
+  return null;
+}
+
+function criteria(
+  statement: string,
+  sourceField: CriterionSourceField,
+): CanonicalJobCriterion[] {
+  const compound = compoundCriteria(statement, sourceField);
+  if (compound) return compound;
   const overallExperience = statement.match(
     /^(?:at least |minimum(?: of)? )?(\d+)\+?\s+years?\s+(?:of\s+)?(?:(?:industry|professional|relevant|work)\s+)*experience(?:\s+(?:with|in|using)\s+(.+?))?(?:\s+(?:is\s+)?required)?[.;]?$/iu,
   );
   if (overallExperience) {
-    const skillName = overallExperience[2]?.trim();
-    return {
-      kind: skillName ? "SKILL" : "EXPERIENCE",
-      statement,
-      origin: "SOURCE_TEXT_EXPLICIT",
-      sourceField,
-      ...(skillName ? { skillName } : {}),
-      minimumExperienceMonths: Number(overallExperience[1]) * 12,
-    };
+    const skillName = overallExperience[2]
+      ? atomicSkillName(overallExperience[2])
+      : null;
+    return skillName
+      ? [
+          skillCriterion(skillName, statement, sourceField, {
+            minimumExperienceMonths: Number(overallExperience[1]) * 12,
+          }),
+        ]
+      : [
+          {
+            kind: "EXPERIENCE",
+            ...baseCriterion(statement, sourceField),
+            minimumExperienceMonths: Number(overallExperience[1]) * 12,
+          },
+        ];
   }
   const skillDuration = statement.match(
     /^(?:at least |minimum(?: of)? )?(\d+)\+?\s+years?\s+(?:of\s+)?(.+?)(?:\s+experience)?(?:\s+(?:is\s+)?required)?[.;]?$/iu,
@@ -103,41 +275,45 @@ function criterion(
       .replace(/\s+experience$/iu, "")
       .trim();
     if (/^(?:(?:industry|professional|relevant|work)\s*)+$/iu.test(subject)) {
-      return {
-        kind: "EXPERIENCE",
-        statement,
-        origin: "SOURCE_TEXT_EXPLICIT",
-        sourceField,
-        minimumExperienceMonths: Number(skillDuration[1]) * 12,
-      };
+      return [
+        {
+          kind: "EXPERIENCE",
+          ...baseCriterion(statement, sourceField),
+          minimumExperienceMonths: Number(skillDuration[1]) * 12,
+        },
+      ];
     }
-    return {
-      kind: "SKILL",
-      statement,
-      origin: "SOURCE_TEXT_EXPLICIT",
-      sourceField,
-      skillName: subject,
-      minimumExperienceMonths: Number(skillDuration[1]) * 12,
-    };
+    const skillName = atomicSkillName(subject);
+    return skillName
+      ? [
+          skillCriterion(skillName, statement, sourceField, {
+            minimumExperienceMonths: Number(skillDuration[1]) * 12,
+          }),
+        ]
+      : [otherCriterion(statement, sourceField)];
   }
   const explicitSkill = statement.match(
     /^(?:experience|expertise|familiarity|knowledge|proficiency)\s+(?:in|of|using|with)\s+(.+?)(?:\s+(?:is\s+)?(?:preferred|required))?[.;]?$/iu,
   );
   if (explicitSkill) {
-    return {
-      kind: "SKILL",
-      statement,
-      origin: "SOURCE_TEXT_EXPLICIT",
-      sourceField,
-      skillName: explicitSkill[1].trim(),
-    };
+    const skillName = atomicSkillName(explicitSkill[1]);
+    if (skillName) return [skillCriterion(skillName, statement, sourceField)];
   }
-  return {
-    kind: "OTHER",
-    statement,
-    origin: "SOURCE_TEXT_EXPLICIT",
-    sourceField,
-  };
+  const requiredSkill = statement.match(/^(.+?)\s+(?:is\s+)?required[.;]?$/iu);
+  if (requiredSkill) {
+    const skillName = atomicSkillName(requiredSkill[1]);
+    if (skillName) return [skillCriterion(skillName, statement, sourceField)];
+  }
+  const logicalContext = /\balternatively\b/iu.test(statement)
+    ? "ALTERNATIVE"
+    : /\bsuch as\b/iu.test(statement)
+      ? "EXAMPLE"
+      : /\bor\b/iu.test(statement)
+        ? "OR"
+        : /\band\b/iu.test(statement)
+          ? "AND"
+          : undefined;
+  return [otherCriterion(statement, sourceField, logicalContext)];
 }
 
 export function extractExplicitJobCriteria(description: string | null) {
@@ -175,7 +351,7 @@ export function extractExplicitJobCriteria(description: string | null) {
     if (!section || !statement) continue;
     const target = section === "REQUIRED" ? required : preferred;
     target.push(
-      criterion(
+      ...criteria(
         statement,
         section === "REQUIRED"
           ? "description.requirements"

@@ -121,7 +121,7 @@ describe("candidate job disposition action", () => {
     expect(analysisFindFirst).toHaveBeenCalledWith({
       where: {
         jobId: "job-1",
-        job: { evidenceVersion: "job-evidence-v2" },
+        job: { evidenceVersion: "job-evidence-v3" },
         scoringVersion: "match-v1.2",
         userId: "user-1",
       },
@@ -177,7 +177,7 @@ describe("candidate job disposition action", () => {
     expect(jobFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          evidenceVersion: "job-evidence-v2",
+          evidenceVersion: "job-evidence-v3",
           id: "job-1",
         },
       }),

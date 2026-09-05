@@ -124,8 +124,9 @@ describe("job detail current-analysis action boundary", () => {
   it.each([
     [null, "match-v1.2", "NULL evidence version"],
     ["job-evidence-v1", "match-v1.2", "obsolete evidence version"],
-    ["job-evidence-v2", "match-v1.1", "obsolete scoring version"],
-    ["job-evidence-v2", null, "missing analysis"],
+    ["job-evidence-v2", "match-v1.2", "obsolete evidence version"],
+    ["job-evidence-v3", "match-v1.1", "obsolete scoring version"],
+    ["job-evidence-v3", null, "missing analysis"],
   ])(
     "offers Analyze fit for %s / %s (%s)",
     async (evidenceVersion, scoringVersion, label) => {
@@ -139,7 +140,7 @@ describe("job detail current-analysis action boundary", () => {
 
   it("offers Review fit only when both evidence and scoring versions are current", async () => {
     const markup = await renderDetail({
-      evidenceVersion: "job-evidence-v2",
+      evidenceVersion: "job-evidence-v3",
       scoringVersion: "match-v1.2",
     });
 
@@ -156,7 +157,7 @@ describe("job detail current-analysis action boundary", () => {
         include: expect.objectContaining({
           matchAnalyses: {
             where: {
-              job: { evidenceVersion: "job-evidence-v2" },
+              job: { evidenceVersion: "job-evidence-v3" },
               scoringVersion: "match-v1.2",
               userId: "candidate-1",
             },

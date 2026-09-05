@@ -15,6 +15,8 @@ export const canonicalJobCriterionSchema = z.object({
   sourceField: z.string().trim().min(1).max(256),
   skillName: z.string().trim().min(1).max(256).optional(),
   minimumExperienceMonths: z.number().int().nonnegative().optional(),
+  evaluationMode: z.enum(["ATOMIC", "CONTEXT_ONLY"]).optional(),
+  logicalContext: z.enum(["AND", "OR", "EXAMPLE", "ALTERNATIVE"]).optional(),
 });
 
 export type CanonicalJobCriterion = z.infer<typeof canonicalJobCriterionSchema>;

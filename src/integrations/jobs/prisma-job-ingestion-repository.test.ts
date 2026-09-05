@@ -89,7 +89,7 @@ describe("PrismaJobIngestionRepository job evidence refresh", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           contentHash: "new-hash",
-          evidenceVersion: "job-evidence-v2",
+          evidenceVersion: "job-evidence-v3",
           requirements: normalized.canonical.requirements,
         }),
       }),
@@ -99,7 +99,7 @@ describe("PrismaJobIngestionRepository job evidence refresh", () => {
   it("invalidates existing analyses when canonical job evidence changes", async () => {
     mocks.jobFindUniqueOrThrow.mockResolvedValue({
       contentHash: "old-hash",
-      evidenceVersion: "job-evidence-v2",
+      evidenceVersion: "job-evidence-v3",
       sourceRecords: [{ externalId: "1", source: "GREENHOUSE" }],
     });
     await new PrismaJobIngestionRepository().mergeSourceAssociation({
@@ -126,7 +126,7 @@ describe("PrismaJobIngestionRepository job evidence refresh", () => {
   it("keeps current analyses when the canonical evidence hash is unchanged", async () => {
     mocks.jobFindUniqueOrThrow.mockResolvedValue({
       contentHash: "same-hash",
-      evidenceVersion: "job-evidence-v2",
+      evidenceVersion: "job-evidence-v3",
       sourceRecords: [{ externalId: "1", source: "GREENHOUSE" }],
     });
     await new PrismaJobIngestionRepository().mergeSourceAssociation({
@@ -143,7 +143,7 @@ describe("PrismaJobIngestionRepository job evidence refresh", () => {
   it("invalidates analyses when unchanged source content was normalized by an older evidence version", async () => {
     mocks.jobFindUniqueOrThrow.mockResolvedValue({
       contentHash: "same-hash",
-      evidenceVersion: null,
+      evidenceVersion: "job-evidence-v2",
       sourceRecords: [{ externalId: "1", source: "GREENHOUSE" }],
     });
     await new PrismaJobIngestionRepository().mergeSourceAssociation({
@@ -157,7 +157,7 @@ describe("PrismaJobIngestionRepository job evidence refresh", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           contentHash: "same-hash",
-          evidenceVersion: "job-evidence-v2",
+          evidenceVersion: "job-evidence-v3",
         }),
       }),
     );

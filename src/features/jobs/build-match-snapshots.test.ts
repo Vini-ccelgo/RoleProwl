@@ -61,6 +61,67 @@ describe("match snapshot evidence boundaries", () => {
     ]);
   });
 
+  it("keeps OR and example skills contextual while preserving one unresolved source criterion", () => {
+    const statement =
+      "Experience using frameworks such as PyTorch, LightGBM, or ONNX.";
+    const snapshot = buildJobMatchSnapshot({
+      requirements: [
+        {
+          evaluationMode: "CONTEXT_ONLY",
+          kind: "SKILL",
+          logicalContext: "EXAMPLE",
+          origin: "SOURCE_TEXT_EXPLICIT",
+          skillName: "PyTorch",
+          sourceField: "description.requirements",
+          statement,
+        },
+        {
+          evaluationMode: "CONTEXT_ONLY",
+          kind: "SKILL",
+          logicalContext: "EXAMPLE",
+          origin: "SOURCE_TEXT_EXPLICIT",
+          skillName: "LightGBM",
+          sourceField: "description.requirements",
+          statement,
+        },
+        {
+          evaluationMode: "CONTEXT_ONLY",
+          kind: "SKILL",
+          logicalContext: "EXAMPLE",
+          origin: "SOURCE_TEXT_EXPLICIT",
+          skillName: "ONNX",
+          sourceField: "description.requirements",
+          statement,
+        },
+        {
+          kind: "OTHER",
+          logicalContext: "EXAMPLE",
+          origin: "SOURCE_TEXT_EXPLICIT",
+          sourceField: "description.requirements",
+          statement,
+        },
+      ],
+      preferredRequirements: null,
+      skills: null,
+      educationRequirements: null,
+      experienceRequirements: null,
+      workAuthorization: null,
+      sponsorship: null,
+      locations: null,
+      remoteType: null,
+      salaryMax: null,
+      seniority: null,
+    });
+
+    expect(snapshot.requiredSkills).toBeNull();
+    expect(snapshot.otherRequiredCriteria).toEqual([
+      expect.objectContaining({
+        evidence: expect.objectContaining({ statement }),
+        label: statement,
+      }),
+    ]);
+  });
+
   it("uses only exact structured project and verified résumé skill facts", () => {
     const snapshot = buildCandidateMatchSnapshot({
       authorization: null,

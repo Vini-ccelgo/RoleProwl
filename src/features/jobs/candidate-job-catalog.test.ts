@@ -16,7 +16,7 @@ describe("shared canonical job catalog ownership", () => {
     });
     expect(candidateA.include.matchAnalyses.where.userId).toBe("candidate-a");
     expect(candidateA.include.matchAnalyses.where.job).toEqual({
-      evidenceVersion: "job-evidence-v2",
+      evidenceVersion: "job-evidence-v3",
     });
     expect(candidateA.include.matchAnalyses.include.feedback.where).toEqual({
       userId: "candidate-a",
@@ -30,7 +30,7 @@ describe("shared canonical job catalog ownership", () => {
     });
     expect(candidateB.include.matchAnalyses.where.userId).toBe("candidate-b");
     expect(candidateB.include.matchAnalyses.where.job).toEqual({
-      evidenceVersion: "job-evidence-v2",
+      evidenceVersion: "job-evidence-v3",
     });
     expect(candidateB.include.matchAnalyses.include.feedback.where).toEqual({
       userId: "candidate-b",

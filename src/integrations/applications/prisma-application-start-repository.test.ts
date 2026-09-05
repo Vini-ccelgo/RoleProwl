@@ -118,7 +118,7 @@ describe("Prisma application start repository", () => {
         select: expect.objectContaining({
           matchAnalyses: expect.objectContaining({
             where: {
-              job: { evidenceVersion: "job-evidence-v2" },
+              job: { evidenceVersion: "job-evidence-v3" },
               scoringVersion: "match-v1.2",
               userId: "user-1",
             },

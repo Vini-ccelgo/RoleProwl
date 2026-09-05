@@ -23,8 +23,7 @@ const sourcePayload = {
   content: [
     "<p>We use Go across the platform.</p>",
     "<h2>Required Qualifications</h2>",
-    "<ul><li>3+ years of Python</li>",
-    "<li>Experience with network automation</li></ul>",
+    "<ul><li>Strong Python development experience, including multithreaded programming and performance optimization.</li></ul>",
   ].join(""),
   id: 101,
   location: { name: "Remote - Brazil" },
@@ -32,12 +31,12 @@ const sourcePayload = {
 };
 
 describe("versioned persisted job evidence refresh", () => {
-  it("reprocesses unchanged Greenhouse HTML, invalidates the stale analysis, and avoids repeated invalidation", async () => {
+  it("reprocesses unchanged v2 Greenhouse HTML into v3 criteria, invalidates the stale analysis, and avoids repeated invalidation", async () => {
     const oldCanonical = {
       canonicalApplicationUrl: sourcePayload.absolute_url,
       company: "Acme",
       description:
-        "We use Go across the platform.\nRequired Qualifications\n• 3+ years of Python\n• Experience with network automation",
+        "We use Go across the platform.\nRequired Qualifications\n• Strong Python development experience, including multithreaded programming and performance optimization.",
       educationRequirements: null,
       employmentType: null,
       experienceRequirements: null,
@@ -46,7 +45,15 @@ describe("versioned persisted job evidence refresh", () => {
       postedAt: null,
       preferredRequirements: null,
       remoteType: "REMOTE" as const,
-      requirements: null,
+      requirements: [
+        {
+          kind: "OTHER",
+          origin: "SOURCE_TEXT_EXPLICIT",
+          sourceField: "description.requirements",
+          statement:
+            "Strong Python development experience, including multithreaded programming and performance optimization.",
+        },
+      ],
       salaryCurrency: null,
       salaryInterval: null,
       salaryMax: null,
@@ -65,7 +72,7 @@ describe("versioned persisted job evidence refresh", () => {
     } = {
       analysis: { evidenceCoverage: 0, scoringVersion: "match-v1.2" },
       canonical: oldCanonical,
-      evidenceVersion: null,
+      evidenceVersion: "job-evidence-v2",
       invalidations: 0,
     };
     const applicationSnapshot = Object.freeze({
@@ -131,13 +138,15 @@ describe("versioned persisted job evidence refresh", () => {
     expect(state.evidenceVersion).toBe(JOB_EVIDENCE_VERSION);
     expect(state.canonical.requirements).toEqual([
       expect.objectContaining({
-        minimumExperienceMonths: 36,
+        kind: "SKILL",
         skillName: "Python",
-        statement: "3+ years of Python",
+        statement:
+          "Strong Python development experience, including multithreaded programming and performance optimization.",
       }),
       expect.objectContaining({
-        skillName: "network automation",
-        statement: "Experience with network automation",
+        kind: "OTHER",
+        statement:
+          "Strong Python development experience, including multithreaded programming and performance optimization.",
       }),
     ]);
     expect(state.analysis).toBeNull();
@@ -179,12 +188,8 @@ describe("versioned persisted job evidence refresh", () => {
       expect.arrayContaining([
         expect.objectContaining({
           jobEvidence: expect.objectContaining({
-            statement: "3+ years of Python",
-          }),
-        }),
-        expect.objectContaining({
-          jobEvidence: expect.objectContaining({
-            statement: "Experience with network automation",
+            statement:
+              "Strong Python development experience, including multithreaded programming and performance optimization.",
           }),
         }),
       ]),
@@ -200,7 +205,7 @@ describe("versioned persisted job evidence refresh", () => {
         {
           canonicalName: "Python",
           evidenceCount: 1,
-          experienceMonths: 48,
+          experienceMonths: null,
           proficiency: "WORKING",
         },
       ],

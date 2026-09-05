@@ -11,7 +11,7 @@ describe("evidence-aware dashboard match queries", () => {
       userId: "user-1",
       scoringVersion: "match-v1.2",
       job: {
-        evidenceVersion: "job-evidence-v2",
+        evidenceVersion: "job-evidence-v3",
         status: "ACTIVE",
         candidateDispositions: {
           none: { userId: "user-1", status: "REJECTED" },
@@ -24,7 +24,7 @@ describe("evidence-aware dashboard match queries", () => {
     expect(currentMatchAnalysisWhere("user-1")).toEqual({
       userId: "user-1",
       scoringVersion: "match-v1.2",
-      job: { evidenceVersion: "job-evidence-v2" },
+      job: { evidenceVersion: "job-evidence-v3" },
     });
   });
 

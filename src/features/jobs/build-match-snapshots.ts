@@ -42,6 +42,7 @@ function requirementSet(
 ) {
   const skills: SkillRequirement[] = [];
   const other: OtherJobCriterion[] = [];
+  const otherStatements = new Set<string>();
   let minimumExperienceMonths: number | null = null;
   if (!Array.isArray(value))
     return { skills: null, other: null, minimumExperienceMonths };
@@ -78,7 +79,8 @@ function requirementSet(
           : typeof record?.value === "string" && kind === "SKILL"
             ? record.value
             : null;
-    if (kind === "SKILL" && name?.trim()) {
+    const contextOnly = record?.evaluationMode === "CONTEXT_ONLY";
+    if (kind === "SKILL" && name?.trim() && !contextOnly) {
       skills.push({
         name: name.trim(),
         minimumExperienceMonths:
@@ -107,7 +109,8 @@ function requirementSet(
       );
       return;
     }
-    if (!statement) return;
+    if (!statement || otherStatements.has(statement)) return;
+    otherStatements.add(statement);
     other.push({
       code: criterionCode(statement, index),
       evidence,
