@@ -23,6 +23,76 @@ export interface WritingEvidence extends ClaimEvidenceInput {
   readonly label: string;
 }
 
+const IGNORED_RELEVANCE_TOKENS = new Set([
+  "and",
+  "are",
+  "candidate",
+  "company",
+  "experience",
+  "for",
+  "from",
+  "have",
+  "job",
+  "our",
+  "position",
+  "preferred",
+  "required",
+  "requirement",
+  "requirements",
+  "role",
+  "skill",
+  "skills",
+  "that",
+  "the",
+  "their",
+  "this",
+  "team",
+  "with",
+  "work",
+  "working",
+  "you",
+  "your",
+]);
+
+function searchableValues(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(searchableValues);
+  if (value && typeof value === "object")
+    return Object.values(value).flatMap(searchableValues);
+  return typeof value === "string" || typeof value === "number"
+    ? [String(value)]
+    : [];
+}
+
+function searchableTokens(value: unknown) {
+  return new Set(
+    searchableValues(value)
+      .join(" ")
+      .normalize("NFKC")
+      .toLocaleLowerCase("en-US")
+      .match(/[a-z0-9+#.]{2,}/gu)
+      ?.filter((token) => !IGNORED_RELEVANCE_TOKENS.has(token)) ?? [],
+  );
+}
+
+export function selectRelevantWritingEvidence(
+  evidence: readonly WritingEvidence[],
+  jobContext: Readonly<Record<string, unknown>>,
+) {
+  const target = searchableTokens(jobContext);
+  return evidence
+    .map((item, index) => ({
+      index,
+      item,
+      score: [...searchableTokens(item.snapshot)].filter((token) =>
+        target.has(token),
+      ).length,
+    }))
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .slice(0, 30)
+    .map(({ item }) => item);
+}
+
 export interface ValidatedWritingClaim {
   readonly assertions: readonly ClaimAssertion[];
   readonly classification:
@@ -157,6 +227,7 @@ export async function generateApplicationWriting(input: {
           const definition = aiTaskDefinitions.COVER_LETTER_GENERATION;
           const result = await input.ai.generateStructured({
             correlationId: input.correlationId,
+            dataClassification: "REAL_CANDIDATE",
             rateLimitSubject: input.userId,
             input: taskInput,
             ...definition,
@@ -173,6 +244,7 @@ export async function generateApplicationWriting(input: {
           const definition = aiTaskDefinitions.FREE_TEXT_APPLICATION_GENERATION;
           const result = await input.ai.generateStructured({
             correlationId: input.correlationId,
+            dataClassification: "REAL_CANDIDATE",
             rateLimitSubject: input.userId,
             input: taskInput,
             ...definition,

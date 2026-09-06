@@ -166,6 +166,49 @@ describe("Prisma application packet repository", () => {
     );
   });
 
+  it("includes the latest cover letter only on explicit unreviewed packet refresh", async () => {
+    mocks.writingFindMany.mockResolvedValue([
+      {
+        content: "Newest reviewable cover letter.",
+        type: "COVER_LETTER",
+      },
+      {
+        content: "Older cover letter.",
+        type: "COVER_LETTER",
+      },
+    ]);
+
+    const packet = await new PrismaApplicationPacketRepository(
+      vi.fn(async () => Response.json({ questions: [] })),
+    ).refresh({
+      applicationId: "application-1",
+      userId: "user-1",
+      reviewed: false,
+    });
+
+    expect(packet.documents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "COVER_LETTER",
+          status: "UNRESOLVED",
+          provenance: [
+            expect.objectContaining({ source: "GENERATED_ARTIFACT" }),
+          ],
+        }),
+      ]),
+    );
+    expect(mocks.applicationUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          generatedTextSnapshot: {
+            COVER_LETTER: "Newest reviewable cover letter.",
+          },
+          state: "NEEDS_REVIEW",
+        }),
+      }),
+    );
+  });
+
   it("rejects a stale refresh instead of overwriting newer application input", async () => {
     mocks.applicationUpdateMany.mockResolvedValueOnce({ count: 0 });
     await expect(

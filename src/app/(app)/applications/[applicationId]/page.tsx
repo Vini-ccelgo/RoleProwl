@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { ApplicationPreparationSummary } from "@/components/applications/application-preparation-summary";
 import { ApplicationPacketSummary } from "@/components/applications/application-packet-summary";
 import { ApplicationDocuments } from "@/components/applications/application-documents";
+import { CoverLetterDraft } from "@/components/applications/cover-letter-draft";
 import { GreenhouseAssistedApply } from "@/components/applications/greenhouse-assisted-apply";
 import { PageHeader } from "@/components/ui/page-header";
 import { ResumeVersionSummary } from "@/components/applications/resume-version-summary";
@@ -77,7 +78,8 @@ export default async function ApplicationDetailPage({
   await connection();
   const actor = await requireWorkspacePageActor(currentAuthProvider());
   const { applicationId } = await params;
-  const application = await databaseClient().application.findFirst({
+  const database = databaseClient();
+  const application = await database.application.findFirst({
     where: { id: applicationId, userId: actor.id },
     include: {
       job: {
@@ -105,11 +107,22 @@ export default async function ApplicationDetailPage({
     },
   });
   if (!application) notFound();
+  const latestCoverLetter = await database.applicationWritingArtifact.findFirst(
+    {
+      where: {
+        targetJobId: application.jobId,
+        type: "COVER_LETTER",
+        userId: actor.id,
+      },
+      orderBy: [{ generatedAt: "desc" }, { id: "desc" }],
+      select: { content: true, generatedAt: true, generator: true },
+    },
+  );
   const selectedResume = applicationResumeSnapshot(
     application.documentsSnapshot,
   );
   const availableResumes = !application.submittedAt
-    ? await databaseClient().candidateDocument.findMany({
+    ? await database.candidateDocument.findMany({
         where: { userId: actor.id, status: "EXTRACTED" },
         orderBy: { createdAt: "desc" },
         select: {
@@ -144,6 +157,11 @@ export default async function ApplicationDetailPage({
       application.state === "NEEDS_REVIEW") &&
     Boolean(packet && applicationPacketCanBeReviewed(packet));
   const canRefreshPacket =
+    !application.submittedAt &&
+    ["PREPARING", "NEEDS_REVIEW", "READY", "FAILED"].includes(
+      application.state,
+    );
+  const canGenerateCoverLetter =
     !application.submittedAt &&
     ["PREPARING", "NEEDS_REVIEW", "READY", "FAILED"].includes(
       application.state,
@@ -237,6 +255,20 @@ export default async function ApplicationDetailPage({
         <h2 className="text-base font-semibold">Outcome policy</h2>
         <p className="m-0 text-sm">{APPLICATION_OUTCOME_POLICY_COPY}</p>
       </section>
+
+      <CoverLetterDraft
+        applicationId={application.id}
+        canGenerate={canGenerateCoverLetter}
+        draft={
+          latestCoverLetter
+            ? {
+                content: latestCoverLetter.content,
+                generatedAt: latestCoverLetter.generatedAt.toISOString(),
+                generator: latestCoverLetter.generator,
+              }
+            : null
+        }
+      />
 
       {canRefreshPacket && (
         <section className="card grid gap-3 p-5">

@@ -7,6 +7,7 @@ import { DeterministicAIProvider } from "@/integrations/ai/deterministic-ai-prov
 import {
   generateApplicationWriting,
   hasFabricatedEmployerAttachment,
+  selectRelevantWritingEvidence,
 } from "./application-writing";
 
 const evidence = [
@@ -52,6 +53,35 @@ function claim(text: string, employer = "Acme") {
 }
 
 describe("application writing engine", () => {
+  it("selects only deterministically job-relevant evidence", () => {
+    expect(
+      selectRelevantWritingEvidence(
+        [
+          ...evidence,
+          {
+            evidenceType: "candidate_fact",
+            evidenceId: "fact-python",
+            evidenceField: "value",
+            label: "Verified candidate skill",
+            snapshot: { text: "Languages: Python, SQL" },
+          },
+          {
+            evidenceType: "candidate_fact",
+            evidenceId: "fact-generic-overlap",
+            evidenceField: "value",
+            label: "Verified candidate experience",
+            snapshot: { text: "Worked with a bakery team" },
+          },
+        ],
+        {
+          company: "Target Co",
+          title: "Python Developer",
+          requirements: ["Python", "Work with the platform team"],
+        },
+      ).map(({ evidenceId }) => evidenceId),
+    ).toEqual(["fact-python"]);
+  });
+
   it("generates concise free text and persists provenance", async () => {
     const text = "My engineering work at Acme aligns with this platform role.";
     const input = base({
@@ -70,16 +100,69 @@ describe("application writing engine", () => {
 
   it("uses the distinct cover-letter task and stores its body", async () => {
     const body = "At Acme, I worked as an Engineer.";
-    const result = await generateApplicationWriting(
-      base({
+    const input = base({
+      type: "COVER_LETTER",
+      ai: new DeterministicAIProvider((request) => {
+        expect(request.task).toBe("COVER_LETTER_GENERATION");
+        expect(request.dataClassification).toBe("REAL_CANDIDATE");
+        return { subject: null, body, claims: [claim(body)] };
+      }),
+    });
+    const result = await generateApplicationWriting(input);
+    expect(result.content).toBe(body);
+    expect(input.repository.save).toHaveBeenCalledOnce();
+    expect(input.repository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generator: "deterministic-test-provider",
+        targetJobId: "job-1",
         type: "COVER_LETTER",
-        ai: new DeterministicAIProvider((request) => {
-          expect(request.task).toBe("COVER_LETTER_GENERATION");
-          return { subject: null, body, claims: [claim(body)] };
-        }),
+        userId: "user-1",
       }),
     );
-    expect(result.content).toBe(body);
+  });
+
+  it("rejects unsupported cover-letter claims before persistence", async () => {
+    const body = "I transformed every system at Acme.";
+    const input = base({
+      type: "COVER_LETTER",
+      ai: new DeterministicAIProvider(() => ({
+        subject: null,
+        body,
+        claims: [
+          {
+            ...claim(body),
+            classification: "UNSUPPORTED",
+          },
+        ],
+      })),
+    });
+
+    await expect(generateApplicationWriting(input)).rejects.toThrow(
+      "Unsupported claims",
+    );
+    expect(input.repository.save).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown cover-letter evidence before persistence", async () => {
+    const body = "At Acme, I worked as an Engineer.";
+    const input = base({
+      type: "COVER_LETTER",
+      ai: new DeterministicAIProvider(() => ({
+        subject: null,
+        body,
+        claims: [
+          {
+            ...claim(body),
+            sourceEvidence: [{ ...reference, evidenceId: "unknown-evidence" }],
+          },
+        ],
+      })),
+    });
+
+    await expect(generateApplicationWriting(input)).rejects.toThrow(
+      "unknown evidence",
+    );
+    expect(input.repository.save).not.toHaveBeenCalled();
   });
 
   it("requires an employer question for employer free text", async () => {

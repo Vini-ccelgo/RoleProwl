@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import type { PreparedApplication } from "@/core/contracts/application-adapter";
+import type { Prisma } from "@/generated/prisma/client";
 import {
   isApplicationState,
   type ApplicationState,
@@ -14,18 +15,31 @@ import {
   isApplicationIdentityKey,
   isApplicationPacket,
 } from "@/core/domain/applications/application-packet";
-import { ConflictError } from "@/core/errors/application-errors";
+import {
+  AIInvalidOutputError,
+  AIProviderCapacityError,
+  ApplicationError,
+  ConflictError,
+  RateLimitExceededError,
+} from "@/core/errors/application-errors";
+import { readableJobDescription } from "@/core/domain/jobs/job-description";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
 import { confirmExternalSubmission } from "@/features/applications/prepare-and-submit-application";
 import { updateApplicationState } from "@/features/applications/update-application-state";
 import { refreshApplicationPacket } from "@/features/applications/refresh-application-packet";
 import { saveApplicationOverrides } from "@/features/applications/save-application-overrides";
+import {
+  generateApplicationWriting,
+  selectRelevantWritingEvidence,
+} from "@/features/writing/application-writing";
 import { PrismaApplicationSubmissionRepository } from "@/integrations/applications/prisma-application-submission-repository";
 import { PrismaApplicationTrackerRepository } from "@/integrations/applications/prisma-application-tracker-repository";
 import { PrismaApplicationPacketRepository } from "@/integrations/applications/prisma-application-packet-repository";
 import { PrismaApplicationOverrideRepository } from "@/integrations/applications/prisma-application-override-repository";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { PrismaProductAnalyticsProvider } from "@/integrations/analytics/prisma-product-analytics-provider";
+import { currentAIProvider } from "@/integrations/ai/provider-factory";
+import { PrismaApplicationWritingRepository } from "@/integrations/writing/prisma-application-writing-repository";
 import { databaseClient } from "@/lib/db/client";
 
 const USER_OUTCOME_STATES = new Set<ApplicationState>([
@@ -36,6 +50,190 @@ const USER_OUTCOME_STATES = new Set<ApplicationState>([
   "OFFER",
   "CLOSED",
 ]);
+
+const COVER_LETTER_STATES = new Set<ApplicationState>([
+  "PREPARING",
+  "NEEDS_REVIEW",
+  "READY",
+  "FAILED",
+]);
+
+const COVER_LETTER_FACT_TYPES = [
+  "WORK_EXPERIENCE_TEXT",
+  "EDUCATION_TEXT",
+  "SKILL_TEXT",
+  "PROJECT_TEXT",
+  "CREDENTIAL_TEXT",
+] as const;
+
+export interface CoverLetterGenerationActionState {
+  readonly status: "idle" | "success" | "error";
+  readonly message: string;
+}
+
+function evidenceSnapshot(value: Prisma.JsonValue) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Readonly<Record<string, unknown>>)
+    : null;
+}
+
+function evidenceLabel(factType: string) {
+  return `Verified candidate ${factType
+    .replace(/_TEXT$/u, "")
+    .replaceAll("_", " ")
+    .toLocaleLowerCase("en-US")}`;
+}
+
+function coverLetterFailure(error: unknown): CoverLetterGenerationActionState {
+  if (
+    error instanceof AIProviderCapacityError ||
+    error instanceof RateLimitExceededError ||
+    (error instanceof ApplicationError && error.code === "AI_REFUSAL")
+  ) {
+    return {
+      status: "error",
+      message:
+        "Cover letter generation is temporarily unavailable. Try again later.",
+    };
+  }
+  if (error instanceof AIInvalidOutputError) {
+    return {
+      status: "error",
+      message:
+        "A safe evidence-backed draft could not be generated. No draft was saved.",
+    };
+  }
+  return {
+    status: "error",
+    message:
+      "Cover letter generation is not currently available. No draft was saved.",
+  };
+}
+
+export async function generateCoverLetterAction(
+  _previous: CoverLetterGenerationActionState,
+  formData: FormData,
+): Promise<CoverLetterGenerationActionState> {
+  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const applicationId = String(formData.get("applicationId") ?? "");
+  if (!applicationId) return coverLetterFailure(null);
+
+  try {
+    const database = databaseClient();
+    const application = await database.application.findFirst({
+      where: { id: applicationId, userId: actor.id },
+      select: {
+        id: true,
+        jobId: true,
+        state: true,
+        submittedAt: true,
+        job: {
+          select: {
+            company: true,
+            description: true,
+            employmentType: true,
+            locations: true,
+            preferredRequirements: true,
+            remoteType: true,
+            requirements: true,
+            seniority: true,
+            title: true,
+          },
+        },
+      },
+    });
+    if (!application) return coverLetterFailure(null);
+    if (
+      application.submittedAt ||
+      !COVER_LETTER_STATES.has(application.state)
+    ) {
+      return {
+        status: "error",
+        message: "Cover letter drafts can only be generated before submission.",
+      };
+    }
+
+    const [facts, preferences] = await Promise.all([
+      database.candidateFact.findMany({
+        where: {
+          factType: { in: [...COVER_LETTER_FACT_TYPES] },
+          status: "ACTIVE",
+          userId: actor.id,
+          verificationState: "VERIFIED",
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { factType: true, id: true, value: true },
+      }),
+      database.candidatePreferences.findUnique({
+        where: { userId: actor.id },
+        select: {
+          employmentTypes: true,
+          industries: true,
+          locationPreferences: true,
+          remotePreference: true,
+          roleFamilies: true,
+          seniorities: true,
+        },
+      }),
+    ]);
+    const candidateEvidence = facts.flatMap((fact) => {
+      const snapshot = evidenceSnapshot(fact.value);
+      return snapshot
+        ? [
+            {
+              evidenceField: "value",
+              evidenceId: fact.id,
+              evidenceType: "CANDIDATE_FACT",
+              label: evidenceLabel(fact.factType),
+              snapshot,
+            },
+          ]
+        : [];
+    });
+    const jobContext = {
+      company: application.job.company,
+      description: readableJobDescription(application.job.description),
+      employmentType: application.job.employmentType,
+      locations: application.job.locations,
+      preferredRequirements: application.job.preferredRequirements,
+      remoteType: application.job.remoteType,
+      requirements: application.job.requirements,
+      seniority: application.job.seniority,
+      title: application.job.title,
+    };
+    const evidence = selectRelevantWritingEvidence(
+      candidateEvidence,
+      jobContext,
+    );
+    if (evidence.length === 0) {
+      return {
+        status: "error",
+        message:
+          "Verify relevant candidate evidence before generating a cover letter draft.",
+      };
+    }
+
+    await generateApplicationWriting({
+      ai: currentAIProvider(),
+      company: application.job.company,
+      correlationId: crypto.randomUUID(),
+      evidence,
+      jobContext,
+      preferences,
+      repository: new PrismaApplicationWritingRepository(),
+      targetJobId: application.jobId,
+      type: "COVER_LETTER",
+      userId: actor.id,
+    });
+    revalidatePath(`/applications/${application.id}`);
+    return {
+      status: "success",
+      message: "Cover letter draft generated. Review it before any use.",
+    };
+  } catch (error) {
+    return coverLetterFailure(error);
+  }
+}
 
 export async function updateApplicationStateAction(formData: FormData) {
   const actor = await requireAuthenticatedActor(currentAuthProvider());

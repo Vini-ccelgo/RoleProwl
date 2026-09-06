@@ -39,6 +39,18 @@ describe("real candidate AI policy", () => {
     expect(generateStructured).not.toHaveBeenCalled();
   });
 
+  it("keeps real Gemini data blocked while synthetic-only remains enabled", () => {
+    const { provider, generateStructured } = wrapped({
+      ROLEPROWL_DEPLOYMENT_ENVIRONMENT: "preview",
+      ROLEPROWL_GEMINI_SYNTHETIC_ONLY: "true",
+      ROLEPROWL_PRIVATE_BETA_REAL_DATA_AI_ENABLED: "true",
+    });
+    expect(() => provider.generateStructured(request)).toThrow(
+      "Gemini remains synthetic-only",
+    );
+    expect(generateStructured).not.toHaveBeenCalled();
+  });
+
   it("preserves explicitly synthetic Preview processing", async () => {
     const { provider, generateStructured } = wrapped({
       ROLEPROWL_DEPLOYMENT_ENVIRONMENT: "preview",

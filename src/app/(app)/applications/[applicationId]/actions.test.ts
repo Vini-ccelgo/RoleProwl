@@ -1,28 +1,60 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApplicationPacket } from "@/core/domain/applications/application-packet";
+import { AIInvalidOutputError } from "@/core/errors/application-errors";
 
 const {
+  candidateFactsFindMany,
   confirmExternalSubmission,
+  currentAIProvider,
   findFirst,
+  generateApplicationWriting,
+  preferencesFindUnique,
   refreshApplicationPacket,
+  requireAuthenticatedActor,
+  revalidatePath,
   saveApplicationOverrides,
+  selectRelevantWritingEvidence,
 } = vi.hoisted(() => ({
+  candidateFactsFindMany: vi.fn(),
   confirmExternalSubmission: vi.fn(async () => undefined),
+  currentAIProvider: vi.fn(() => ({ provider: "policy-enforced" })),
   findFirst: vi.fn(),
+  generateApplicationWriting: vi.fn(async () => ({ id: "writing-1" })),
+  preferencesFindUnique: vi.fn(),
   refreshApplicationPacket: vi.fn(async () => undefined),
+  requireAuthenticatedActor: vi.fn(async () => ({ id: "user-1" })),
+  revalidatePath: vi.fn(),
   saveApplicationOverrides: vi.fn(async () => undefined),
+  selectRelevantWritingEvidence: vi.fn(
+    (evidence: Array<{ snapshot: unknown }>) =>
+      evidence.filter((item) =>
+        JSON.stringify(item.snapshot).includes("Python"),
+      ),
+  ),
 }));
 
 vi.mock("server-only", () => ({}));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/cache", () => ({ revalidatePath }));
 vi.mock("@/features/accounts/require-authenticated-actor", () => ({
-  requireAuthenticatedActor: vi.fn(async () => ({ id: "user-1" })),
+  requireAuthenticatedActor,
 }));
 vi.mock("@/integrations/auth/clerk-auth-provider", () => ({
   currentAuthProvider: vi.fn(() => ({})),
 }));
 vi.mock("@/lib/db/client", () => ({
-  databaseClient: vi.fn(() => ({ application: { findFirst } })),
+  databaseClient: vi.fn(() => ({
+    application: { findFirst },
+    candidateFact: { findMany: candidateFactsFindMany },
+    candidatePreferences: { findUnique: preferencesFindUnique },
+  })),
+}));
+vi.mock("@/features/writing/application-writing", () => ({
+  generateApplicationWriting,
+  selectRelevantWritingEvidence,
+}));
+vi.mock("@/integrations/ai/provider-factory", () => ({ currentAIProvider }));
+vi.mock("@/integrations/writing/prisma-application-writing-repository", () => ({
+  PrismaApplicationWritingRepository: class {},
 }));
 vi.mock("@/features/applications/refresh-application-packet", () => ({
   refreshApplicationPacket,
@@ -55,6 +87,7 @@ vi.mock("@/integrations/analytics/prisma-product-analytics-provider", () => ({
 
 import {
   confirmExternalApplicationAction,
+  generateCoverLetterAction,
   markApplicationReadyAction,
   saveApplicationOverridesAction,
   selectApplicationResumeAction,
@@ -65,6 +98,32 @@ function form() {
   value.set("applicationId", "application-1");
   return value;
 }
+
+const idleCoverLetterState = { status: "idle" as const, message: "" };
+
+const coverLetterApplication = {
+  id: "application-1",
+  jobId: "job-1",
+  state: "PREPARING",
+  submittedAt: null,
+  job: {
+    company: "Authoritative Co",
+    description: "<p>Build Python services.</p>",
+    employmentType: "FULL_TIME",
+    locations: ["Remote - Brazil"],
+    preferredRequirements: null,
+    remoteType: "REMOTE",
+    requirements: [
+      {
+        kind: "SKILL",
+        skillName: "Python",
+        statement: "Python is required",
+      },
+    ],
+    seniority: "MID",
+    title: "Python Engineer",
+  },
+};
 
 const readyPacket = buildApplicationPacket({
   reviewed: true,
@@ -103,7 +162,209 @@ const readyPacket = buildApplicationPacket({
 });
 
 describe("application packet actions", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireAuthenticatedActor.mockResolvedValue({ id: "user-1" });
+    currentAIProvider.mockReturnValue({ provider: "policy-enforced" });
+    generateApplicationWriting.mockResolvedValue({ id: "writing-1" });
+    candidateFactsFindMany.mockResolvedValue([]);
+    preferencesFindUnique.mockResolvedValue(null);
+  });
+
+  it("derives cover-letter evidence and job context from the authenticated owner", async () => {
+    findFirst.mockResolvedValue(coverLetterApplication);
+    candidateFactsFindMany.mockResolvedValue([
+      {
+        factType: "SKILL_TEXT",
+        id: "fact-python",
+        value: { text: "Languages: Python" },
+      },
+      {
+        factType: "PROJECT_TEXT",
+        id: "fact-unrelated",
+        value: { text: "Created pastry menus for a neighborhood bakery" },
+      },
+    ]);
+    preferencesFindUnique.mockResolvedValue({
+      employmentTypes: ["FULL_TIME"],
+      industries: ["Technology"],
+      locationPreferences: ["Brazil"],
+      remotePreference: "REMOTE",
+      roleFamilies: ["Software Engineering"],
+      seniorities: ["MID"],
+    });
+    const value = form();
+    value.set("company", "Browser-controlled Company");
+    value.set("evidence", "Fabricated browser evidence");
+    value.set("jobContext", "Untrusted job context");
+
+    const result = await generateCoverLetterAction(idleCoverLetterState, value);
+
+    expect(result).toEqual({
+      status: "success",
+      message: "Cover letter draft generated. Review it before any use.",
+    });
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "application-1", userId: "user-1" },
+      }),
+    );
+    expect(candidateFactsFindMany).toHaveBeenCalledWith({
+      where: {
+        factType: {
+          in: [
+            "WORK_EXPERIENCE_TEXT",
+            "EDUCATION_TEXT",
+            "SKILL_TEXT",
+            "PROJECT_TEXT",
+            "CREDENTIAL_TEXT",
+          ],
+        },
+        status: "ACTIVE",
+        userId: "user-1",
+        verificationState: "VERIFIED",
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { factType: true, id: true, value: true },
+    });
+    expect(currentAIProvider).toHaveBeenCalledOnce();
+    expect(selectRelevantWritingEvidence).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ evidenceId: "fact-python" }),
+        expect.objectContaining({ evidenceId: "fact-unrelated" }),
+      ]),
+      expect.objectContaining({ title: "Python Engineer" }),
+    );
+    expect(generateApplicationWriting).toHaveBeenCalledOnce();
+    expect(generateApplicationWriting).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ai: { provider: "policy-enforced" },
+        company: "Authoritative Co",
+        evidence: [
+          {
+            evidenceField: "value",
+            evidenceId: "fact-python",
+            evidenceType: "CANDIDATE_FACT",
+            label: "Verified candidate skill",
+            snapshot: { text: "Languages: Python" },
+          },
+        ],
+        jobContext: {
+          company: "Authoritative Co",
+          description: "Build Python services.",
+          employmentType: "FULL_TIME",
+          locations: ["Remote - Brazil"],
+          preferredRequirements: null,
+          remoteType: "REMOTE",
+          requirements: coverLetterApplication.job.requirements,
+          seniority: "MID",
+          title: "Python Engineer",
+        },
+        preferences: {
+          employmentTypes: ["FULL_TIME"],
+          industries: ["Technology"],
+          locationPreferences: ["Brazil"],
+          remotePreference: "REMOTE",
+          roleFamilies: ["Software Engineering"],
+          seniorities: ["MID"],
+        },
+        targetJobId: "job-1",
+        type: "COVER_LETTER",
+        userId: "user-1",
+      }),
+    );
+    expect(
+      JSON.stringify(generateApplicationWriting.mock.calls[0]),
+    ).not.toContain("Browser-controlled");
+    expect(
+      JSON.stringify(generateApplicationWriting.mock.calls[0]),
+    ).not.toContain("Fabricated browser evidence");
+    expect(
+      JSON.stringify(generateApplicationWriting.mock.calls[0]),
+    ).not.toContain("pastry menus");
+    expect(revalidatePath).toHaveBeenCalledWith("/applications/application-1");
+    expect(refreshApplicationPacket).not.toHaveBeenCalled();
+    expect(confirmExternalSubmission).not.toHaveBeenCalled();
+  });
+
+  it("requires authentication before cover-letter generation", async () => {
+    requireAuthenticatedActor.mockRejectedValueOnce(new Error("signed out"));
+
+    await expect(
+      generateCoverLetterAction(idleCoverLetterState, form()),
+    ).rejects.toThrow("signed out");
+
+    expect(findFirst).not.toHaveBeenCalled();
+    expect(currentAIProvider).not.toHaveBeenCalled();
+    expect(generateApplicationWriting).not.toHaveBeenCalled();
+  });
+
+  it("conceals foreign applications and performs no generation", async () => {
+    findFirst.mockResolvedValue(null);
+
+    const result = await generateCoverLetterAction(
+      idleCoverLetterState,
+      form(),
+    );
+
+    expect(result).toEqual({
+      status: "error",
+      message:
+        "Cover letter generation is not currently available. No draft was saved.",
+    });
+    expect(candidateFactsFindMany).not.toHaveBeenCalled();
+    expect(currentAIProvider).not.toHaveBeenCalled();
+    expect(generateApplicationWriting).not.toHaveBeenCalled();
+  });
+
+  it("returns a bounded failure when provenance validation rejects output", async () => {
+    findFirst.mockResolvedValue(coverLetterApplication);
+    candidateFactsFindMany.mockResolvedValue([
+      {
+        factType: "SKILL_TEXT",
+        id: "fact-python",
+        value: { text: "Languages: Python" },
+      },
+    ]);
+    generateApplicationWriting.mockRejectedValueOnce(
+      new AIInvalidOutputError("unknown evidence: private details"),
+    );
+
+    const result = await generateCoverLetterAction(
+      idleCoverLetterState,
+      form(),
+    );
+
+    expect(result).toEqual({
+      status: "error",
+      message:
+        "A safe evidence-backed draft could not be generated. No draft was saved.",
+    });
+    expect(result.message).not.toContain("unknown evidence");
+    expect(revalidatePath).not.toHaveBeenCalled();
+    expect(refreshApplicationPacket).not.toHaveBeenCalled();
+    expect(confirmExternalSubmission).not.toHaveBeenCalled();
+  });
+
+  it("does not generate for a submitted application", async () => {
+    findFirst.mockResolvedValue({
+      ...coverLetterApplication,
+      state: "SUBMITTED",
+      submittedAt: new Date("2026-09-06T12:00:00Z"),
+    });
+
+    const result = await generateCoverLetterAction(
+      idleCoverLetterState,
+      form(),
+    );
+
+    expect(result).toEqual({
+      status: "error",
+      message: "Cover letter drafts can only be generated before submission.",
+    });
+    expect(candidateFactsFindMany).not.toHaveBeenCalled();
+    expect(generateApplicationWriting).not.toHaveBeenCalled();
+  });
 
   it("rebuilds from current owner data before marking ready", async () => {
     findFirst.mockResolvedValue({

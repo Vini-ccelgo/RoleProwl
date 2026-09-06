@@ -2,7 +2,6 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import type { ApplicationWritingRepository } from "@/features/writing/application-writing";
 import { databaseClient } from "@/lib/db/client";
-import { invalidateReadyApplicationPackets } from "@/integrations/applications/invalidate-application-packets";
 
 function json(value: unknown) {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
@@ -11,7 +10,7 @@ function json(value: unknown) {
 export class PrismaApplicationWritingRepository implements ApplicationWritingRepository {
   async save(input: Parameters<ApplicationWritingRepository["save"]>[0]) {
     const database = databaseClient();
-    const result = await database.applicationWritingArtifact.create({
+    return database.applicationWritingArtifact.create({
       data: {
         userId: input.userId,
         targetJobId: input.targetJobId,
@@ -47,7 +46,5 @@ export class PrismaApplicationWritingRepository implements ApplicationWritingRep
       },
       select: { id: true },
     });
-    await invalidateReadyApplicationPackets(database, input.userId);
-    return result;
   }
 }
