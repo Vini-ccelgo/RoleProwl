@@ -41,10 +41,6 @@ export async function synchronizeVerifiedCandidateSkills(
       where: { userId },
       select: {
         canonicalName: true,
-        evidence: {
-          where: { verificationState: "VERIFIED" },
-          select: { evidenceType: true },
-        },
         id: true,
         normalizedName: true,
         source: true,
@@ -52,14 +48,17 @@ export async function synchronizeVerifiedCandidateSkills(
     }),
     transaction.candidateSkillEvidence.findMany({
       where: {
-        evidenceType: CANDIDATE_FACT_SKILL_EVIDENCE_TYPE,
+        OR: [
+          { evidenceType: CANDIDATE_FACT_SKILL_EVIDENCE_TYPE },
+          { verificationState: "VERIFIED" },
+        ],
         userId,
       },
       select: {
         description: true,
         evidenceId: true,
+        evidenceType: true,
         id: true,
-        skill: { select: { normalizedName: true } },
         skillId: true,
         source: true,
         verificationState: true,
@@ -91,102 +90,131 @@ export async function synchronizeVerifiedCandidateSkills(
   const skillsByName = new Map(
     currentSkills.map((skill) => [skill.normalizedName, skill]),
   );
-  const evidenceByKey = new Map(
-    currentEvidence.map((evidence) => [
-      `${evidence.skill.normalizedName}\u0000${evidence.evidenceId}`,
-      evidence,
-    ]),
+  const skillNamesById = new Map(
+    currentSkills.map((skill) => [skill.id, skill.normalizedName]),
   );
-  let createdSkillCount = 0;
-  let createdEvidenceCount = 0;
-  let updatedEvidenceCount = 0;
-
-  for (const [key, atom] of desired) {
-    let skill = skillsByName.get(atom.normalizedName);
-    if (!skill) {
-      skill = await transaction.skill.upsert({
-        where: {
-          userId_normalizedName: {
-            normalizedName: atom.normalizedName,
-            userId,
-          },
-        },
-        create: {
+  const currentCandidateEvidence = currentEvidence.filter(
+    ({ evidenceType }) => evidenceType === CANDIDATE_FACT_SKILL_EVIDENCE_TYPE,
+  );
+  const evidenceByKey = new Map<string, (typeof currentEvidence)[number]>();
+  for (const evidence of currentCandidateEvidence) {
+    const normalizedName = skillNamesById.get(evidence.skillId);
+    if (normalizedName) {
+      evidenceByKey.set(
+        `${normalizedName}\u0000${evidence.evidenceId}`,
+        evidence,
+      );
+    }
+  }
+  const missingSkills = new Map(
+    [...desired.values()]
+      .filter(({ normalizedName }) => !skillsByName.has(normalizedName))
+      .map((atom) => [atom.normalizedName, atom]),
+  );
+  const createdSkills = missingSkills.size
+    ? await transaction.skill.createManyAndReturn({
+        data: [...missingSkills.values()].map((atom) => ({
           canonicalName: atom.canonicalName,
           normalizedName: atom.normalizedName,
-          source: "RESUME_EXTRACTED",
+          source: "RESUME_EXTRACTED" as const,
           userId,
-          verificationState: "VERIFIED",
-        },
-        update: {},
+          verificationState: "VERIFIED" as const,
+        })),
+        skipDuplicates: true,
         select: {
           canonicalName: true,
-          evidence: {
-            where: { verificationState: "VERIFIED" },
-            select: { evidenceType: true },
-          },
           id: true,
           normalizedName: true,
           source: true,
         },
-      });
-      skillsByName.set(atom.normalizedName, skill);
-      createdSkillCount += 1;
-    }
+      })
+    : [];
+  for (const skill of createdSkills) {
+    skillsByName.set(skill.normalizedName, skill);
+    skillNamesById.set(skill.id, skill.normalizedName);
+  }
 
+  const unresolvedSkillNames = [...missingSkills.keys()].filter(
+    (normalizedName) => !skillsByName.has(normalizedName),
+  );
+  if (unresolvedSkillNames.length) {
+    // A concurrent synchronization may win the unique (userId,
+    // normalizedName) insert. Resolve those IDs once instead of falling back
+    // to per-skill upserts.
+    const concurrentlyCreatedSkills = await transaction.skill.findMany({
+      where: { normalizedName: { in: unresolvedSkillNames }, userId },
+      select: {
+        canonicalName: true,
+        id: true,
+        normalizedName: true,
+        source: true,
+      },
+    });
+    for (const skill of concurrentlyCreatedSkills) {
+      skillsByName.set(skill.normalizedName, skill);
+      skillNamesById.set(skill.id, skill.normalizedName);
+    }
+  }
+
+  const missingEvidenceKeys = new Set<string>();
+  const mismatchedEvidenceIds = new Set<string>();
+  for (const [key, atom] of desired) {
     const evidence = evidenceByKey.get(key);
     if (!evidence) {
-      await transaction.candidateSkillEvidence.upsert({
-        where: {
-          skillId_evidenceType_evidenceId: {
-            evidenceId: atom.evidenceId,
-            evidenceType: CANDIDATE_FACT_SKILL_EVIDENCE_TYPE,
-            skillId: skill.id,
-          },
-        },
-        create: {
-          description: atom.description,
-          evidenceId: atom.evidenceId,
-          evidenceType: CANDIDATE_FACT_SKILL_EVIDENCE_TYPE,
-          skillId: skill.id,
-          source: "RESUME_EXTRACTED",
-          userId,
-          verificationState: "VERIFIED",
-        },
-        update: {
-          description: atom.description,
-          source: "RESUME_EXTRACTED",
-          verificationState: "VERIFIED",
-        },
-      });
-      createdEvidenceCount += 1;
-      continue;
-    }
-
-    if (
+      missingEvidenceKeys.add(key);
+    } else if (
       evidence.description !== atom.description ||
       evidence.source !== "RESUME_EXTRACTED" ||
       evidence.verificationState !== "VERIFIED"
     ) {
-      await transaction.candidateSkillEvidence.updateMany({
-        where: { id: evidence.id, userId },
-        data: {
-          description: atom.description,
-          source: "RESUME_EXTRACTED",
-          verificationState: "VERIFIED",
-        },
-      });
-      updatedEvidenceCount += 1;
+      mismatchedEvidenceIds.add(evidence.id);
     }
   }
 
-  const staleEvidenceIds = currentEvidence
-    .filter(
-      (evidence) =>
-        !desired.has(
-          `${evidence.skill.normalizedName}\u0000${evidence.evidenceId}`,
-        ),
-    )
+  if (mismatchedEvidenceIds.size) {
+    // The unique relationship tuple is the durable identity. Replacing stale
+    // metadata in one set operation avoids one update round trip per atom.
+    await transaction.candidateSkillEvidence.deleteMany({
+      where: { id: { in: [...mismatchedEvidenceIds] }, userId },
+    });
+  }
+
+  const evidenceToCreate = [...desired].filter(
+    ([key]) =>
+      missingEvidenceKeys.has(key) ||
+      mismatchedEvidenceIds.has(evidenceByKey.get(key)?.id ?? ""),
+  );
+  if (evidenceToCreate.length) {
+    await transaction.candidateSkillEvidence.createMany({
+      data: evidenceToCreate.map(([, atom]) => {
+        const skill = skillsByName.get(atom.normalizedName);
+        if (!skill) {
+          throw new Error(
+            "Candidate skill reconciliation could not resolve a desired skill.",
+          );
+        }
+        return {
+          description: atom.description,
+          evidenceId: atom.evidenceId,
+          evidenceType: CANDIDATE_FACT_SKILL_EVIDENCE_TYPE,
+          skillId: skill.id,
+          source: "RESUME_EXTRACTED" as const,
+          userId,
+          verificationState: "VERIFIED" as const,
+        };
+      }),
+      skipDuplicates: true,
+    });
+  }
+
+  const staleEvidenceIds = currentCandidateEvidence
+    .filter((evidence) => {
+      const normalizedName = skillNamesById.get(evidence.skillId);
+      return (
+        !normalizedName ||
+        !desired.has(`${normalizedName}\u0000${evidence.evidenceId}`)
+      );
+    })
     .map(({ id }) => id);
   const deletedEvidenceCount = staleEvidenceIds.length
     ? (
@@ -198,21 +226,35 @@ export async function synchronizeVerifiedCandidateSkills(
   const desiredSkillNames = new Set(
     [...desired.values()].map(({ normalizedName }) => normalizedName),
   );
+  const independentlySupportedSkillIds = new Set(
+    currentEvidence
+      .filter(
+        ({ evidenceType, verificationState }) =>
+          evidenceType !== CANDIDATE_FACT_SKILL_EVIDENCE_TYPE &&
+          verificationState === "VERIFIED",
+      )
+      .map(({ skillId }) => skillId),
+  );
   const unsupportedDerivedSkillIds = currentSkills
     .filter(
       (skill) =>
         skill.source === "RESUME_EXTRACTED" &&
         !desiredSkillNames.has(skill.normalizedName) &&
-        !skill.evidence.some(
-          ({ evidenceType }) =>
-            evidenceType !== CANDIDATE_FACT_SKILL_EVIDENCE_TYPE,
-        ),
+        !independentlySupportedSkillIds.has(skill.id),
     )
     .map(({ id }) => id);
   const deletedSkillCount = unsupportedDerivedSkillIds.length
     ? (
         await transaction.skill.deleteMany({
           where: {
+            evidence: {
+              none: {
+                evidenceType: {
+                  not: CANDIDATE_FACT_SKILL_EVIDENCE_TYPE,
+                },
+                verificationState: "VERIFIED",
+              },
+            },
             id: { in: unsupportedDerivedSkillIds },
             source: "RESUME_EXTRACTED",
             userId,
@@ -223,16 +265,16 @@ export async function synchronizeVerifiedCandidateSkills(
 
   return {
     changed:
-      createdSkillCount > 0 ||
-      createdEvidenceCount > 0 ||
-      updatedEvidenceCount > 0 ||
+      createdSkills.length > 0 ||
+      missingEvidenceKeys.size > 0 ||
+      mismatchedEvidenceIds.size > 0 ||
       deletedEvidenceCount > 0 ||
       deletedSkillCount > 0,
-    createdEvidenceCount,
-    createdSkillCount,
+    createdEvidenceCount: missingEvidenceKeys.size,
+    createdSkillCount: createdSkills.length,
     deletedEvidenceCount,
     deletedSkillCount,
-    updatedEvidenceCount,
+    updatedEvidenceCount: mismatchedEvidenceIds.size,
   };
 }
 

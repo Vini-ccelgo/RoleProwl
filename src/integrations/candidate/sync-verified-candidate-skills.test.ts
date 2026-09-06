@@ -59,6 +59,7 @@ function synchronizationFixture() {
     normalizedName: string;
     source: string;
     userId: string;
+    verificationState?: string;
   }> = [];
   const evidence: Array<{
     description: string | null;
@@ -85,30 +86,41 @@ function synchronizationFixture() {
       ),
     },
     skill: {
-      findMany: vi.fn(async ({ where }: { where: { userId: string } }) =>
-        skills
-          .filter((skill) => skill.userId === where.userId)
-          .map((skill) => ({
-            ...skill,
-            evidence: evidence
-              .filter(
-                (item) =>
-                  item.skillId === skill.id &&
-                  item.verificationState === "VERIFIED",
-              )
-              .map(({ evidenceType }) => ({ evidenceType })),
-          })),
+      findMany: vi.fn(
+        async ({
+          where,
+        }: {
+          where: {
+            normalizedName?: { in: string[] };
+            userId: string;
+          };
+        }) =>
+          skills.filter(
+            (skill) =>
+              skill.userId === where.userId &&
+              (!where.normalizedName ||
+                where.normalizedName.in.includes(skill.normalizedName)),
+          ),
       ),
-      upsert: vi.fn(async ({ create }: { create: (typeof skills)[number] }) => {
-        const current = skills.find(
-          (skill) =>
-            skill.userId === create.userId &&
-            skill.normalizedName === create.normalizedName,
-        );
-        if (current) return current;
-        const skill = { ...create, id: `skill-${nextSkillId++}` };
-        skills.push(skill);
-        return skill;
+      createManyAndReturn: vi.fn(
+        async ({ data }: { data: Omit<(typeof skills)[number], "id">[] }) => {
+          const created = [];
+          for (const input of data) {
+            const current = skills.find(
+              (skill) =>
+                skill.userId === input.userId &&
+                skill.normalizedName === input.normalizedName,
+            );
+            if (current) continue;
+            const skill = { ...input, id: `skill-${nextSkillId++}` };
+            skills.push(skill);
+            created.push(skill);
+          }
+          return created;
+        },
+      ),
+      upsert: vi.fn(() => {
+        throw new Error("candidate skill synchronization must not upsert");
       }),
       deleteMany: vi.fn(
         async ({
@@ -132,45 +144,38 @@ function synchronizationFixture() {
       ),
     },
     candidateSkillEvidence: {
-      findMany: vi.fn(async ({ where }: { where: Record<string, string> }) =>
+      findMany: vi.fn(async ({ where }: { where: { userId: string } }) =>
         evidence
-          .filter((item) =>
-            Object.entries(where).every(
-              ([field, expected]) =>
-                item[field as keyof typeof item] === expected,
-            ),
-          )
-          .map((item) => ({
-            ...item,
-            skill: {
-              normalizedName: skills.find((skill) => skill.id === item.skillId)!
-                .normalizedName,
-            },
-          })),
-      ),
-      upsert: vi.fn(
-        async ({
-          create,
-          update,
-        }: {
-          create: Omit<(typeof evidence)[number], "id">;
-          update: Partial<(typeof evidence)[number]>;
-        }) => {
-          const current = evidence.find(
+          .filter(
             (item) =>
-              item.skillId === create.skillId &&
-              item.evidenceType === create.evidenceType &&
-              item.evidenceId === create.evidenceId,
-          );
-          if (current) {
-            Object.assign(current, update);
-            return current;
+              item.userId === where.userId &&
+              (item.evidenceType === CANDIDATE_FACT_SKILL_EVIDENCE_TYPE ||
+                item.verificationState === "VERIFIED"),
+          )
+          .map((item) => ({ ...item })),
+      ),
+      createMany: vi.fn(
+        async ({ data }: { data: Omit<(typeof evidence)[number], "id">[] }) => {
+          let count = 0;
+          for (const input of data) {
+            const current = evidence.find(
+              (item) =>
+                item.skillId === input.skillId &&
+                item.evidenceType === input.evidenceType &&
+                item.evidenceId === input.evidenceId,
+            );
+            if (current) continue;
+            evidence.push({ ...input, id: `evidence-${nextEvidenceId++}` });
+            count += 1;
           }
-          const item = { ...create, id: `evidence-${nextEvidenceId++}` };
-          evidence.push(item);
-          return item;
+          return { count };
         },
       ),
+      upsert: vi.fn(() => {
+        throw new Error(
+          "candidate skill evidence synchronization must not upsert",
+        );
+      }),
       updateMany: vi.fn(
         async ({
           data,
@@ -236,6 +241,25 @@ function candidateSnapshot(fixture: ReturnType<typeof synchronizationFixture>) {
   });
 }
 
+function synchronizationQueryCount(
+  fixture: ReturnType<typeof synchronizationFixture>,
+) {
+  const { transaction } = fixture;
+  return [
+    transaction.candidateFact.findMany,
+    transaction.skill.findMany,
+    transaction.skill.createManyAndReturn,
+    transaction.skill.upsert,
+    transaction.skill.deleteMany,
+    transaction.candidateSkillEvidence.findMany,
+    transaction.candidateSkillEvidence.createMany,
+    transaction.candidateSkillEvidence.upsert,
+    transaction.candidateSkillEvidence.updateMany,
+    transaction.candidateSkillEvidence.deleteMany,
+    transaction.jobMatchAnalysis.deleteMany,
+  ].reduce((count, operation) => count + operation.mock.calls.length, 0);
+}
+
 function pythonJob(minimumExperienceMonths: number | null = null) {
   return buildJobMatchSnapshot({
     educationRequirements: null,
@@ -265,6 +289,131 @@ function pythonJob(minimumExperienceMonths: number | null = null) {
 }
 
 describe("verified candidate skill synchronization", () => {
+  it("batches the hosted 16-atom fixture into a bounded cold path and a read-only repeat", async () => {
+    const fixture = synchronizationFixture();
+    fixture.facts.push(
+      {
+        createdAt: new Date("2026-09-02"),
+        factType: "SKILL_TEXT",
+        id: "fact-list-2",
+        source: "RESUME_EXTRACTED",
+        status: "ACTIVE",
+        userId: "user-1",
+        value: {
+          text: "Cloud / Infrastructure: AWS, Azure, Terraform, Docker, Linux, Windows Server",
+        },
+        verificationState: "VERIFIED",
+      },
+      {
+        createdAt: new Date("2026-09-03"),
+        factType: "SKILL_TEXT",
+        id: "fact-list-3",
+        source: "RESUME_EXTRACTED",
+        status: "ACTIVE",
+        userId: "user-1",
+        value: {
+          text: "Tools: Microsoft Sentinel, Defender for Endpoint, Git, Jira, Wireshark, Nmap",
+        },
+        verificationState: "VERIFIED",
+      },
+    );
+    const expected = [
+      "Python",
+      "Bash",
+      "SQL",
+      "KQL",
+      "AWS",
+      "Azure",
+      "Terraform",
+      "Docker",
+      "Linux",
+      "Windows Server",
+      "Microsoft Sentinel",
+      "Defender for Endpoint",
+      "Git",
+      "Jira",
+      "Wireshark",
+      "Nmap",
+    ];
+
+    const first = await ensureCurrentCandidateSkills(
+      fixture.database as never,
+      "user-1",
+    );
+    expect(first).toMatchObject({
+      changed: true,
+      createdEvidenceCount: 16,
+      createdSkillCount: 16,
+    });
+    expect(fixture.skills.map(({ canonicalName }) => canonicalName)).toEqual(
+      expected,
+    );
+    expect(fixture.evidence).toHaveLength(16);
+    expect(
+      new Set(
+        fixture.evidence.map(
+          ({ evidenceId, skillId }) => `${skillId}:${evidenceId}`,
+        ),
+      ).size,
+    ).toBe(16);
+    expect(
+      fixture.transaction.skill.createManyAndReturn,
+    ).toHaveBeenCalledOnce();
+    expect(
+      fixture.transaction.skill.createManyAndReturn.mock.calls[0]![0].data,
+    ).toHaveLength(16);
+    expect(
+      fixture.transaction.candidateSkillEvidence.createMany,
+    ).toHaveBeenCalledOnce();
+    expect(
+      fixture.transaction.candidateSkillEvidence.createMany.mock.calls[0]![0]
+        .data,
+    ).toHaveLength(16);
+    expect(fixture.transaction.skill.upsert).not.toHaveBeenCalled();
+    expect(
+      fixture.transaction.candidateSkillEvidence.upsert,
+    ).not.toHaveBeenCalled();
+    expect(
+      fixture.transaction.candidateSkillEvidence.updateMany,
+    ).not.toHaveBeenCalled();
+
+    const coldQueryCount = synchronizationQueryCount(fixture);
+    expect(coldQueryCount).toBe(6);
+    const oldSequentialQueryCount = 3 + expected.length * 2 + 1;
+    const modeledRemoteRoundTripMs = 150;
+    expect(oldSequentialQueryCount * modeledRemoteRoundTripMs).toBeGreaterThan(
+      5_000,
+    );
+    expect(coldQueryCount * modeledRemoteRoundTripMs).toBeLessThan(5_000);
+
+    const second = await ensureCurrentCandidateSkills(
+      fixture.database as never,
+      "user-1",
+    );
+    expect(second.changed).toBe(false);
+    expect(synchronizationQueryCount(fixture) - coldQueryCount).toBe(3);
+    expect(
+      fixture.transaction.skill.createManyAndReturn,
+    ).toHaveBeenCalledOnce();
+    expect(
+      fixture.transaction.candidateSkillEvidence.createMany,
+    ).toHaveBeenCalledOnce();
+    expect(fixture.matchDeleteMany).toHaveBeenCalledOnce();
+    expect(fixture.skills).toHaveLength(16);
+    expect(fixture.evidence).toHaveLength(16);
+
+    const match = matchCandidateToJob(candidateSnapshot(fixture), pythonJob());
+    expect(match.strengths).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assessment: "MATCH",
+          code: "REQUIRED_SKILL_python",
+        }),
+      ]),
+    );
+    expect(match.evidenceCoverage).toBeGreaterThan(0);
+  });
+
   it("creates provenance-linked atomic skills and is idempotent", async () => {
     const fixture = synchronizationFixture();
     const beforeSynchronization = matchCandidateToJob(
@@ -370,6 +519,37 @@ describe("verified candidate skill synchronization", () => {
     expect(fixture.evidence).toHaveLength(4);
   });
 
+  it("resolves concurrent unique skill inserts with one bounded fallback read", async () => {
+    const fixture = synchronizationFixture();
+    fixture.transaction.skill.createManyAndReturn.mockImplementationOnce(
+      async ({ data }) => {
+        fixture.skills.push(
+          ...data.map((input, index) => ({
+            ...input,
+            id: `concurrent-skill-${index + 1}`,
+          })),
+        );
+        return [];
+      },
+    );
+
+    const result = await synchronizeVerifiedCandidateSkills(
+      fixture.transaction as never,
+      "user-1",
+    );
+
+    expect(result).toMatchObject({
+      changed: true,
+      createdEvidenceCount: 4,
+      createdSkillCount: 0,
+    });
+    expect(fixture.transaction.skill.findMany).toHaveBeenCalledTimes(2);
+    expect(fixture.transaction.skill.upsert).not.toHaveBeenCalled();
+    expect(fixture.skills).toHaveLength(4);
+    expect(fixture.evidence).toHaveLength(4);
+    expect(synchronizationQueryCount(fixture)).toBe(6);
+  });
+
   it("keeps one skill with multiple sources, then removes only unsupported derived skills", async () => {
     const fixture = synchronizationFixture();
     await synchronizeVerifiedCandidateSkills(
@@ -420,6 +600,45 @@ describe("verified candidate skill synchronization", () => {
       fixture.skills.some(({ normalizedName }) => normalizedName === "python"),
     ).toBe(false);
     expect(fixture.evidence).toHaveLength(0);
+  });
+
+  it("replaces changed provenance metadata in one batch without duplicating evidence", async () => {
+    const fixture = synchronizationFixture();
+    await synchronizeVerifiedCandidateSkills(
+      fixture.transaction as never,
+      "user-1",
+    );
+    fixture.facts.find(({ id }) => id === "fact-list-1")!.value = {
+      text: "Languages / Query:\nPython, Bash, SQL, KQL",
+    };
+
+    const result = await synchronizeVerifiedCandidateSkills(
+      fixture.transaction as never,
+      "user-1",
+    );
+
+    expect(result).toMatchObject({
+      changed: true,
+      createdEvidenceCount: 0,
+      createdSkillCount: 0,
+      updatedEvidenceCount: 4,
+    });
+    expect(fixture.evidence).toHaveLength(4);
+    expect(
+      fixture.evidence.every(
+        ({ description }) =>
+          description === "Languages / Query:\nPython, Bash, SQL, KQL",
+      ),
+    ).toBe(true);
+    expect(
+      fixture.transaction.candidateSkillEvidence.updateMany,
+    ).not.toHaveBeenCalled();
+    expect(
+      fixture.transaction.candidateSkillEvidence.deleteMany,
+    ).toHaveBeenCalledOnce();
+    expect(
+      fixture.transaction.candidateSkillEvidence.createMany,
+    ).toHaveBeenCalledTimes(2);
   });
 
   it("preserves an explicitly maintained skill after its final résumé source is removed", async () => {

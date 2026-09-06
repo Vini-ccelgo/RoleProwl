@@ -217,6 +217,98 @@ describe("candidate job disposition action", () => {
     expect(refreshApplicationPacket).not.toHaveBeenCalled();
   });
 
+  it("persists a grounded Python MATCH after candidate evidence synchronization", async () => {
+    refreshJobEvidence.mockResolvedValueOnce({
+      canonicalJobId: "job-1",
+      evidenceChanged: false,
+    });
+    ensureCurrentCandidateSkills.mockResolvedValueOnce({ changed: true });
+    analysisFindFirst.mockResolvedValueOnce(null);
+    jobFindFirst.mockResolvedValueOnce({
+      educationRequirements: null,
+      employmentType: null,
+      experienceRequirements: null,
+      id: "job-1",
+      locations: null,
+      preferredRequirements: null,
+      remoteType: null,
+      requirements: [
+        {
+          kind: "SKILL",
+          origin: "SOURCE_TEXT_EXPLICIT",
+          skillName: "Python",
+          sourceField: "description.requirements",
+          statement: "Experience with Python required",
+        },
+      ],
+      salaryMax: null,
+      seniority: null,
+      skills: null,
+      sponsorship: null,
+      workAuthorization: null,
+    });
+    userFindUnique.mockResolvedValueOnce({
+      candidatePreferences: null,
+      educationRecords: [],
+      projects: [],
+      skills: [
+        {
+          canonicalName: "Python",
+          evidence: [
+            {
+              evidenceId: "fact-list-1",
+              evidenceType: "CANDIDATE_FACT",
+              id: "evidence-python",
+              source: "RESUME_EXTRACTED",
+            },
+          ],
+          experienceMonths: null,
+          proficiency: null,
+        },
+      ],
+      workAuthorizationProfile: null,
+      workExperiences: [],
+    });
+    const form = new FormData();
+    form.set("jobId", "job-1");
+
+    await analyzeJobAction(form);
+
+    expect(analysisUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          evidenceCoverage: expect.any(Number),
+          strengths: expect.arrayContaining([
+            expect.objectContaining({
+              assessment: "MATCH",
+              code: "REQUIRED_SKILL_python",
+            }),
+          ]),
+        }),
+      }),
+    );
+    const analysisCalls = analysisUpsert.mock.calls as unknown as Array<
+      [unknown]
+    >;
+    const persisted = analysisCalls[0]![0] as {
+      create: {
+        evidenceCoverage: number;
+        strengths: Array<{
+          candidateEvidence: unknown;
+        }>;
+      };
+    };
+    expect(persisted.create.evidenceCoverage).toBeGreaterThan(0);
+    expect(persisted.create.strengths[0]!.candidateEvidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          evidenceId: "fact-list-1",
+          origin: "CANDIDATE_VERIFIED_FACT",
+        }),
+      ]),
+    );
+  });
+
   it("opens the durable application returned by an idempotent start", async () => {
     const form = new FormData();
     form.set("jobId", "job-1");
