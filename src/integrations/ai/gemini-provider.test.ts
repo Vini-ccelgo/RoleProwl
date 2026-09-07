@@ -7,9 +7,14 @@ import {
   AIProviderCapacityError,
   AIRefusalError,
 } from "@/core/errors/application-errors";
+import { aiTaskDefinitions } from "@/features/ai/task-definitions";
 import type { Logger } from "@/lib/logging/logger";
 import type { GeminiRuntimeConfig } from "./gemini-model-config";
-import { GeminiAIProvider, type GeminiGenerateClient } from "./gemini-provider";
+import {
+  GeminiAIProvider,
+  projectGeminiResponseSchema,
+  type GeminiGenerateClient,
+} from "./gemini-provider";
 
 const config: GeminiRuntimeConfig = {
   liteModel: "gemini-3.5-flash-lite",
@@ -31,6 +36,17 @@ const request = {
   schemaName: "test_answer",
   system: "Return a schema-valid synthetic answer.",
   task: "APPLICATION_QUESTION_CLASSIFICATION" as const,
+};
+
+const coverLetterRequest = {
+  correlationId: "corr-cover-letter-schema",
+  input: { fixture: "Synthetic Person" },
+  promptVersion: aiTaskDefinitions.COVER_LETTER_GENERATION.promptVersion,
+  rateLimitSubject: "synthetic-user",
+  schema: aiTaskDefinitions.COVER_LETTER_GENERATION.schema,
+  schemaName: aiTaskDefinitions.COVER_LETTER_GENERATION.schemaName,
+  system: aiTaskDefinitions.COVER_LETTER_GENERATION.system,
+  task: "COVER_LETTER_GENERATION" as const,
 };
 
 function response(value: unknown, extra: Record<string, unknown> = {}) {
@@ -111,6 +127,53 @@ describe("GeminiAIProvider", () => {
     const { client } = clientWith(response({ answer: 42 }));
     await expect(
       new GeminiAIProvider(client, config).generateStructured(request),
+    ).rejects.toBeInstanceOf(AIInvalidOutputError);
+  });
+
+  it("sends the projected cover-letter schema and validates a synthetic result", async () => {
+    const output = {
+      subject: null,
+      body: "A synthetic evidence-backed cover letter.",
+      claims: [],
+    };
+    const { client, generateContent } = clientWith(response(output));
+    const result = await new GeminiAIProvider(
+      client,
+      config,
+      { log: vi.fn() },
+      allow,
+    ).generateStructured(coverLetterRequest);
+
+    expect(result.data).toEqual(output);
+    const parameters = generateContent.mock.calls[0]![0];
+    expect(parameters.config).toMatchObject({
+      responseMimeType: "application/json",
+      responseJsonSchema: projectGeminiResponseSchema(
+        aiTaskDefinitions.COVER_LETTER_GENERATION.schema,
+      ),
+    });
+    expect(JSON.stringify(parameters.config?.responseJsonSchema)).not.toContain(
+      "maxLength",
+    );
+    expect(parameters.config?.responseJsonSchema).not.toEqual(
+      z.toJSONSchema(aiTaskDefinitions.COVER_LETTER_GENERATION.schema, {
+        unrepresentable: "any",
+      }),
+    );
+  });
+
+  it("enforces an omitted provider constraint with the original Zod schema", async () => {
+    const { client } = clientWith(
+      response({ subject: null, body: "x".repeat(5_001), claims: [] }),
+    );
+
+    await expect(
+      new GeminiAIProvider(
+        client,
+        config,
+        { log: vi.fn() },
+        allow,
+      ).generateStructured(coverLetterRequest),
     ).rejects.toBeInstanceOf(AIInvalidOutputError);
   });
 

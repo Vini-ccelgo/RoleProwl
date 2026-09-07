@@ -1,9 +1,14 @@
+import type { GenerateContentResponse } from "@google/genai";
 import { describe, expect, it, vi } from "vitest";
 import {
   AIInvalidOutputError,
   ValidationError,
 } from "@/core/errors/application-errors";
 import { DeterministicAIProvider } from "@/integrations/ai/deterministic-ai-provider";
+import {
+  GeminiAIProvider,
+  type GeminiGenerateClient,
+} from "@/integrations/ai/gemini-provider";
 import {
   generateApplicationWriting,
   hasFabricatedEmployerAttachment,
@@ -163,6 +168,43 @@ describe("application writing engine", () => {
       "unknown evidence",
     );
     expect(input.repository.save).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized Gemini result before writing persistence", async () => {
+    const generateContent = vi.fn().mockResolvedValue({
+      text: JSON.stringify({
+        subject: null,
+        body: "x".repeat(5_001),
+        claims: [],
+      }),
+    } as unknown as GenerateContentResponse);
+    const repository = {
+      save: vi.fn().mockResolvedValue({ id: "must-not-save" }),
+    };
+    const input = base({
+      type: "COVER_LETTER",
+      ai: new GeminiAIProvider(
+        { generateContent } as GeminiGenerateClient,
+        {
+          liteModel: "gemini-3.5-flash-lite",
+          flashModel: "gemini-3.5-flash",
+          liteRpmLimit: 12,
+          liteRpdLimit: 450,
+          flashRpmLimit: 4,
+          flashRpdLimit: 15,
+          maxRetries: 0,
+          timeoutMs: 1_000,
+        },
+        { log: vi.fn() },
+      ),
+      repository,
+    });
+
+    await expect(generateApplicationWriting(input)).rejects.toBeInstanceOf(
+      AIInvalidOutputError,
+    );
+    expect(generateContent).toHaveBeenCalledOnce();
+    expect(repository.save).not.toHaveBeenCalled();
   });
 
   it("requires an employer question for employer free text", async () => {

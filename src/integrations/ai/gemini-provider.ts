@@ -85,11 +85,92 @@ function isRefusal(response: GenerateContentResponse) {
   ].includes(finishReason);
 }
 
-function jsonSchemaForProvider(schema: z.ZodType) {
-  const jsonSchema = z.toJSONSchema(schema, { unrepresentable: "any" });
-  if (jsonSchema && typeof jsonSchema === "object" && "$schema" in jsonSchema)
-    delete (jsonSchema as { $schema?: unknown }).$schema;
-  return jsonSchema;
+// Conservative responseJsonSchema subset documented by the installed Gemini SDK.
+const GEMINI_RESPONSE_SCHEMA_KEYWORDS = new Set([
+  "$anchor",
+  "$defs",
+  "$id",
+  "$ref",
+  "additionalProperties",
+  "anyOf",
+  "description",
+  "enum",
+  "format",
+  "items",
+  "maxItems",
+  "maximum",
+  "minItems",
+  "minimum",
+  "oneOf",
+  "prefixItems",
+  "properties",
+  "propertyOrdering",
+  "required",
+  "title",
+  "type",
+]);
+
+function object(value: unknown): Readonly<Record<string, unknown>> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Readonly<Record<string, unknown>>)
+    : null;
+}
+
+function cloneSchemaValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(cloneSchemaValue);
+  const record = object(value);
+  if (!record) return value;
+  return Object.fromEntries(
+    Object.entries(record).map(([key, child]) => [
+      key,
+      cloneSchemaValue(child),
+    ]),
+  );
+}
+
+function projectGeminiSchemaNode(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(projectGeminiSchemaNode);
+  if (typeof value === "boolean") return value;
+  const source = object(value);
+  if (!source) return value;
+  const referenceOnly = typeof source.$ref === "string";
+  const projected: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(source)) {
+    if (
+      !GEMINI_RESPONSE_SCHEMA_KEYWORDS.has(key) ||
+      (referenceOnly && !key.startsWith("$"))
+    )
+      continue;
+    if (key === "properties" || key === "$defs") {
+      const schemas = object(child);
+      if (schemas) {
+        projected[key] = Object.fromEntries(
+          Object.entries(schemas).map(([name, schema]) => [
+            name,
+            projectGeminiSchemaNode(schema),
+          ]),
+        );
+      }
+      continue;
+    }
+    if (key === "anyOf" || key === "oneOf" || key === "prefixItems") {
+      if (Array.isArray(child))
+        projected[key] = child.map(projectGeminiSchemaNode);
+      continue;
+    }
+    if (key === "items" || key === "additionalProperties") {
+      projected[key] = projectGeminiSchemaNode(child);
+      continue;
+    }
+    projected[key] = cloneSchemaValue(child);
+  }
+  return projected;
+}
+
+export function projectGeminiResponseSchema(schema: z.ZodType) {
+  return projectGeminiSchemaNode(
+    z.toJSONSchema(schema, { unrepresentable: "any" }),
+  );
 }
 
 function defaultSleep(milliseconds: number) {
@@ -165,7 +246,7 @@ export class GeminiAIProvider implements AIProvider {
               config: {
                 abortSignal: controller.signal,
                 responseMimeType: "application/json",
-                responseJsonSchema: jsonSchemaForProvider(request.schema),
+                responseJsonSchema: projectGeminiResponseSchema(request.schema),
                 systemInstruction: request.system,
               },
             }),
