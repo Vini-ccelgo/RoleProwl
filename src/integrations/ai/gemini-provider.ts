@@ -85,28 +85,13 @@ function isRefusal(response: GenerateContentResponse) {
   ].includes(finishReason);
 }
 
-// Conservative responseJsonSchema subset documented by the installed Gemini SDK.
+// Keep Gemini generation guidance structural; canonical Zod remains authoritative.
 const GEMINI_RESPONSE_SCHEMA_KEYWORDS = new Set([
-  "$anchor",
-  "$defs",
-  "$id",
-  "$ref",
-  "additionalProperties",
   "anyOf",
-  "description",
   "enum",
-  "format",
   "items",
-  "maxItems",
-  "maximum",
-  "minItems",
-  "minimum",
-  "oneOf",
-  "prefixItems",
   "properties",
-  "propertyOrdering",
   "required",
-  "title",
   "type",
 ]);
 
@@ -133,15 +118,10 @@ function projectGeminiSchemaNode(value: unknown): unknown {
   if (typeof value === "boolean") return value;
   const source = object(value);
   if (!source) return value;
-  const referenceOnly = typeof source.$ref === "string";
   const projected: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(source)) {
-    if (
-      !GEMINI_RESPONSE_SCHEMA_KEYWORDS.has(key) ||
-      (referenceOnly && !key.startsWith("$"))
-    )
-      continue;
-    if (key === "properties" || key === "$defs") {
+    if (!GEMINI_RESPONSE_SCHEMA_KEYWORDS.has(key)) continue;
+    if (key === "properties") {
       const schemas = object(child);
       if (schemas) {
         projected[key] = Object.fromEntries(
@@ -153,12 +133,12 @@ function projectGeminiSchemaNode(value: unknown): unknown {
       }
       continue;
     }
-    if (key === "anyOf" || key === "oneOf" || key === "prefixItems") {
+    if (key === "anyOf") {
       if (Array.isArray(child))
         projected[key] = child.map(projectGeminiSchemaNode);
       continue;
     }
-    if (key === "items" || key === "additionalProperties") {
+    if (key === "items") {
       projected[key] = projectGeminiSchemaNode(child);
       continue;
     }

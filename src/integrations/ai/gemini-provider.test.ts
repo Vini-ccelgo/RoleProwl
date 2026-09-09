@@ -152,9 +152,62 @@ describe("GeminiAIProvider", () => {
         aiTaskDefinitions.COVER_LETTER_GENERATION.schema,
       ),
     });
-    expect(JSON.stringify(parameters.config?.responseJsonSchema)).not.toContain(
+    expect(parameters.config?.responseJsonSchema).toMatchObject({
+      type: "object",
+      required: ["subject", "body", "claims"],
+      properties: {
+        claims: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              classification: {
+                enum: [
+                  "DIRECT_FACT",
+                  "SUPPORTED_REWRITE",
+                  "SUPPORTED_INFERENCE",
+                  "UNSUPPORTED",
+                ],
+              },
+              assertions: {
+                items: {
+                  properties: {
+                    kind: {
+                      enum: [
+                        "EMPLOYER_NAME",
+                        "CREDENTIAL_NAME",
+                        "DURATION_MONTHS",
+                        "MANAGEMENT_SCOPE",
+                        "NUMERIC_ACHIEVEMENT",
+                      ],
+                    },
+                  },
+                },
+              },
+              sourceEvidence: {
+                items: {
+                  required: ["evidenceType", "evidenceId", "evidenceField"],
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const sentSchema = JSON.stringify(parameters.config?.responseJsonSchema);
+    for (const omitted of [
       "maxLength",
-    );
+      "additionalProperties",
+      "maxItems",
+      "minItems",
+      "minimum",
+      "maximum",
+      "title",
+      "description",
+      "propertyOrdering",
+      "format",
+    ])
+      expect(sentSchema).not.toContain(`"${omitted}"`);
     expect(parameters.config?.responseJsonSchema).not.toEqual(
       z.toJSONSchema(aiTaskDefinitions.COVER_LETTER_GENERATION.schema, {
         unrepresentable: "any",
