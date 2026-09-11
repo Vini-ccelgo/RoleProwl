@@ -10,6 +10,7 @@ import {
   ValidationError,
 } from "@/core/errors/application-errors";
 import { aiTaskDefinitions } from "@/features/ai/task-definitions";
+import { logger } from "@/lib/logging/logger";
 
 export const APPLICATION_WRITING_TYPES = [
   "COVER_LETTER",
@@ -18,6 +19,32 @@ export const APPLICATION_WRITING_TYPES = [
   "EMPLOYER_FREE_TEXT",
 ] as const;
 export type ApplicationWritingType = (typeof APPLICATION_WRITING_TYPES)[number];
+
+export const APPLICATION_WRITING_REJECTION_REASONS = [
+  "FABRICATED_EMPLOYER_ATTACHMENT",
+  "CLAIM_NOT_IN_CONTENT",
+  "MODEL_MARKED_UNSUPPORTED",
+  "UNKNOWN_EVIDENCE",
+  "PROVENANCE_VALIDATION_FAILED",
+] as const;
+export type ApplicationWritingRejectionReason =
+  (typeof APPLICATION_WRITING_REJECTION_REASONS)[number];
+
+class ApplicationWritingInvalidOutputError extends AIInvalidOutputError {
+  constructor(
+    readonly rejectionReason: ApplicationWritingRejectionReason,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+function rejectApplicationWriting(
+  rejectionReason: ApplicationWritingRejectionReason,
+  message: string,
+): never {
+  throw new ApplicationWritingInvalidOutputError(rejectionReason, message);
+}
 
 export interface WritingEvidence extends ClaimEvidenceInput {
   readonly label: string;
@@ -140,11 +167,13 @@ function validateClaims(
   );
   return claims.map((claim): ValidatedWritingClaim => {
     if (!content.includes(claim.text))
-      throw new AIInvalidOutputError(
+      rejectApplicationWriting(
+        "CLAIM_NOT_IN_CONTENT",
         "A writing claim is not present in the generated content.",
       );
     if (claim.classification === "UNSUPPORTED")
-      throw new AIInvalidOutputError(
+      rejectApplicationWriting(
+        "MODEL_MARKED_UNSUPPORTED",
         "Unsupported claims cannot enter application writing.",
       );
     const linked = claim.sourceEvidence.map((reference) => {
@@ -152,7 +181,8 @@ function validateClaims(
         `${reference.evidenceType}:${reference.evidenceId}:${reference.evidenceField}`,
       );
       if (!item)
-        throw new AIInvalidOutputError(
+        rejectApplicationWriting(
+          "UNKNOWN_EVIDENCE",
           "Application writing cited unknown evidence.",
         );
       return item;
@@ -163,11 +193,13 @@ function validateClaims(
       intendedClassification: claim.classification,
     });
     if (!claimCanPassReadiness(classification, linked.length))
-      throw new AIInvalidOutputError(
+      rejectApplicationWriting(
+        "PROVENANCE_VALIDATION_FAILED",
         "An application-writing claim failed provenance validation.",
       );
     if (classification === "UNSUPPORTED")
-      throw new AIInvalidOutputError(
+      rejectApplicationWriting(
+        "PROVENANCE_VALIDATION_FAILED",
         "An application-writing claim was classified as unsupported.",
       );
     return { ...claim, classification, evidence: linked };
@@ -258,12 +290,29 @@ export async function generateApplicationWriting(input: {
           };
         })();
   const content = generated.content;
-  if (hasFabricatedEmployerAttachment(content, input.company)) {
-    throw new AIInvalidOutputError(
-      "Fabricated personal attachment to an employer is not allowed.",
-    );
+  let claims: readonly ValidatedWritingClaim[];
+  try {
+    if (hasFabricatedEmployerAttachment(content, input.company)) {
+      rejectApplicationWriting(
+        "FABRICATED_EMPLOYER_ATTACHMENT",
+        "Fabricated personal attachment to an employer is not allowed.",
+      );
+    }
+    claims = validateClaims(content, generated.claims, input.evidence);
+  } catch (error) {
+    if (error instanceof ApplicationWritingInvalidOutputError) {
+      logger.log("warn", "application_writing_rejected", {
+        correlationId: input.correlationId,
+        writingType: input.type,
+        rejectionReason: error.rejectionReason,
+        task:
+          input.type === "COVER_LETTER"
+            ? "COVER_LETTER_GENERATION"
+            : "FREE_TEXT_APPLICATION_GENERATION",
+      });
+    }
+    throw error;
   }
-  const claims = validateClaims(content, generated.claims, input.evidence);
   const saved = await input.repository.save({
     claims,
     content,

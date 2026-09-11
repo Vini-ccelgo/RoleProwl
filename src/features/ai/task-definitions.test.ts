@@ -43,4 +43,23 @@ describe("AI task definitions", () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it("states the exact cover-letter provenance contract", () => {
+    const definition = aiTaskDefinitions.COVER_LETTER_GENERATION;
+
+    expect(definition.promptVersion).toBe("cover-letter-v2");
+    expect(definition.schemaName).toBe("cover_letter");
+    expect(definition.system).toMatch(/claim\.text verbatim/u);
+    expect(definition.system).toMatch(/exact substring/u);
+    expect(definition.system).toMatch(
+      /evidenceType, evidenceId, and evidenceField exactly/u,
+    );
+    expect(definition.system).toMatch(/Omit unsupported statements/u);
+    expect(definition.system).toMatch(
+      /SUPPORTED_INFERENCE only with at least two/u,
+    );
+    expect(definition.system).toMatch(
+      /assertions only when their values are supported/u,
+    );
+  });
 });

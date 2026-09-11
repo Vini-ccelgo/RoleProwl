@@ -146,10 +146,10 @@ export const aiTaskDefinitions = {
     }),
   },
   COVER_LETTER_GENERATION: {
-    promptVersion: "cover-letter-v1",
+    promptVersion: "cover-letter-v2",
     schemaName: "cover_letter",
     system:
-      "Write a concise role-specific cover letter from supplied evidence and preferences. Do not fabricate personal attachment to the employer. Attach evidence to candidate-specific claims.",
+      "Write a concise role-specific cover letter using only the supplied candidate evidence, job context, and preferences. Do not invent candidate facts, employers, credentials, dates, durations, management scope, numeric achievements, or personal attachment to the employer. Every candidate-specific factual statement must be supported by supplied evidence. For every claim, copy claim.text verbatim from the body so it is an exact substring, and copy evidenceType, evidenceId, and evidenceField exactly from at least one supplied sourceEvidence identity without altering them. Omit unsupported statements from both the body and claims; never emit UNSUPPORTED. Use DIRECT_FACT only for direct support, SUPPORTED_REWRITE only for faithful reformulation, and SUPPORTED_INFERENCE only with at least two supplied evidence references. Add assertions only when their values are supported by the linked evidence: employer and credential names must correspond to evidence values, durations must be exactly supported by linked dates, management scope requires management or leadership evidence, and numeric achievements require the exact supported number. Use an empty assertions array when none is necessary, and do not create claims for generic prose unless required.",
     schema: z.object({
       subject: z.string().max(300).nullable(),
       body: z.string().max(5000),

@@ -64,6 +64,42 @@ describe("generated claim provenance", () => {
     ).toBe("SUPPORTED_REWRITE");
   });
 
+  it.each([
+    ["employer", { kind: "EMPLOYER_NAME", value: "Acme Market" }],
+    ["duration", { kind: "DURATION_MONTHS", value: "12" }],
+    ["management scope", { kind: "MANAGEMENT_SCOPE", value: "team lead" }],
+    ["numeric achievement", { kind: "NUMERIC_ACHIEVEMENT", value: "18%" }],
+  ] as const)("accepts supported %s assertions", (_name, assertion) => {
+    expect(classify([assertion])).toBe("SUPPORTED_REWRITE");
+  });
+
+  it("accepts an exact credential and rejects a changed credential", () => {
+    const credential: ClaimEvidenceInput = {
+      evidenceType: "CREDENTIAL",
+      evidenceId: "credential-1",
+      evidenceField: "record",
+      snapshot: { credential: "AWS Certified Security - Specialty" },
+    };
+
+    expect(
+      classify(
+        [
+          {
+            kind: "CREDENTIAL_NAME",
+            value: "AWS Certified Security - Specialty",
+          },
+        ],
+        [credential],
+      ),
+    ).toBe("SUPPORTED_REWRITE");
+    expect(
+      classify(
+        [{ kind: "CREDENTIAL_NAME", value: "AWS Solutions Architect" }],
+        [credential],
+      ),
+    ).toBe("UNSUPPORTED");
+  });
+
   it("requires multiple evidence nodes for supported synthesis", () => {
     const second = { ...work, evidenceId: "work-2" };
     expect(classify([], [work, second], "SUPPORTED_INFERENCE")).toBe(

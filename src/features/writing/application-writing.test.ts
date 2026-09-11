@@ -1,5 +1,5 @@
 import type { GenerateContentResponse } from "@google/genai";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AIInvalidOutputError,
   ValidationError,
@@ -10,10 +10,12 @@ import {
   type GeminiGenerateClient,
 } from "@/integrations/ai/gemini-provider";
 import {
+  APPLICATION_WRITING_REJECTION_REASONS,
   generateApplicationWriting,
   hasFabricatedEmployerAttachment,
   selectRelevantWritingEvidence,
 } from "./application-writing";
+import { logger } from "@/lib/logging/logger";
 
 const evidence = [
   {
@@ -28,6 +30,27 @@ const reference = {
   evidenceType: "work_experience",
   evidenceId: "work-1",
   evidenceField: "employer",
+};
+const candidateEvidence = [
+  {
+    evidenceType: "CANDIDATE_FACT",
+    evidenceId: "fact-123",
+    evidenceField: "value",
+    label: "Verified candidate skill",
+    snapshot: { text: "PRIVATE_CANDIDATE_FACT_DO_NOT_LOG Python" },
+  },
+  {
+    evidenceType: "CANDIDATE_FACT",
+    evidenceId: "fact-456",
+    evidenceField: "value",
+    label: "Verified candidate project",
+    snapshot: { text: "Python security analysis automation" },
+  },
+] as const;
+const candidateReference = {
+  evidenceType: "CANDIDATE_FACT",
+  evidenceId: "fact-123",
+  evidenceField: "value",
 };
 
 type WritingInput = Parameters<typeof generateApplicationWriting>[0];
@@ -58,6 +81,11 @@ function claim(text: string, employer = "Acme") {
 }
 
 describe("application writing engine", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(logger, "log").mockImplementation(() => undefined);
+  });
+
   it("selects only deterministically job-relevant evidence", () => {
     expect(
       selectRelevantWritingEvidence(
@@ -119,11 +147,135 @@ describe("application writing engine", () => {
     expect(input.repository.save).toHaveBeenCalledWith(
       expect.objectContaining({
         generator: "deterministic-test-provider",
+        promptVersion: "cover-letter-v2",
         targetJobId: "job-1",
         type: "COVER_LETTER",
         userId: "user-1",
       }),
     );
+  });
+
+  it("accepts an exact claim substring with exact supplied evidence identity", async () => {
+    const body = "I used Python to automate security analysis.";
+    const input = base({
+      type: "COVER_LETTER",
+      evidence: candidateEvidence,
+      ai: new DeterministicAIProvider(() => ({
+        subject: null,
+        body,
+        claims: [
+          {
+            text: body,
+            classification: "DIRECT_FACT",
+            assertions: [],
+            sourceEvidence: [candidateReference],
+          },
+        ],
+      })),
+    });
+
+    await expect(generateApplicationWriting(input)).resolves.toMatchObject({
+      content: body,
+      id: "writing-1",
+    });
+    expect(input.repository.save).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a paraphrased claim that is not a literal body substring", async () => {
+    const body = "I used Python to automate security analysis.";
+    const input = base({
+      type: "COVER_LETTER",
+      evidence: candidateEvidence,
+      ai: new DeterministicAIProvider(() => ({
+        subject: null,
+        body,
+        claims: [
+          {
+            text: "I automated security analysis using Python.",
+            classification: "DIRECT_FACT",
+            assertions: [],
+            sourceEvidence: [candidateReference],
+          },
+        ],
+      })),
+    });
+
+    await expect(generateApplicationWriting(input)).rejects.toBeInstanceOf(
+      AIInvalidOutputError,
+    );
+    expect(input.repository.save).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["evidenceType", { ...candidateReference, evidenceType: "OTHER_FACT" }],
+    ["evidenceId", { ...candidateReference, evidenceId: "fact-999" }],
+    ["evidenceField", { ...candidateReference, evidenceField: "label" }],
+  ])(
+    "rejects a changed %s without evidence fallback",
+    async (_field, changed) => {
+      const body = "I used Python to automate security analysis.";
+      const input = base({
+        type: "COVER_LETTER",
+        evidence: candidateEvidence,
+        ai: new DeterministicAIProvider(() => ({
+          subject: null,
+          body,
+          claims: [
+            {
+              text: body,
+              classification: "DIRECT_FACT",
+              assertions: [],
+              sourceEvidence: [changed],
+            },
+          ],
+        })),
+      });
+
+      await expect(generateApplicationWriting(input)).rejects.toThrow(
+        "unknown evidence",
+      );
+      expect(input.repository.save).not.toHaveBeenCalled();
+    },
+  );
+
+  it("requires two exact evidence references for supported inference", async () => {
+    const body = "My Python experience supports security automation work.";
+    const generated = (sourceEvidence: (typeof candidateReference)[]) => ({
+      subject: null,
+      body,
+      claims: [
+        {
+          text: body,
+          classification: "SUPPORTED_INFERENCE" as const,
+          assertions: [],
+          sourceEvidence,
+        },
+      ],
+    });
+    const one = base({
+      type: "COVER_LETTER",
+      evidence: candidateEvidence,
+      ai: new DeterministicAIProvider(() => generated([candidateReference])),
+    });
+    const two = base({
+      type: "COVER_LETTER",
+      evidence: candidateEvidence,
+      ai: new DeterministicAIProvider(() =>
+        generated([
+          candidateReference,
+          { ...candidateReference, evidenceId: "fact-456" },
+        ]),
+      ),
+    });
+
+    await expect(generateApplicationWriting(one)).rejects.toBeInstanceOf(
+      AIInvalidOutputError,
+    );
+    expect(one.repository.save).not.toHaveBeenCalled();
+    await expect(generateApplicationWriting(two)).resolves.toMatchObject({
+      id: "writing-1",
+    });
+    expect(two.repository.save).toHaveBeenCalledOnce();
   });
 
   it("rejects unsupported cover-letter claims before persistence", async () => {
@@ -248,4 +400,109 @@ describe("application writing engine", () => {
       ),
     ).rejects.toThrow("Fabricated personal attachment");
   });
+
+  it.each([
+    {
+      reason: "FABRICATED_EMPLOYER_ATTACHMENT",
+      body: "GENERATED_BODY_DO_NOT_LOG I have always dreamed of working at Target Co.",
+      claims: [],
+    },
+    {
+      reason: "CLAIM_NOT_IN_CONTENT",
+      body: "GENERATED_BODY_DO_NOT_LOG",
+      claims: [
+        {
+          text: "PRIVATE_CANDIDATE_FACT_DO_NOT_LOG",
+          classification: "DIRECT_FACT",
+          assertions: [],
+          sourceEvidence: [candidateReference],
+        },
+      ],
+    },
+    {
+      reason: "MODEL_MARKED_UNSUPPORTED",
+      body: "GENERATED_BODY_DO_NOT_LOG",
+      claims: [
+        {
+          text: "GENERATED_BODY_DO_NOT_LOG",
+          classification: "UNSUPPORTED",
+          assertions: [],
+          sourceEvidence: [candidateReference],
+        },
+      ],
+    },
+    {
+      reason: "UNKNOWN_EVIDENCE",
+      body: "GENERATED_BODY_DO_NOT_LOG",
+      claims: [
+        {
+          text: "GENERATED_BODY_DO_NOT_LOG",
+          classification: "DIRECT_FACT",
+          assertions: [],
+          sourceEvidence: [
+            {
+              ...candidateReference,
+              evidenceId: "SECRET_EVIDENCE_ID_DO_NOT_LOG",
+            },
+          ],
+        },
+      ],
+    },
+    {
+      reason: "PROVENANCE_VALIDATION_FAILED",
+      body: "GENERATED_BODY_DO_NOT_LOG",
+      claims: [
+        {
+          text: "GENERATED_BODY_DO_NOT_LOG",
+          classification: "DIRECT_FACT",
+          assertions: [
+            {
+              kind: "CREDENTIAL_NAME",
+              value: "PRIVATE_ASSERTION_VALUE_DO_NOT_LOG",
+            },
+          ],
+          sourceEvidence: [candidateReference],
+        },
+      ],
+    },
+  ] as const)(
+    "logs only bounded metadata for $reason and does not persist",
+    async ({ reason, body, claims }) => {
+      const input = base({
+        type: "COVER_LETTER",
+        evidence: candidateEvidence,
+        ai: new DeterministicAIProvider(() => ({
+          subject: "PRIVATE_SUBJECT_DO_NOT_LOG",
+          body,
+          claims: [...claims],
+        })),
+      });
+
+      await expect(generateApplicationWriting(input)).rejects.toBeInstanceOf(
+        AIInvalidOutputError,
+      );
+      expect(input.repository.save).not.toHaveBeenCalled();
+      expect(APPLICATION_WRITING_REJECTION_REASONS).toContain(reason);
+      expect(logger.log).toHaveBeenCalledWith(
+        "warn",
+        "application_writing_rejected",
+        {
+          correlationId: "corr-write",
+          writingType: "COVER_LETTER",
+          rejectionReason: reason,
+          task: "COVER_LETTER_GENERATION",
+        },
+      );
+      const serializedLog = JSON.stringify(vi.mocked(logger.log).mock.calls);
+      for (const sentinel of [
+        "PRIVATE_CANDIDATE_FACT_DO_NOT_LOG",
+        "SECRET_EVIDENCE_ID_DO_NOT_LOG",
+        "GENERATED_BODY_DO_NOT_LOG",
+        "PRIVATE_ASSERTION_VALUE_DO_NOT_LOG",
+        "PRIVATE_SUBJECT_DO_NOT_LOG",
+      ]) {
+        expect(serializedLog).not.toContain(sentinel);
+      }
+    },
+  );
 });
