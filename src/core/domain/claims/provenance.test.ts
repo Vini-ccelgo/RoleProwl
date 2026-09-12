@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   claimCanPassReadiness,
   classifyGeneratedClaim,
+  classifyGeneratedClaimDetailed,
   type ClaimEvidenceInput,
 } from "./provenance";
 
@@ -29,6 +30,71 @@ const classify = (
 ) => classifyGeneratedClaim({ assertions, evidence, intendedClassification });
 
 describe("generated claim provenance", () => {
+  it.each([
+    {
+      name: "no linked evidence",
+      assertions: [],
+      evidence: [],
+      intendedClassification: "DIRECT_FACT",
+      expected: {
+        classification: "UNSUPPORTED",
+        failureReason: "NO_LINKED_EVIDENCE",
+      },
+    },
+    {
+      name: "unsupported assertion",
+      assertions: [{ kind: "CREDENTIAL_NAME", value: "PMP" }],
+      evidence: [work],
+      intendedClassification: "SUPPORTED_REWRITE",
+      expected: {
+        classification: "UNSUPPORTED",
+        failureReason: "ASSERTION_NOT_SUPPORTED",
+      },
+    },
+    {
+      name: "under-supported inference",
+      assertions: [],
+      evidence: [work],
+      intendedClassification: "SUPPORTED_INFERENCE",
+      expected: {
+        classification: "UNSUPPORTED",
+        failureReason: "INFERENCE_INSUFFICIENT_EVIDENCE",
+      },
+    },
+    {
+      name: "valid direct fact",
+      assertions: [],
+      evidence: [work],
+      intendedClassification: "DIRECT_FACT",
+      expected: { classification: "DIRECT_FACT", failureReason: null },
+    },
+    {
+      name: "valid supported rewrite",
+      assertions: [{ kind: "EMPLOYER_NAME", value: "Acme Market" }],
+      evidence: [work],
+      intendedClassification: "SUPPORTED_REWRITE",
+      expected: { classification: "SUPPORTED_REWRITE", failureReason: null },
+    },
+    {
+      name: "valid supported inference",
+      assertions: [],
+      evidence: [work, { ...work, evidenceId: "work-2" }],
+      intendedClassification: "SUPPORTED_INFERENCE",
+      expected: {
+        classification: "SUPPORTED_INFERENCE",
+        failureReason: null,
+      },
+    },
+  ] as const)(
+    "details $name without changing the compatibility classification",
+    ({ assertions, evidence, intendedClassification, expected }) => {
+      const input = { assertions, evidence, intendedClassification };
+
+      expect(classifyGeneratedClaimDetailed(input)).toEqual(expected);
+      expect(classifyGeneratedClaim(input)).toBe(expected.classification);
+    },
+  );
+
   it.each([
     ["invented certification", [{ kind: "CREDENTIAL_NAME", value: "PMP" }]],
     ["changed employer", [{ kind: "EMPLOYER_NAME", value: "Globex" }]],

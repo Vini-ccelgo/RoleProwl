@@ -1,9 +1,10 @@
 import type { AIProvider } from "@/core/contracts/ai-provider";
 import {
   claimCanPassReadiness,
-  classifyGeneratedClaim,
+  classifyGeneratedClaimDetailed,
   type ClaimAssertion,
   type ClaimEvidenceInput,
+  type ProvenanceFailureReason,
 } from "@/core/domain/claims/provenance";
 import {
   AIInvalidOutputError,
@@ -25,6 +26,9 @@ export const APPLICATION_WRITING_REJECTION_REASONS = [
   "CLAIM_NOT_IN_CONTENT",
   "MODEL_MARKED_UNSUPPORTED",
   "UNKNOWN_EVIDENCE",
+  "CLAIM_HAS_NO_LINKED_EVIDENCE",
+  "ASSERTION_NOT_SUPPORTED",
+  "INFERENCE_INSUFFICIENT_EVIDENCE",
   "PROVENANCE_VALIDATION_FAILED",
 ] as const;
 export type ApplicationWritingRejectionReason =
@@ -44,6 +48,19 @@ function rejectApplicationWriting(
   message: string,
 ): never {
   throw new ApplicationWritingInvalidOutputError(rejectionReason, message);
+}
+
+function writingRejectionReason(
+  failureReason: ProvenanceFailureReason,
+): ApplicationWritingRejectionReason {
+  switch (failureReason) {
+    case "NO_LINKED_EVIDENCE":
+      return "CLAIM_HAS_NO_LINKED_EVIDENCE";
+    case "ASSERTION_NOT_SUPPORTED":
+      return "ASSERTION_NOT_SUPPORTED";
+    case "INFERENCE_INSUFFICIENT_EVIDENCE":
+      return "INFERENCE_INSUFFICIENT_EVIDENCE";
+  }
 }
 
 export interface WritingEvidence extends ClaimEvidenceInput {
@@ -187,20 +204,21 @@ function validateClaims(
         );
       return item;
     });
-    const classification = classifyGeneratedClaim({
+    const provenance = classifyGeneratedClaimDetailed({
       assertions: claim.assertions,
       evidence: linked,
       intendedClassification: claim.classification,
     });
+    if (provenance.failureReason)
+      rejectApplicationWriting(
+        writingRejectionReason(provenance.failureReason),
+        "An application-writing claim failed provenance validation.",
+      );
+    const classification = provenance.classification;
     if (!claimCanPassReadiness(classification, linked.length))
       rejectApplicationWriting(
         "PROVENANCE_VALIDATION_FAILED",
         "An application-writing claim failed provenance validation.",
-      );
-    if (classification === "UNSUPPORTED")
-      rejectApplicationWriting(
-        "PROVENANCE_VALIDATION_FAILED",
-        "An application-writing claim was classified as unsupported.",
       );
     return { ...claim, classification, evidence: linked };
   });

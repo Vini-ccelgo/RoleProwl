@@ -43,7 +43,12 @@ interface GeminiProviderOptions {
   readonly sleep?: (milliseconds: number) => Promise<void>;
 }
 
-class GeminiTimeoutError extends Error {}
+class GeminiTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GeminiTimeoutError";
+  }
+}
 
 function httpStatus(error: unknown) {
   if (!error || typeof error !== "object" || !("status" in error)) return null;

@@ -449,7 +449,19 @@ describe("application writing engine", () => {
       ],
     },
     {
-      reason: "PROVENANCE_VALIDATION_FAILED",
+      reason: "CLAIM_HAS_NO_LINKED_EVIDENCE",
+      body: "GENERATED_BODY_DO_NOT_LOG",
+      claims: [
+        {
+          text: "GENERATED_BODY_DO_NOT_LOG",
+          classification: "DIRECT_FACT",
+          assertions: [],
+          sourceEvidence: [],
+        },
+      ],
+    },
+    {
+      reason: "ASSERTION_NOT_SUPPORTED",
       body: "GENERATED_BODY_DO_NOT_LOG",
       claims: [
         {
@@ -461,6 +473,18 @@ describe("application writing engine", () => {
               value: "PRIVATE_ASSERTION_VALUE_DO_NOT_LOG",
             },
           ],
+          sourceEvidence: [candidateReference],
+        },
+      ],
+    },
+    {
+      reason: "INFERENCE_INSUFFICIENT_EVIDENCE",
+      body: "GENERATED_BODY_DO_NOT_LOG",
+      claims: [
+        {
+          text: "GENERATED_BODY_DO_NOT_LOG",
+          classification: "SUPPORTED_INFERENCE",
+          assertions: [],
           sourceEvidence: [candidateReference],
         },
       ],
@@ -483,6 +507,7 @@ describe("application writing engine", () => {
       );
       expect(input.repository.save).not.toHaveBeenCalled();
       expect(APPLICATION_WRITING_REJECTION_REASONS).toContain(reason);
+      expect(logger.log).toHaveBeenCalledOnce();
       expect(logger.log).toHaveBeenCalledWith(
         "warn",
         "application_writing_rejected",

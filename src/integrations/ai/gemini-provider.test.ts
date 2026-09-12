@@ -239,17 +239,39 @@ describe("GeminiAIProvider", () => {
     ).rejects.toBeInstanceOf(AIRefusalError);
   });
 
-  it("bounds a timed-out request", async () => {
+  it("names, retries, and bounds a timed-out request", async () => {
     const generateContent = vi.fn(() => new Promise(() => undefined));
+    const log: Logger = { log: vi.fn() };
+    const sleep = vi.fn().mockResolvedValue(undefined);
     await expect(
-      new GeminiAIProvider({ generateContent } as GeminiGenerateClient, {
-        ...config,
-        timeoutMs: 5,
-      }).generateStructured(request),
+      new GeminiAIProvider(
+        { generateContent } as GeminiGenerateClient,
+        { ...config, maxRetries: 1, timeoutMs: 5 },
+        log,
+        allow,
+        { random: () => 0, sleep },
+      ).generateStructured(request),
     ).rejects.toMatchObject({
       code: "AI_CAPACITY",
       state: "PROVIDER_UNAVAILABLE",
     });
+    expect(generateContent).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledOnce();
+    expect(sleep).toHaveBeenCalledWith(500);
+    expect(log.log).toHaveBeenCalledTimes(2);
+    for (const attempt of [0, 1]) {
+      expect(log.log).toHaveBeenCalledWith(
+        "warn",
+        "ai_task_attempt_failed",
+        expect.objectContaining({
+          retryCount: attempt,
+          errorType: "GeminiTimeoutError",
+        }),
+      );
+    }
+    expect(JSON.stringify(vi.mocked(log.log).mock.calls)).not.toContain(
+      "Gemini timed out",
+    );
   });
 
   it("classifies exhausted provider 429 responses without raw errors", async () => {

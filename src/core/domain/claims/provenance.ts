@@ -1,6 +1,24 @@
 export type ClaimClassification =
   "DIRECT_FACT" | "SUPPORTED_REWRITE" | "SUPPORTED_INFERENCE" | "UNSUPPORTED";
 
+export const PROVENANCE_FAILURE_REASONS = [
+  "NO_LINKED_EVIDENCE",
+  "ASSERTION_NOT_SUPPORTED",
+  "INFERENCE_INSUFFICIENT_EVIDENCE",
+] as const;
+export type ProvenanceFailureReason =
+  (typeof PROVENANCE_FAILURE_REASONS)[number];
+
+export type GeneratedClaimClassificationResult =
+  | {
+      readonly classification: Exclude<ClaimClassification, "UNSUPPORTED">;
+      readonly failureReason: null;
+    }
+  | {
+      readonly classification: "UNSUPPORTED";
+      readonly failureReason: ProvenanceFailureReason;
+    };
+
 export type ClaimAssertionKind =
   | "EMPLOYER_NAME"
   | "CREDENTIAL_NAME"
@@ -77,26 +95,45 @@ function assertionSupported(
   return values.some((value) => value === target);
 }
 
-export function classifyGeneratedClaim(input: {
+export function classifyGeneratedClaimDetailed(input: {
   assertions: readonly ClaimAssertion[];
   evidence: readonly ClaimEvidenceInput[];
   intendedClassification: Exclude<ClaimClassification, "UNSUPPORTED">;
-}): ClaimClassification {
-  if (input.evidence.length === 0) return "UNSUPPORTED";
+}): GeneratedClaimClassificationResult {
+  if (input.evidence.length === 0)
+    return {
+      classification: "UNSUPPORTED",
+      failureReason: "NO_LINKED_EVIDENCE",
+    };
   if (
     !input.assertions.every((assertion) =>
       assertionSupported(assertion, input.evidence),
     )
   ) {
-    return "UNSUPPORTED";
+    return {
+      classification: "UNSUPPORTED",
+      failureReason: "ASSERTION_NOT_SUPPORTED",
+    };
   }
   if (
     input.intendedClassification === "SUPPORTED_INFERENCE" &&
     input.evidence.length < 2
   ) {
-    return "UNSUPPORTED";
+    return {
+      classification: "UNSUPPORTED",
+      failureReason: "INFERENCE_INSUFFICIENT_EVIDENCE",
+    };
   }
-  return input.intendedClassification;
+  return {
+    classification: input.intendedClassification,
+    failureReason: null,
+  };
+}
+
+export function classifyGeneratedClaim(
+  input: Parameters<typeof classifyGeneratedClaimDetailed>[0],
+): ClaimClassification {
+  return classifyGeneratedClaimDetailed(input).classification;
 }
 
 export function claimCanPassReadiness(
