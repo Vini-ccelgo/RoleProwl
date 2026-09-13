@@ -35,6 +35,12 @@ export const PROPOSAL_DESTINATIONS = {
     label: "Credential",
     cardinality: "MULTIPLE",
   },
+  LANGUAGE_TEXT: {
+    canonicalPath: "candidateFacts.languages",
+    legacyPaths: [],
+    label: "Language",
+    cardinality: "MULTIPLE",
+  },
 } as const;
 
 export type SupportedProposalFactType = keyof typeof PROPOSAL_DESTINATIONS;

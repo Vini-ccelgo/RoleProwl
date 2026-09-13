@@ -41,6 +41,10 @@ export async function exportAccountData(userId: string) {
         candidatePreferences: true,
         workAuthorizationProfile: true,
         candidateFacts: true,
+        candidateNarratives: {
+          include: { proposals: true },
+          orderBy: { createdAt: "asc" },
+        },
         candidateDocuments: {
           select: {
             id: true,

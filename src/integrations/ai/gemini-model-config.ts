@@ -16,6 +16,10 @@ export const GEMINI_TASK_ROUTES: Readonly<Record<AITask, GeminiTaskRoute>> = {
     preferredTier: "LITE",
     allowFlashEscalation: false,
   },
+  CANDIDATE_NARRATIVE_EXTRACTION: {
+    preferredTier: "LITE",
+    allowFlashEscalation: false,
+  },
   JOB_REQUIREMENT_NORMALIZATION: {
     preferredTier: "LITE",
     allowFlashEscalation: true,

@@ -7,6 +7,15 @@ export const ANSWER_CONCEPTS = [
   "START_AVAILABILITY",
   "CURRENT_LOCATION",
   "TRAVEL_AVAILABILITY",
+  "CURRENT_EMPLOYMENT_STATUS",
+  "NOTICE_PERIOD",
+  "CURRENT_COMPENSATION",
+  "TARGET_ROLE",
+  "WORK_ENVIRONMENT_PREFERENCE",
+  "PROFESSIONAL_STRENGTHS",
+  "REUSABLE_SELF_DESCRIPTION",
+  "AI_HIRING_PROCESS_PREFERENCE",
+  "GENERAL_DATA_USE_PREFERENCE",
 ] as const;
 export type AnswerConcept = (typeof ANSWER_CONCEPTS)[number];
 
@@ -45,9 +54,31 @@ const CONCEPT_PATTERNS: Readonly<Record<AnswerConcept, readonly RegExp[]>> = {
     /\b(?:willing|able|available) to travel\b/iu,
     /\btravel.{0,15}(?:percent|percentage|%)\b/iu,
   ],
+  CURRENT_EMPLOYMENT_STATUS: [
+    /\b(?:currently|presently).{0,20}(?:employed|working|unemployed)\b/iu,
+    /\bcurrent employment status\b/iu,
+  ],
+  NOTICE_PERIOD: [/\bnotice period\b/iu],
+  CURRENT_COMPENSATION: [/\bcurrent.{0,15}(?:salary|compensation|pay)\b/iu],
+  TARGET_ROLE: [
+    /\b(?:target|desired|preferred).{0,15}(?:role|position|job)\b/iu,
+  ],
+  WORK_ENVIRONMENT_PREFERENCE: [
+    /\b(?:work|team|company) environment.{0,15}(?:preference|preferred)\b/iu,
+  ],
+  PROFESSIONAL_STRENGTHS: [/\bprofessional strengths?\b/iu],
+  REUSABLE_SELF_DESCRIPTION: [
+    /\b(?:describe yourself|professional (?:bio|description|summary))\b/iu,
+  ],
+  AI_HIRING_PROCESS_PREFERENCE: [
+    /\bAI.{0,20}(?:hiring|interview).{0,20}preference\b/iu,
+  ],
+  GENERAL_DATA_USE_PREFERENCE: [/\b(?:data use|privacy).{0,20}preference\b/iu],
 };
 
-export const DEFAULT_REVERIFY_DAYS: Readonly<Record<AnswerConcept, number>> = {
+export const DEFAULT_REVERIFY_DAYS: Readonly<
+  Record<AnswerConcept, number | null>
+> = {
   US_WORK_AUTHORIZATION: 90,
   US_FUTURE_SPONSORSHIP: 90,
   DESIRED_SALARY: 30,
@@ -56,6 +87,15 @@ export const DEFAULT_REVERIFY_DAYS: Readonly<Record<AnswerConcept, number>> = {
   START_AVAILABILITY: 30,
   CURRENT_LOCATION: 30,
   TRAVEL_AVAILABILITY: 90,
+  CURRENT_EMPLOYMENT_STATUS: 30,
+  NOTICE_PERIOD: 30,
+  CURRENT_COMPENSATION: 30,
+  TARGET_ROLE: null,
+  WORK_ENVIRONMENT_PREFERENCE: null,
+  PROFESSIONAL_STRENGTHS: null,
+  REUSABLE_SELF_DESCRIPTION: null,
+  AI_HIRING_PROCESS_PREFERENCE: 180,
+  GENERAL_DATA_USE_PREFERENCE: 180,
 };
 
 export function mapQuestionToAnswerConcept(

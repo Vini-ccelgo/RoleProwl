@@ -14,8 +14,12 @@ export interface AnswerMemoryRepository {
     readonly autoAnswerAllowed: boolean;
     readonly concept: AnswerConcept;
     readonly normalizedQuestionExample: string | null;
-    readonly reverifyAfterDays: number;
+    readonly reverifyAfterDays: number | null;
     readonly source: AnswerMemorySource;
+    readonly origin?: "EXPLICIT" | "DERIVED";
+    readonly candidateApproved?: boolean;
+    readonly reusable?: boolean;
+    readonly sourceNarrativeId?: string | null;
     readonly userId: string;
     readonly verifiedAt: Date;
   }): Promise<{ readonly id: string }>;
@@ -47,6 +51,10 @@ export async function rememberApplicationAnswer(input: {
     normalizedQuestionExample: input.question?.trim() || null,
     reverifyAfterDays: DEFAULT_REVERIFY_DAYS[concept],
     source: input.source,
+    origin: "EXPLICIT",
+    candidateApproved: true,
+    reusable: true,
+    sourceNarrativeId: null,
     userId: input.userId,
     verifiedAt: input.verifiedAt ?? new Date(),
   });

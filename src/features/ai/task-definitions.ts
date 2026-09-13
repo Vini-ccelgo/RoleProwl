@@ -51,6 +51,26 @@ export const aiTaskDefinitions = {
         .max(200),
     }),
   },
+  CANDIDATE_NARRATIVE_EXTRACTION: {
+    promptVersion: "candidate-narrative-v1",
+    schemaName: "candidate_narrative_proposals",
+    system:
+      "Extract only reusable concepts explicitly supported by the candidate-authored narrative. Select only from allowedConcepts. supportingText must be an exact substring of the narrative. Faithful normalization may be DERIVED; do not infer missing facts, consent, salary, authorization, sponsorship, proficiency, or preferences. Every result remains a proposal requiring candidate review.",
+    schema: z.object({
+      proposals: z
+        .array(
+          z.object({
+            concept: z.string().max(128),
+            value: z.string().min(1).max(2_500),
+            supportingText: z.string().min(1).max(2_500),
+            origin: z.enum(["EXPLICIT", "DERIVED"]),
+            confidence: z.number().min(0).max(1),
+            approvalRequired: z.literal(true),
+          }),
+        )
+        .max(12),
+    }),
+  },
   JOB_REQUIREMENT_NORMALIZATION: {
     promptVersion: "job-requirements-v1",
     schemaName: "job_requirements",

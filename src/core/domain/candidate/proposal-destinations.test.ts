@@ -13,6 +13,7 @@ describe("resume proposal destination mapping", () => {
     ["PROJECT_TEXT", "candidateFacts.projects"],
     ["WORK_EXPERIENCE_TEXT", "candidateFacts.workExperience"],
     ["CREDENTIAL_TEXT", "candidateFacts.credentials"],
+    ["LANGUAGE_TEXT", "candidateFacts.languages"],
   ])("maps %s to its canonical fact destination", (factType, targetPath) => {
     expect(getProposalDestination(factType)).toEqual(
       expect.objectContaining({ canonicalPath: targetPath }),

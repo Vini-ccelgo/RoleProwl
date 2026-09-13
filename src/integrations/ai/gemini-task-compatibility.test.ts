@@ -198,6 +198,7 @@ const config: GeminiRuntimeConfig = {
 
 const outputs: Readonly<Record<AITask, unknown>> = {
   RESUME_FACT_EXTRACTION: { proposals: [] },
+  CANDIDATE_NARRATIVE_EXTRACTION: { proposals: [] },
   JOB_REQUIREMENT_NORMALIZATION: {
     required: [],
     preferred: [],
@@ -234,6 +235,7 @@ const outputs: Readonly<Record<AITask, unknown>> = {
 
 const expectedModel: Readonly<Record<AITask, string>> = {
   RESUME_FACT_EXTRACTION: config.liteModel,
+  CANDIDATE_NARRATIVE_EXTRACTION: config.liteModel,
   JOB_REQUIREMENT_NORMALIZATION: config.liteModel,
   SEMANTIC_EVIDENCE_COMPARISON: config.liteModel,
   APPLICATION_QUESTION_CLASSIFICATION: config.liteModel,

@@ -9,6 +9,7 @@ describe("Gemini model routing", () => {
     );
     for (const task of [
       "RESUME_FACT_EXTRACTION",
+      "CANDIDATE_NARRATIVE_EXTRACTION",
       "JOB_REQUIREMENT_NORMALIZATION",
       "SEMANTIC_EVIDENCE_COMPARISON",
       "APPLICATION_QUESTION_CLASSIFICATION",

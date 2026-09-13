@@ -125,6 +125,8 @@ describe("resume proposal parsing", () => {
     ["CREDENTIALS", "CREDENTIAL_TEXT"],
     ["LICENSES AND CERTIFICATIONS", "CREDENTIAL_TEXT"],
     ["PROFESSIONAL CERTIFICATIONS", "CREDENTIAL_TEXT"],
+    ["LANGUAGES", "LANGUAGE_TEXT"],
+    ["LANGUAGE", "LANGUAGE_TEXT"],
   ])("maps the %s heading to %s", (heading, factType) => {
     const [draft] = proposeFactsFromResumeText(
       `${heading.toLocaleLowerCase("en-US")}:\nExact source line`,

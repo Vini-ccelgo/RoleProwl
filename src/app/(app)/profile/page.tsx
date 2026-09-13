@@ -14,11 +14,16 @@ import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { getCandidateTruthVault } from "@/integrations/candidate/prisma-truth-vault";
 import { connection } from "next/server";
 import { ProfileSectionNavigation } from "@/components/candidate/profile-section-navigation";
+import { CandidateKnowledgeSection } from "@/components/candidate/candidate-knowledge-section";
+import { getCandidateKnowledgeSnapshot } from "@/integrations/candidate/prisma-candidate-knowledge";
 
 export default async function ProfilePage() {
   await connection();
   const actor = await requireWorkspacePageActor(currentAuthProvider());
-  const vault = await getCandidateTruthVault(actor.id);
+  const [vault, knowledge] = await Promise.all([
+    getCandidateTruthVault(actor.id),
+    getCandidateKnowledgeSnapshot(actor.id),
+  ]);
 
   return (
     <div className="app-page profile-page">
@@ -28,6 +33,9 @@ export default async function ProfilePage() {
       />
       <ProfileSectionNavigation />
       <div className="vault-sections">
+        <div id="recurring-details">
+          <CandidateKnowledgeSection snapshot={knowledge} />
+        </div>
         <div id="details">
           <ProfileDetailsSection vault={vault} />
         </div>

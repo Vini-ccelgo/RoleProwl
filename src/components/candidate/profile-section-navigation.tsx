@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 
 export const PROFILE_SECTIONS = [
+  { id: "recurring-details", label: "Recurring details" },
   { id: "details", label: "Details" },
   { id: "resume-facts", label: "Résumé facts" },
   { id: "experience", label: "Experience" },

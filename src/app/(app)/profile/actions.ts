@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
@@ -26,6 +27,15 @@ import { databaseClient } from "@/lib/db/client";
 import { invalidateReadyApplicationPackets } from "@/integrations/applications/invalidate-application-packets";
 import { invalidateCandidateJobMatchAnalyses } from "@/integrations/jobs/invalidate-job-match-analyses";
 import { synchronizeVerifiedCandidateSkills } from "@/integrations/candidate/sync-verified-candidate-skills";
+import {
+  createCandidateNarrative,
+  getCandidateKnowledgeSnapshot,
+  persistCandidateKnowledgeProposals,
+  reviewCandidateKnowledgeProposal,
+  saveDirectCandidateKnowledge,
+} from "@/integrations/candidate/prisma-candidate-knowledge";
+import { saveCandidateNarrativeWithOptionalExtraction } from "@/features/candidate/candidate-narrative-workflow";
+import { currentAIProvider } from "@/integrations/ai/provider-factory";
 
 function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "");
@@ -514,4 +524,115 @@ export async function removeCandidateFact(id: string): Promise<void> {
   revalidatePath("/profile");
   revalidatePath("/applications");
   revalidatePath("/dashboard");
+}
+
+export async function saveCandidateKnowledgeAnswer(
+  _state: CandidateFormState,
+  formData: FormData,
+): Promise<CandidateFormState> {
+  try {
+    const actor = await requireAuthenticatedActor(currentAuthProvider());
+    const concept = value(formData, "concept").trim();
+    const rawAnswer = value(formData, "answer").trim();
+    let answer: Readonly<Record<string, unknown>>;
+    if (concept === "CURRENT_COMPENSATION" || concept === "DESIRED_SALARY") {
+      const amount = z.coerce.number().positive().parse(rawAnswer);
+      const currency = z
+        .string()
+        .trim()
+        .length(3)
+        .transform((item) => item.toUpperCase())
+        .parse(value(formData, "currency"));
+      const period = value(formData, "period").trim() || null;
+      answer = { amount, currency, period };
+    } else {
+      answer = { text: z.string().min(1).max(5_000).parse(rawAnswer) };
+    }
+    await saveDirectCandidateKnowledge({ userId: actor.id, concept, answer });
+    return success(
+      "Recurring answer saved and marked as candidate-approved.",
+      actor.id,
+    );
+  } catch (error) {
+    return formError(error);
+  }
+}
+
+export async function submitCandidateNarrative(
+  _state: CandidateFormState,
+  formData: FormData,
+): Promise<CandidateFormState> {
+  try {
+    const actor = await requireAuthenticatedActor(currentAuthProvider());
+    const theme = z
+      .enum([
+        "PROFESSIONAL_CONTEXT",
+        "RECURRING_DETAILS",
+        "RECURRING_PREFERENCES",
+      ])
+      .parse(value(formData, "theme"));
+    const content = value(formData, "content");
+    const snapshot = await getCandidateKnowledgeSnapshot(actor.id);
+    const allowedConcepts =
+      snapshot.gapPrompts.find((prompt) => prompt.theme === theme)?.concepts ??
+      [];
+    const result = await saveCandidateNarrativeWithOptionalExtraction({
+      ai: currentAIProvider,
+      allowedConcepts,
+      content,
+      correlationId: randomUUID(),
+      repository: {
+        create: createCandidateNarrative,
+        persistProposals: persistCandidateKnowledgeProposals,
+      },
+      theme,
+      userId: actor.id,
+    });
+    if (result.extraction === "FAILED_NON_BLOCKING") {
+      revalidatePath("/profile");
+      return {
+        status: "success",
+        message:
+          "Your answer is saved. Automatic organization is unavailable, so you can continue with the structured fields.",
+      };
+    }
+    revalidatePath("/profile");
+    return {
+      status: "success",
+      message:
+        "Your answer is saved. Review any suggested reusable details below before they are used.",
+    };
+  } catch (error) {
+    return formError(error);
+  }
+}
+
+export async function decideCandidateKnowledgeProposal(
+  _state: CandidateFormState,
+  formData: FormData,
+): Promise<CandidateFormState> {
+  try {
+    const actor = await requireAuthenticatedActor(currentAuthProvider());
+    const decision = z
+      .enum(["APPROVE", "CORRECT", "DECLINE"])
+      .parse(value(formData, "decision"));
+    const corrected = value(formData, "correctedValue").trim();
+    await reviewCandidateKnowledgeProposal(databaseClient(), {
+      userId: actor.id,
+      proposalId: value(formData, "proposalId"),
+      decision,
+      correctedValue:
+        decision === "CORRECT"
+          ? { text: z.string().min(1).max(5_000).parse(corrected) }
+          : undefined,
+    });
+    return success(
+      decision === "DECLINE"
+        ? "Suggestion declined. Your original answer is unchanged."
+        : "Reusable detail approved. Your original answer is unchanged.",
+      actor.id,
+    );
+  } catch (error) {
+    return formError(error);
+  }
 }
