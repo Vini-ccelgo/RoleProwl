@@ -592,4 +592,183 @@ describe("Prisma application packet repository", () => {
     ).rejects.toThrow("Application not found");
     expect(mocks.profileFindUnique).not.toHaveBeenCalled();
   });
+
+  it("blocks READY when current Greenhouse question inspection fails", async () => {
+    const packet = await new PrismaApplicationPacketRepository(
+      vi.fn(async () => {
+        throw new Error("provider unavailable");
+      }),
+    ).refresh({
+      applicationId: "application-1",
+      userId: "user-1",
+      reviewed: true,
+    });
+    expect(packet.source.inspection).toBe("UNAVAILABLE");
+    expect(packet.completeness.readyForSubmissionHandoff).toBe(false);
+    expect(mocks.applicationUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ state: "NEEDS_REVIEW" }),
+      }),
+    );
+  });
+
+  it("allows a reviewed unchanged required schema to proceed", async () => {
+    const questions = [
+      {
+        id: "standard:first_name",
+        source: "GREENHOUSE" as const,
+        group: "STANDARD" as const,
+        label: "First Name",
+        required: true,
+        fieldNames: ["first_name"],
+        fieldTypes: ["input_text"],
+        options: [],
+      },
+      {
+        id: "standard:resume",
+        source: "GREENHOUSE" as const,
+        group: "STANDARD" as const,
+        label: "Résumé/CV",
+        required: true,
+        fieldNames: ["resume"],
+        fieldTypes: ["input_file"],
+        options: [],
+      },
+    ];
+    const previousPacket = buildApplicationPacket({
+      reviewed: false,
+      source: {
+        accountEmail: "signin@example.test",
+        profile: {
+          firstName: "Avery",
+          lastName: "Quill",
+          applicationEmail: "apply@example.test",
+          phone: "+1 555 0100",
+          location: "Boston, MA",
+          countryCode: "US",
+          professionalTitle: "Security Analyst",
+        },
+        verifiedResumeFacts: [],
+        experience: [],
+        education: [],
+        credentials: [],
+        skills: [],
+        languages: [],
+        workAuthorization: null,
+        sponsorshipRequired: null,
+        answerMemories: [],
+        selectedResume: {
+          fileName: "resume.pdf",
+          contentType: "application/pdf",
+          storageKey: "candidate-documents/safe",
+          tailored: false,
+        },
+        coverLetter: null,
+        questions,
+        questionInspection: "AVAILABLE",
+        sourceName: "GREENHOUSE",
+        targetRole: "Security Analyst",
+      },
+    });
+    mocks.applicationFindFirst.mockResolvedValue({
+      ...application,
+      submissionPayloadSnapshot: { packet: previousPacket },
+    });
+    const request = vi.fn(async () =>
+      Response.json({
+        questions: [
+          {
+            required: true,
+            label: "First Name",
+            fields: [{ name: "first_name", type: "input_text" }],
+          },
+          {
+            required: true,
+            label: "Résumé/CV",
+            fields: [{ name: "resume", type: "input_file" }],
+          },
+        ],
+      }),
+    );
+    const packet = await new PrismaApplicationPacketRepository(request).refresh(
+      { applicationId: "application-1", userId: "user-1", reviewed: true },
+    );
+    expect(packet.reviewInvalidatedReason).toBeNull();
+    expect(packet.completeness.readyForSubmissionHandoff).toBe(true);
+    expect(mocks.applicationUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ state: "READY" }),
+      }),
+    );
+  });
+
+  it("invalidates stale review when the required question schema changes", async () => {
+    const previousPacket = buildApplicationPacket({
+      reviewed: true,
+      source: {
+        accountEmail: "signin@example.test",
+        profile: {
+          firstName: "Avery",
+          lastName: "Quill",
+          applicationEmail: "apply@example.test",
+          phone: "+1 555 0100",
+          location: "Boston, MA",
+          countryCode: "US",
+          professionalTitle: "Security Analyst",
+        },
+        verifiedResumeFacts: [],
+        experience: [],
+        education: [],
+        credentials: [],
+        skills: [],
+        languages: [],
+        workAuthorization: null,
+        sponsorshipRequired: null,
+        answerMemories: [],
+        selectedResume: {
+          fileName: "resume.pdf",
+          contentType: "application/pdf",
+          storageKey: "candidate-documents/safe",
+          tailored: false,
+        },
+        coverLetter: null,
+        questions: [],
+        questionInspection: "AVAILABLE",
+        sourceName: "GREENHOUSE",
+        targetRole: "Security Analyst",
+      },
+    });
+    mocks.applicationFindFirst.mockResolvedValue({
+      ...application,
+      state: "READY",
+      submissionPayloadSnapshot: { packet: previousPacket },
+    });
+    const packet = await new PrismaApplicationPacketRepository(
+      vi.fn(async () =>
+        Response.json({
+          questions: [
+            {
+              required: true,
+              label: "New required question",
+              fields: [{ name: "question_99", type: "input_text" }],
+            },
+          ],
+        }),
+      ),
+    ).refresh({
+      applicationId: "application-1",
+      userId: "user-1",
+      reviewed: true,
+    });
+    expect(packet.reviewedAt).toBeNull();
+    expect(packet.reviewInvalidatedReason).toBe(
+      "MATERIAL_REQUIRED_QUESTION_SCHEMA_CHANGED",
+    );
+    expect(packet.completeness.readyForSubmissionHandoff).toBe(false);
+    expect(mocks.applicationUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ state: "NEEDS_REVIEW" }),
+      }),
+    );
+  });
 });

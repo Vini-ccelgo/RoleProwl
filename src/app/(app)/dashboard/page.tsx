@@ -11,6 +11,7 @@ import {
   preparedApplicationsWhere,
   submittedApplicationsWhere,
 } from "@/features/applications/application-metrics";
+import { applicationEventLabel } from "@/features/applications/application-presentation";
 import {
   activeEvidenceAwareMatchWhere,
   confirmedHighFitWhere,
@@ -23,14 +24,10 @@ const METRICS = [
   { key: "highFit", label: "Confirmed high-fit jobs", href: "/jobs" },
   { key: "prepared", label: "Prepared applications", href: "/applications" },
   { key: "review", label: "Needs review", href: "/queue" },
-  { key: "submitted", label: "Submitted", href: "/applications" },
+  { key: "submitted", label: "Recorded submissions", href: "/applications" },
   { key: "responses", label: "Responses", href: "/applications" },
   { key: "interviews", label: "Interviews", href: "/applications" },
 ] as const;
-
-function label(value: string) {
-  return value.replaceAll("_", " ").toLowerCase();
-}
 
 export default async function DashboardPage() {
   await connection();
@@ -216,7 +213,7 @@ export default async function DashboardPage() {
                     className="font-semibold"
                     href={`/applications/${event.application.id}`}
                   >
-                    {label(event.type)}
+                    {applicationEventLabel(event.type, event.detail)}
                   </Link>
                   <p className="m-0 text-sm">
                     {event.application.job.title} ·{" "}

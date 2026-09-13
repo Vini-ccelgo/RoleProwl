@@ -5,7 +5,7 @@ import {
   APPLICATION_OUTCOME_POLICY_COPY,
   applicationOverviewCounts,
   applicationNextAction,
-  applicationStateLabel,
+  applicationRecordedStateLabel,
 } from "@/features/applications/application-presentation";
 import { requireWorkspacePageActor } from "@/features/accounts/require-workspace-page-actor";
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
@@ -79,7 +79,7 @@ export default async function ApplicationsPage() {
                   <span className="badge">
                     {packetRefreshRequired
                       ? "Packet refresh required"
-                      : applicationStateLabel(application.state)}
+                      : applicationRecordedStateLabel(application)}
                   </span>
                   <h2 className="mt-3 text-lg font-semibold">
                     <Link href={`/applications/${application.id}`}>
@@ -111,9 +111,15 @@ export default async function ApplicationsPage() {
                       .toLowerCase()}
                   </p>
                   <p className="m-0">
-                    {application.submittedAt ? "Submitted" : "Updated"}{" "}
+                    {application.externalConfirmedAt
+                      ? "Candidate confirmed"
+                      : application.submittedAt
+                        ? "Submitted"
+                        : "Updated"}{" "}
                     {(
-                      application.submittedAt ?? application.updatedAt
+                      application.externalConfirmedAt ??
+                      application.submittedAt ??
+                      application.updatedAt
                     ).toLocaleString()}
                   </p>
                   <p className="m-0">

@@ -4,7 +4,9 @@ import {
   applicationOverviewCounts,
   applicationNextAction,
   applicationOutcomeActionLabel,
+  applicationRecordedStateLabel,
   applicationStateLabel,
+  applicationEventLabel,
 } from "./application-presentation";
 
 describe("application lifecycle presentation", () => {
@@ -28,6 +30,21 @@ describe("application lifecycle presentation", () => {
 
   it("renders the canonical SUBMITTING row label as Submitting", () => {
     expect(applicationStateLabel("SUBMITTING")).toBe("Submitting");
+  });
+
+  it("uses truthful handoff and user-confirmed provenance labels", () => {
+    expect(applicationStateLabel("READY")).toBe("Ready for employer handoff");
+    expect(
+      applicationRecordedStateLabel({
+        state: "SUBMITTED",
+        externalConfirmedAt: new Date("2026-09-06T13:00:00Z"),
+      }),
+    ).toBe("Candidate-confirmed external submission");
+    expect(
+      applicationEventLabel("SUBMISSION_CONFIRMED", {
+        confirmation: "USER_CONFIRMED_EXTERNAL",
+      }),
+    ).toBe("Candidate confirmed external submission");
   });
 
   it("counts one SUBMITTING application only as tracked and submitting", () => {

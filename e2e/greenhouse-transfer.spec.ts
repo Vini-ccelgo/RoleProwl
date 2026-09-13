@@ -766,6 +766,13 @@ test("Greenhouse helper fills exact fields, reports boundaries, and never submit
         ["sponsorship", "Sponsorship", "No", ["sponsorship"], "CHOICE"],
         ["portfolio", "Portfolio", "https://example.test", [], "TEXT"],
         ["resume", "Résumé", "avery-resume.pdf", ["resume"], "DOCUMENT"],
+        [
+          "consent",
+          "Data processing consent",
+          "",
+          ["data_compliance[gdpr_processing_consent_given]"],
+          "HUMAN_REQUIRED",
+        ],
       ].map(([id, label, value, fieldNames, kind]) => ({
         id,
         label,
@@ -817,6 +824,7 @@ test("Greenhouse helper fills exact fields, reports boundaries, and never submit
       expect.objectContaining({ id: "sponsorship", status: "VERIFIED" }),
       expect.objectContaining({ id: "portfolio", status: "UNSUPPORTED" }),
       expect.objectContaining({ id: "resume", status: "HUMAN_REQUIRED" }),
+      expect.objectContaining({ id: "consent", status: "HUMAN_REQUIRED" }),
       expect.objectContaining({
         id: "human:verification",
         status: "HUMAN_REQUIRED",

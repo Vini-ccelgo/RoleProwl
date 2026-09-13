@@ -26,6 +26,14 @@ interface GreenhouseQuestion {
   readonly fields?: unknown;
 }
 
+interface GreenhouseDemographicQuestion {
+  readonly id?: unknown;
+  readonly required?: unknown;
+  readonly label?: unknown;
+  readonly type?: unknown;
+  readonly answer_options?: unknown;
+}
+
 function parseOptions(fields: readonly GreenhouseField[]) {
   return fields.flatMap((field) =>
     Array.isArray(field.values)
@@ -61,9 +69,7 @@ function parseQuestionGroup(
         )
       : [];
     const fieldTypes = fields.flatMap((field) =>
-      typeof field.type === "string" && field.type !== "input_hidden"
-        ? [field.type]
-        : [],
+      typeof field.type === "string" ? [field.type] : [],
     );
     if (fields.length && !fieldTypes.length) return [];
     const fieldNames = fields.flatMap((field) =>
@@ -86,6 +92,88 @@ function parseQuestionGroup(
   });
 }
 
+function parseDemographicQuestions(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry, index): PublicApplicationQuestion[] => {
+    if (!entry || typeof entry !== "object") return [];
+    const question = entry as GreenhouseDemographicQuestion;
+    if (
+      typeof question.label !== "string" ||
+      !question.label.trim() ||
+      typeof question.type !== "string" ||
+      !question.type.trim()
+    )
+      return [];
+    const options = Array.isArray(question.answer_options)
+      ? question.answer_options.flatMap((candidate) => {
+          if (!candidate || typeof candidate !== "object") return [];
+          const label = (candidate as Record<string, unknown>).label;
+          return typeof label === "string" && label.trim()
+            ? [label.trim()]
+            : [];
+        })
+      : [];
+    const id =
+      typeof question.id === "string" || typeof question.id === "number"
+        ? String(question.id)
+        : String(index + 1);
+    return [
+      {
+        id: `demographic:${id}`,
+        source: "GREENHOUSE",
+        group: "DEMOGRAPHIC",
+        label: question.label.trim(),
+        required: question.required === true,
+        fieldNames: [`demographic_answers[${id}]`],
+        fieldTypes: [question.type.trim()],
+        options: [...new Set(options)],
+      },
+    ];
+  });
+}
+
+function parseDataCompliance(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  const definitions = [
+    ["requires_consent", "gdpr_consent_given", "Data processing consent"],
+    [
+      "requires_processing_consent",
+      "gdpr_processing_consent_given",
+      "Data processing consent",
+    ],
+    [
+      "requires_retention_consent",
+      "gdpr_retention_consent_given",
+      "Data retention consent",
+    ],
+  ] as const;
+  return value.flatMap((entry, index): PublicApplicationQuestion[] => {
+    if (!entry || typeof entry !== "object") return [];
+    const compliance = entry as Record<string, unknown>;
+    return definitions.flatMap(([flag, name, label]) =>
+      compliance[flag] === true &&
+      !(
+        flag === "requires_consent" &&
+        (compliance.requires_processing_consent === true ||
+          compliance.requires_retention_consent === true)
+      )
+        ? [
+            {
+              id: `data-compliance:${index + 1}:${name}`,
+              source: "GREENHOUSE" as const,
+              group: "COMPLIANCE" as const,
+              label,
+              required: true,
+              fieldNames: [`data_compliance[${name}]`],
+              fieldTypes: ["external_consent"],
+              options: [],
+            },
+          ]
+        : [],
+    );
+  });
+}
+
 export function parseGreenhouseApplicationQuestions(payload: unknown) {
   if (!payload || typeof payload !== "object")
     throw new IntegrationError("Greenhouse question response is invalid.");
@@ -103,10 +191,8 @@ export function parseGreenhouseApplicationQuestions(payload: unknown) {
     : [];
   const demographic =
     data.demographic_questions && typeof data.demographic_questions === "object"
-      ? parseQuestionGroup(
+      ? parseDemographicQuestions(
           (data.demographic_questions as Record<string, unknown>).questions,
-          "DEMOGRAPHIC",
-          "demographic",
         )
       : [];
   return [
@@ -114,6 +200,7 @@ export function parseGreenhouseApplicationQuestions(payload: unknown) {
     ...parseQuestionGroup(data.location_questions, "LOCATION", "location"),
     ...compliance,
     ...demographic,
+    ...parseDataCompliance(data.data_compliance),
   ];
 }
 

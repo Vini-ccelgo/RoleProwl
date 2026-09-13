@@ -54,6 +54,29 @@ const payload = {
       ],
     },
   ],
+  demographic_questions: {
+    questions: [
+      {
+        id: 87,
+        required: false,
+        label: "Favorite color",
+        type: "multi_value_multi_select",
+        answer_options: [
+          { id: 100, label: "Red" },
+          { id: 101, label: "Blue" },
+        ],
+      },
+    ],
+  },
+  data_compliance: [
+    {
+      type: "gdpr",
+      requires_consent: true,
+      requires_processing_consent: true,
+      requires_retention_consent: true,
+      retention_period: 365,
+    },
+  ],
 };
 
 describe("Greenhouse application inspector", () => {
@@ -75,6 +98,18 @@ describe("Greenhouse application inspector", () => {
           id: "standard:question_43",
           fieldTypes: ["input_radio"],
           options: ["Remote", "Hybrid"],
+        }),
+        expect.objectContaining({
+          id: "demographic:87",
+          group: "DEMOGRAPHIC",
+          fieldTypes: ["multi_value_multi_select"],
+          options: ["Red", "Blue"],
+        }),
+        expect.objectContaining({
+          id: "data-compliance:1:gdpr_processing_consent_given",
+          group: "COMPLIANCE",
+          required: true,
+          fieldTypes: ["external_consent"],
         }),
       ]),
     );
@@ -103,7 +138,7 @@ describe("Greenhouse application inspector", () => {
       { source: "GREENHOUSE", boardToken: "acme", jobId: "42" },
       request,
     );
-    expect(questions).toHaveLength(5);
+    expect(questions).toHaveLength(8);
     expect(request).toHaveBeenCalledWith(
       "https://boards-api.greenhouse.io/v1/boards/acme/jobs/42?questions=true",
       expect.objectContaining({

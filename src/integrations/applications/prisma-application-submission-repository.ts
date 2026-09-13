@@ -162,7 +162,12 @@ export class PrismaApplicationSubmissionRepository implements ApplicationSubmiss
           type: "SUBMISSION_CONFIRMED",
           fromState: current.state,
           toState: "SUBMITTED",
-          detail: json({ confirmation, externalId: receipt.externalId }),
+          detail: json({
+            confirmation,
+            ...(confirmation === "USER_CONFIRMED_EXTERNAL"
+              ? { roleProwlConfirmationReference: receipt.externalId }
+              : { externalId: receipt.externalId }),
+          }),
         },
       });
       if (
@@ -182,8 +187,14 @@ export class PrismaApplicationSubmissionRepository implements ApplicationSubmiss
           create: {
             userId: current.userId,
             type: "APPLICATION_SUBMITTED",
-            title: "Application submitted",
-            body: "A tracked application now has a confirmed submission record.",
+            title:
+              confirmation === "USER_CONFIRMED_EXTERNAL"
+                ? "External submission recorded"
+                : "Application submitted",
+            body:
+              confirmation === "USER_CONFIRMED_EXTERNAL"
+                ? "Your employer-side success attestation was recorded as candidate-confirmed external submission."
+                : "A tracked application now has a provider-confirmed submission record.",
             entityType: "application",
             entityId: applicationId,
             dedupeKey: `application-submitted:${applicationId}`,

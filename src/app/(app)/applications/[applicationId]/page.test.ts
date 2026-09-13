@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { buildApplicationPacket } from "@/core/domain/applications/application-packet";
 
 const mocks = vi.hoisted(() => ({
   applicationFindFirst: vi.fn(),
@@ -63,6 +64,42 @@ const application = {
   updatedAt: new Date("2026-09-06T11:00:00.000Z"),
 };
 
+const readyPacket = buildApplicationPacket({
+  reviewed: true,
+  source: {
+    accountEmail: "candidate@example.test",
+    profile: {
+      firstName: "Avery",
+      lastName: "Quill",
+      applicationEmail: null,
+      phone: null,
+      location: null,
+      countryCode: null,
+      professionalTitle: "Python Engineer",
+    },
+    verifiedResumeFacts: [],
+    experience: [],
+    education: [],
+    credentials: [],
+    skills: [],
+    languages: [],
+    workAuthorization: null,
+    sponsorshipRequired: null,
+    answerMemories: [],
+    selectedResume: {
+      fileName: "resume.pdf",
+      contentType: "application/pdf",
+      storageKey: "candidate-documents/resume",
+      tailored: false,
+    },
+    coverLetter: null,
+    questions: [],
+    questionInspection: "AVAILABLE",
+    sourceName: "GREENHOUSE",
+    targetRole: "Python Engineer",
+  },
+});
+
 describe("application-detail cover letter workflow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -117,5 +154,58 @@ describe("application-detail cover letter workflow", () => {
     expect(markup).toContain("A grounded Python cover letter.");
     expect(markup).not.toContain("Generate a new cover letter");
     expect(mocks.candidateDocumentsFindMany).not.toHaveBeenCalled();
+  });
+
+  it("uses explicit employer-success attestation for a ready handoff", async () => {
+    mocks.applicationFindFirst.mockResolvedValue({
+      ...application,
+      state: "READY",
+      submissionDestination: "https://job-boards.greenhouse.io/acme/jobs/42",
+      submissionPayloadSnapshot: { packet: readyPacket },
+    });
+    const markup = renderToStaticMarkup(
+      await ApplicationDetailPage({
+        params: Promise.resolve({ applicationId: "application-1" }),
+      }),
+    );
+    expect(markup).toContain("Ready for employer handoff");
+    expect(markup).toContain("click Submit yourself");
+    expect(markup).toContain(
+      "I submitted this application on the employer site and saw a success or confirmation result.",
+    );
+    expect(markup).toContain('name="confirmed"');
+    expect(markup).toContain("required");
+    expect(markup).toContain("Record candidate-confirmed submission");
+    expect(markup).not.toContain("Confirm I submitted it");
+  });
+
+  it("labels candidate-confirmed completion without presenting an employer receipt", async () => {
+    mocks.applicationFindFirst.mockResolvedValue({
+      ...application,
+      state: "SUBMITTED",
+      submittedAt: new Date("2026-09-06T13:00:00.000Z"),
+      externalConfirmedAt: new Date("2026-09-06T13:00:00.000Z"),
+      externalSubmissionId: "external:application-1",
+      events: [
+        {
+          id: "event-1",
+          type: "SUBMISSION_CONFIRMED",
+          fromState: "READY",
+          toState: "SUBMITTED",
+          createdAt: new Date("2026-09-06T13:00:00.000Z"),
+          detail: { confirmation: "USER_CONFIRMED_EXTERNAL" },
+        },
+      ],
+    });
+    const markup = renderToStaticMarkup(
+      await ApplicationDetailPage({
+        params: Promise.resolve({ applicationId: "application-1" }),
+      }),
+    );
+    expect(markup).toContain("Candidate-confirmed external submission");
+    expect(markup).toContain("RoleProwl confirmation reference");
+    expect(markup).toContain("not an employer receipt or ATS ID");
+    expect(markup).toContain("Candidate confirmed external submission");
+    expect(markup).not.toContain("External receipt");
   });
 });

@@ -148,7 +148,15 @@ describe("Greenhouse assisted transfer draft", () => {
     ).toHaveLength(6);
     expect(
       draft.fields.filter((field) => field.id.startsWith("answer:")),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
+    expect(draft.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "answer:location:candidate-location",
+          kind: "HUMAN_REQUIRED",
+        }),
+      ]),
+    );
     expect(JSON.stringify(draft)).not.toContain("candidate-documents/private");
   });
 

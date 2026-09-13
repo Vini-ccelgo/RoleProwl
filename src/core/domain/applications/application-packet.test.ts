@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  applicationPacketCanBeReviewed,
   applicationTransferStatus,
   buildApplicationPacket,
+  materialRequiredQuestionSchemaChanged,
   reconcileApplicationQuestionOverrides,
   type ApplicationPacketSource,
 } from "./application-packet";
@@ -24,7 +26,7 @@ function source(
     selectedResume: null,
     coverLetter: null,
     questions: [],
-    questionInspection: "UNAVAILABLE",
+    questionInspection: "AVAILABLE",
     sourceName: "GREENHOUSE",
     targetRole: "Security Analyst",
     ...overrides,
@@ -364,5 +366,255 @@ describe("application packet", () => {
       status: "RESOLVED",
       value: "Option B",
     });
+  });
+
+  it("identifies an intended résumé without claiming the external file control is complete", () => {
+    const packet = buildApplicationPacket({
+      reviewed: true,
+      source: source({
+        accountEmail: "candidate@example.test",
+        profile: {
+          firstName: "Avery",
+          lastName: "Quill",
+          applicationEmail: null,
+          phone: null,
+          location: null,
+          countryCode: null,
+          professionalTitle: null,
+        },
+        selectedResume: {
+          fileName: "resume.pdf",
+          contentType: "application/pdf",
+          storageKey: "candidate-documents/resume",
+          tailored: false,
+        },
+        questions: [
+          {
+            id: "standard:resume",
+            source: "GREENHOUSE",
+            group: "STANDARD",
+            label: "Résumé/CV",
+            required: true,
+            fieldNames: ["resume"],
+            fieldTypes: ["input_file", "textarea"],
+            options: [],
+          },
+        ],
+      }),
+    });
+    expect(packet.documents[0]).toMatchObject({
+      status: "RESOLVED",
+      externalTransferStatus: "HUMAN_REQUIRED",
+    });
+    expect(packet.answers[0]).toMatchObject({
+      status: "CANDIDATE_REQUIRED_EXTERNAL",
+      value: "resume.pdf",
+      controlDisposition: "CANDIDATE_REQUIRED_EXTERNAL",
+    });
+    expect(packet.completeness.readyForSubmissionHandoff).toBe(true);
+  });
+
+  it.each([
+    ["Portfolio attachment", "portfolio", "portfolio.pdf"],
+    ["Cover letter", "cover_letter", "I wrote a cover letter"],
+  ])(
+    "does not let a scalar override resolve required file control %s",
+    (label, fieldName, override) => {
+      const packet = buildApplicationPacket({
+        reviewed: true,
+        source: source({
+          applicationOverrides: {
+            identity: {},
+            answers: { "standard:file": override },
+          },
+          questions: [
+            {
+              id: "standard:file",
+              source: "GREENHOUSE",
+              group: "STANDARD",
+              label,
+              required: true,
+              fieldNames: [fieldName],
+              fieldTypes: ["input_file"],
+              options: [],
+            },
+          ],
+        }),
+      });
+      expect(packet.answers[0]).toMatchObject({
+        status: "CANDIDATE_REQUIRED_EXTERNAL",
+        value: null,
+      });
+    },
+  );
+
+  it("keeps plural multi-select external while preserving text and single-select behavior", () => {
+    const packet = buildApplicationPacket({
+      reviewed: true,
+      source: source({
+        applicationOverrides: {
+          identity: {},
+          answers: {
+            "standard:multi": "One",
+            "standard:single": "Two",
+            "standard:text": "Prepared answer",
+          },
+        },
+        questions: [
+          {
+            id: "standard:multi",
+            source: "GREENHOUSE",
+            group: "STANDARD",
+            label: "Select all",
+            required: true,
+            fieldNames: ["multi"],
+            fieldTypes: ["multi_value_multi_select"],
+            options: ["One", "Two"],
+          },
+          {
+            id: "standard:single",
+            source: "GREENHOUSE",
+            group: "STANDARD",
+            label: "Select one",
+            required: true,
+            fieldNames: ["single"],
+            fieldTypes: ["multi_value_single_select"],
+            options: ["One", "Two"],
+          },
+          {
+            id: "standard:text",
+            source: "GREENHOUSE",
+            group: "STANDARD",
+            label: "Required text",
+            required: true,
+            fieldNames: ["text"],
+            fieldTypes: ["input_text"],
+            options: [],
+          },
+          {
+            id: "standard:optional",
+            source: "GREENHOUSE",
+            group: "STANDARD",
+            label: "Optional text",
+            required: false,
+            fieldNames: ["optional"],
+            fieldTypes: ["input_text"],
+            options: [],
+          },
+        ],
+      }),
+    });
+    expect(packet.answers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          questionId: "standard:multi",
+          status: "CANDIDATE_REQUIRED_EXTERNAL",
+          value: null,
+        }),
+        expect.objectContaining({
+          questionId: "standard:single",
+          status: "RESOLVED",
+          value: "Two",
+        }),
+        expect.objectContaining({
+          questionId: "standard:text",
+          status: "RESOLVED",
+        }),
+        expect.objectContaining({
+          questionId: "standard:optional",
+          status: "NOT_REQUIRED",
+        }),
+      ]),
+    );
+  });
+
+  it("requires external consent but blocks an unsupported dynamic control", () => {
+    const packet = buildApplicationPacket({
+      reviewed: true,
+      source: source({
+        questions: [
+          {
+            id: "compliance:consent",
+            source: "GREENHOUSE",
+            group: "COMPLIANCE",
+            label: "Consent",
+            required: true,
+            fieldNames: ["data_compliance[gdpr_consent_given]"],
+            fieldTypes: ["external_consent"],
+            options: [],
+          },
+          {
+            id: "standard:widget",
+            source: "GREENHOUSE",
+            group: "STANDARD",
+            label: "Employer widget",
+            required: true,
+            fieldNames: ["widget"],
+            fieldTypes: ["dynamic_widget"],
+            options: [],
+          },
+        ],
+      }),
+    });
+    expect(packet.answers[0]?.status).toBe("CANDIDATE_REQUIRED_EXTERNAL");
+    expect(packet.answers[1]?.status).toBe("UNSUPPORTED");
+    expect(packet.completeness.readyForSubmissionHandoff).toBe(false);
+    expect(applicationPacketCanBeReviewed(packet)).toBe(false);
+  });
+
+  it("blocks Greenhouse readiness when current question inspection is unavailable", () => {
+    const packet = buildApplicationPacket({
+      reviewed: true,
+      source: source({
+        accountEmail: "candidate@example.test",
+        profile: {
+          firstName: "Avery",
+          lastName: "Quill",
+          applicationEmail: null,
+          phone: null,
+          location: null,
+          countryCode: null,
+          professionalTitle: null,
+        },
+        selectedResume: {
+          fileName: "resume.pdf",
+          contentType: "application/pdf",
+          storageKey: "candidate-documents/resume",
+          tailored: false,
+        },
+        questionInspection: "UNAVAILABLE",
+      }),
+    });
+    expect(packet.completeness.readyForSubmissionHandoff).toBe(false);
+    expect(applicationPacketCanBeReviewed(packet)).toBe(false);
+  });
+
+  it("compares only deterministic material required-question schema", () => {
+    const question = {
+      id: "standard:old-id",
+      source: "GREENHOUSE" as const,
+      group: "STANDARD" as const,
+      label: "Preferred shift",
+      required: true,
+      fieldNames: ["question_42"],
+      fieldTypes: ["multi_value_single_select"],
+      options: ["Day", "Night"],
+    };
+    const previous = buildApplicationPacket({
+      reviewed: false,
+      source: source({ questions: [question] }),
+    });
+    expect(
+      materialRequiredQuestionSchemaChanged({
+        previousAnswers: previous.answers,
+        questions: [{ ...question, id: "standard:new-id" }],
+      }),
+    ).toBe(false);
+    expect(
+      materialRequiredQuestionSchemaChanged({
+        previousAnswers: previous.answers,
+        questions: [{ ...question, options: ["Day", "Night", "Flexible"] }],
+      }),
+    ).toBe(true);
   });
 });

@@ -10,7 +10,7 @@ export interface GreenhouseTransferField {
   readonly fieldNames: readonly string[];
   readonly fieldTypes: readonly string[];
   readonly options: readonly string[];
-  readonly kind: "TEXT" | "CHOICE" | "DOCUMENT";
+  readonly kind: "TEXT" | "CHOICE" | "DOCUMENT" | "HUMAN_REQUIRED";
 }
 
 export interface GreenhouseTransferDraft {
@@ -98,29 +98,48 @@ export function buildGreenhouseTransferDraft(input: {
         ),
       ),
     )?.[0];
-  const answers = input.packet.answers.flatMap((answer) =>
-    answer.status === "RESOLVED" &&
-    answer.value &&
-    !(
-      ["STANDARD", "LOCATION"].includes(answer.questionGroup ?? "") &&
-      projectedIdentityKeys.has(canonicalIdentityKey(answer.fieldNames) ?? "")
-    )
-      ? [
+  const answers: GreenhouseTransferField[] = input.packet.answers.flatMap(
+    (answer): GreenhouseTransferField[] => {
+      if (
+        answer.status === "CANDIDATE_REQUIRED_EXTERNAL" &&
+        answer.classification !== "DOCUMENT"
+      )
+        return [
           {
             id: `answer:${answer.questionId}`,
             label: answer.label,
-            value: answer.value,
+            value: answer.value ?? "",
             fieldNames: answer.fieldNames,
             fieldTypes: answer.fieldTypes,
             options: answer.options,
-            kind: answer.fieldTypes.some((type) => type === "input_file")
-              ? ("DOCUMENT" as const)
-              : answer.options.length
-                ? ("CHOICE" as const)
-                : ("TEXT" as const),
+            kind: "HUMAN_REQUIRED",
           },
-        ]
-      : [],
+        ];
+      if (
+        answer.status !== "RESOLVED" ||
+        !answer.value ||
+        (["STANDARD", "LOCATION"].includes(answer.questionGroup ?? "") &&
+          projectedIdentityKeys.has(
+            canonicalIdentityKey(answer.fieldNames) ?? "",
+          ))
+      )
+        return [];
+      return [
+        {
+          id: `answer:${answer.questionId}`,
+          label: answer.label,
+          value: answer.value,
+          fieldNames: answer.fieldNames,
+          fieldTypes: answer.fieldTypes,
+          options: answer.options,
+          kind: answer.fieldTypes.some((type) => type === "input_file")
+            ? "DOCUMENT"
+            : answer.options.length
+              ? "CHOICE"
+              : "TEXT",
+        },
+      ];
+    },
   );
   const resume = input.packet.documents.find(
     (document) => document.kind === "RESUME",

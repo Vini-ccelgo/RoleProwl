@@ -32,7 +32,7 @@ export function applicationStateLabel(state: ApplicationState) {
     SHORTLISTED: "Shortlisted",
     PREPARING: "Preparing",
     NEEDS_REVIEW: "Needs review",
-    READY: "Ready for employer submission",
+    READY: "Ready for employer handoff",
     SUBMITTING: "Submitting",
     SUBMITTED: "Submitted",
     RESPONSE: "Employer response",
@@ -44,6 +44,15 @@ export function applicationStateLabel(state: ApplicationState) {
     FAILED: "Preparation failed",
   };
   return labels[state];
+}
+
+export function applicationRecordedStateLabel(input: {
+  readonly state: ApplicationState;
+  readonly externalConfirmedAt: Date | null;
+}) {
+  return input.state === "SUBMITTED" && input.externalConfirmedAt
+    ? "Candidate-confirmed external submission"
+    : applicationStateLabel(input.state);
 }
 
 export function applicationNextAction(state: ApplicationState) {
@@ -68,14 +77,23 @@ export function applicationOutcomeActionLabel(state: ApplicationState) {
   return labels[state] ?? applicationStateLabel(state);
 }
 
-export function applicationEventLabel(type: string) {
+export function applicationEventLabel(type: string, detail?: unknown) {
   const labels: Readonly<Record<string, string>> = {
     PREPARED: "Application materials prepared",
-    READY_FOR_EXTERNAL_SUBMISSION: "Ready for employer submission",
+    READY_FOR_EXTERNAL_SUBMISSION: "Ready for employer handoff",
     SUBMISSION_STARTED: "Submission started",
     SUBMISSION_CONFIRMED: "Submission confirmed",
     SUBMISSION_FAILED: "Submission failed",
     STATE_CHANGED: "Application state updated",
   };
+  if (
+    type === "SUBMISSION_CONFIRMED" &&
+    detail &&
+    typeof detail === "object" &&
+    !Array.isArray(detail) &&
+    (detail as { confirmation?: unknown }).confirmation ===
+      "USER_CONFIRMED_EXTERNAL"
+  )
+    return "Candidate confirmed external submission";
   return labels[type] ?? type.replaceAll("_", " ").toLowerCase();
 }

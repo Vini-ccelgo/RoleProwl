@@ -2,6 +2,7 @@ import "server-only";
 import {
   buildApplicationPacket,
   isApplicationPacket,
+  materialRequiredQuestionSchemaChanged,
   parseApplicationPacketOverrides,
   reconcileApplicationQuestionOverrides,
   type ApplicationPacketSource,
@@ -147,6 +148,15 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
       previousAnswers: previousPacket?.answers ?? [],
       questions,
     });
+    const reviewInvalidated = Boolean(
+      input.reviewed &&
+      previousPacket &&
+      materialRequiredQuestionSchemaChanged({
+        previousAnswers: previousPacket.answers ?? [],
+        questions,
+      }),
+    );
+    const effectiveReviewed = input.reviewed && !reviewInvalidated;
 
     const [
       user,
@@ -317,7 +327,10 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
     };
     const packet = buildApplicationPacket({
       source,
-      reviewed: input.reviewed,
+      reviewed: effectiveReviewed,
+      reviewInvalidatedReason: reviewInvalidated
+        ? "MATERIAL_REQUIRED_QUESTION_SCHEMA_CHANGED"
+        : null,
     });
     const generatedText = Object.fromEntries(
       unique(writingArtifacts.map((artifact) => artifact.type)).map((type) => [
@@ -345,7 +358,7 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
         })),
     ];
     const desiredState =
-      input.reviewed && packet.completeness.readyForSubmissionHandoff
+      effectiveReviewed && packet.completeness.readyForSubmissionHandoff
         ? ("READY" as const)
         : application.state === "FAILED"
           ? ("PREPARING" as const)
@@ -402,7 +415,8 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
           toState: desiredState,
           detail: json({
             packetVersion: packet.version,
-            reviewed: input.reviewed,
+            reviewed: effectiveReviewed,
+            reviewInvalidated,
             ready: packet.completeness.readyForSubmissionHandoff,
           }),
         },

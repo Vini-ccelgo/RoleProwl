@@ -5,7 +5,15 @@ import type { PublicApplicationQuestion } from "./public-application-question";
 export const APPLICATION_PACKET_VERSION = "application-packet-v1";
 
 export type ApplicationFieldStatus =
-  "RESOLVED" | "UNRESOLVED" | "CONFLICTING" | "NOT_REQUIRED" | "UNSUPPORTED";
+  | "RESOLVED"
+  | "UNRESOLVED"
+  | "CONFLICTING"
+  | "NOT_REQUIRED"
+  | "CANDIDATE_REQUIRED_EXTERNAL"
+  | "UNSUPPORTED";
+
+export type ApplicationQuestionControlDisposition =
+  "ROLEPROWL_RESOLVED" | "CANDIDATE_REQUIRED_EXTERNAL" | "UNSUPPORTED";
 
 export type ApplicationTransferStatus =
   | "NOT_ATTEMPTED"
@@ -49,6 +57,7 @@ export interface ApplicationPacketDocument {
   readonly storageKey: string | null;
   readonly status: ApplicationFieldStatus;
   readonly provenance: readonly ApplicationPacketProvenance[];
+  readonly externalTransferStatus?: "HUMAN_REQUIRED";
 }
 
 export interface ApplicationPacketAnswer extends ApplicationPacketField {
@@ -58,6 +67,7 @@ export interface ApplicationPacketAnswer extends ApplicationPacketField {
   readonly fieldNames: readonly string[];
   readonly fieldTypes: readonly string[];
   readonly options: readonly string[];
+  readonly controlDisposition?: ApplicationQuestionControlDisposition;
 }
 
 export const APPLICATION_IDENTITY_KEYS = [
@@ -129,6 +139,8 @@ export interface ApplicationPacket {
   readonly version: typeof APPLICATION_PACKET_VERSION;
   readonly builtAt: string;
   readonly reviewedAt: string | null;
+  readonly reviewInvalidatedReason?:
+    "MATERIAL_REQUIRED_QUESTION_SCHEMA_CHANGED" | null;
   readonly source: {
     readonly name: string;
     readonly inspection: "AVAILABLE" | "UNAVAILABLE" | "UNSUPPORTED";
@@ -222,6 +234,68 @@ export interface ApplicationPacketSource {
 
 function normalizedQuestionLabel(value: string) {
   return value.normalize("NFKC").replace(/\s+/gu, " ").trim().toLowerCase();
+}
+
+const ROLEPROWL_SUPPORTED_QUESTION_TYPES = new Set([
+  "input_text",
+  "textarea",
+  "multi_value_single_select",
+  "input_radio",
+]);
+
+export function applicationQuestionControlDisposition(
+  question: PublicApplicationQuestion,
+): ApplicationQuestionControlDisposition {
+  const searchable = normalizedQuestionLabel(
+    `${question.label} ${question.fieldNames.join(" ")}`,
+  );
+  if (
+    ["COMPLIANCE", "DEMOGRAPHIC", "LOCATION"].includes(question.group) ||
+    question.fieldTypes.includes("input_file") ||
+    question.fieldTypes.includes("multi_value_multi_select") ||
+    question.fieldTypes.includes("external_consent") ||
+    /\b(?:consent|privacy|terms|attest|signature)\b/iu.test(searchable)
+  )
+    return "CANDIDATE_REQUIRED_EXTERNAL";
+  if (
+    question.fieldTypes.length !== 1 ||
+    !ROLEPROWL_SUPPORTED_QUESTION_TYPES.has(question.fieldTypes[0]!)
+  )
+    return "UNSUPPORTED";
+  return "ROLEPROWL_RESOLVED";
+}
+
+function materialQuestionSchemaEntry(input: {
+  readonly group?: PublicApplicationQuestion["group"];
+  readonly label: string;
+  readonly required: boolean;
+  readonly fieldTypes: readonly string[];
+  readonly options: readonly string[];
+}) {
+  return JSON.stringify({
+    group: input.group ?? "STANDARD",
+    label: normalizedQuestionLabel(input.label),
+    required: input.required,
+    fieldTypes: [...(input.fieldTypes ?? [])]
+      .map(normalizedQuestionLabel)
+      .sort(),
+    options: [...(input.options ?? [])].map(normalizedQuestionLabel).sort(),
+  });
+}
+
+export function materialRequiredQuestionSchemaChanged(input: {
+  readonly previousAnswers: readonly ApplicationPacketAnswer[];
+  readonly questions: readonly PublicApplicationQuestion[];
+}) {
+  const previous = input.previousAnswers
+    .filter((answer) => answer.required)
+    .map(materialQuestionSchemaEntry)
+    .sort();
+  const current = input.questions
+    .filter((question) => question.required)
+    .map(materialQuestionSchemaEntry)
+    .sort();
+  return JSON.stringify(previous) !== JSON.stringify(current);
 }
 
 export function reconcileApplicationQuestionOverrides(input: {
@@ -395,6 +469,38 @@ function packetFieldForQuestion(
   reviewed: boolean,
 ): ApplicationPacketAnswer {
   const searchable = `${question.label} ${question.fieldNames.join(" ")}`;
+  const controlDisposition = applicationQuestionControlDisposition(question);
+  if (controlDisposition !== "ROLEPROWL_RESOLVED") {
+    const selected = /\b(?:resume|résumé|cv)\b/iu.test(searchable)
+      ? source.selectedResume
+      : null;
+    return {
+      key: `question:${question.id}`,
+      questionId: question.id,
+      questionGroup: question.group,
+      label: question.label,
+      required: question.required,
+      status: question.required ? controlDisposition : "NOT_REQUIRED",
+      value: selected?.fileName ?? null,
+      provenance: selected
+        ? [
+            {
+              source: selected.tailored
+                ? "TAILORED_RESUME"
+                : "CANDIDATE_DOCUMENT",
+              label: selected.tailored
+                ? "Job-specific tailored résumé"
+                : "Candidate-uploaded résumé",
+            },
+          ]
+        : [],
+      classification: selected ? "DOCUMENT" : "EXTERNAL_CONTROL",
+      fieldNames: question.fieldNames,
+      fieldTypes: question.fieldTypes,
+      options: question.options,
+      controlDisposition,
+    };
+  }
   const applicationSpecific = clean(
     source.applicationOverrides?.answers[question.id],
   );
@@ -426,6 +532,7 @@ function packetFieldForQuestion(
       fieldNames: question.fieldNames,
       fieldTypes: question.fieldTypes,
       options: question.options,
+      controlDisposition,
       ...(question.options.length > 0 &&
       !question.options.includes(applicationSpecific)
         ? { alternatives: question.options }
@@ -463,6 +570,7 @@ function packetFieldForQuestion(
       fieldNames: question.fieldNames,
       fieldTypes: question.fieldTypes,
       options: question.options,
+      controlDisposition,
     };
 
   if (/\b(?:resume|résumé|cv)\b/iu.test(searchable)) {
@@ -497,6 +605,7 @@ function packetFieldForQuestion(
       fieldNames: question.fieldNames,
       fieldTypes: question.fieldTypes,
       options: question.options,
+      controlDisposition,
     };
   }
 
@@ -563,6 +672,7 @@ function packetFieldForQuestion(
     fieldNames: question.fieldNames,
     fieldTypes: question.fieldTypes,
     options: question.options,
+    controlDisposition,
   };
 }
 
@@ -604,6 +714,8 @@ export function buildApplicationPacket(input: {
   readonly source: ApplicationPacketSource;
   readonly reviewed: boolean;
   readonly now?: Date;
+  readonly reviewInvalidatedReason?:
+    "MATERIAL_REQUIRED_QUESTION_SCHEMA_CHANGED" | null;
 }): ApplicationPacket {
   const now = input.now ?? new Date();
   const source = input.source;
@@ -696,6 +808,7 @@ export function buildApplicationPacket(input: {
           },
         ]
       : [],
+    externalTransferStatus: "HUMAN_REQUIRED",
   };
   const documents = [resume];
   if (source.coverLetter)
@@ -726,7 +839,9 @@ export function buildApplicationPacket(input: {
   ];
   const needsReview = reviewFields.filter(
     (candidate) =>
-      candidate.status === "UNRESOLVED" || candidate.status === "CONFLICTING",
+      candidate.status === "UNRESOLVED" ||
+      candidate.status === "CONFLICTING" ||
+      candidate.status === "UNSUPPORTED",
   ).length;
   const resolved = [...identity, ...documents, ...answers].filter(
     (candidate) => candidate.status === "RESOLVED",
@@ -749,6 +864,17 @@ export function buildApplicationPacket(input: {
           },
         ]
       : []),
+    ...answers
+      .filter(
+        (answer) =>
+          answer.required &&
+          answer.status === "CANDIDATE_REQUIRED_EXTERNAL" &&
+          answer.classification !== "DOCUMENT",
+      )
+      .map((answer) => ({
+        label: `Complete ${answer.label} on the employer form.`,
+        status: "HUMAN_REQUIRED" as const,
+      })),
   ];
   const transferFields: ApplicationFieldTransfer[] = [
     ...identity.map((candidate) => ({
@@ -767,7 +893,9 @@ export function buildApplicationPacket(input: {
       status:
         answer.status === "RESOLVED"
           ? ("NOT_ATTEMPTED" as const)
-          : ("UNSUPPORTED" as const),
+          : answer.status === "CANDIDATE_REQUIRED_EXTERNAL"
+            ? ("HUMAN_REQUIRED" as const)
+            : ("UNSUPPORTED" as const),
     })),
   ];
   const professionalProvenance: ApplicationPacketProvenance[] = [];
@@ -791,6 +919,7 @@ export function buildApplicationPacket(input: {
     version: APPLICATION_PACKET_VERSION,
     builtAt: now.toISOString(),
     reviewedAt: input.reviewed ? now.toISOString() : null,
+    reviewInvalidatedReason: input.reviewInvalidatedReason ?? null,
     source: { name: source.sourceName, inspection: source.questionInspection },
     identity,
     professional: {
@@ -832,9 +961,20 @@ export function buildApplicationPacket(input: {
         (candidate) => candidate.status === "RESOLVED",
       ).length,
       needsReview,
-      humanRequired: humanSteps.length,
+      humanRequired:
+        humanSteps.length +
+        answers.filter(
+          (answer) =>
+            answer.required &&
+            answer.status === "CANDIDATE_REQUIRED_EXTERNAL" &&
+            answer.classification === "DOCUMENT",
+        ).length,
       unsupported,
-      readyForSubmissionHandoff: input.reviewed && needsReview === 0,
+      readyForSubmissionHandoff:
+        input.reviewed &&
+        needsReview === 0 &&
+        (source.sourceName !== "GREENHOUSE" ||
+          source.questionInspection === "AVAILABLE"),
     },
     transfer: {
       mechanism: "MANUAL_ASSISTED",
@@ -863,13 +1003,13 @@ export function applicationPacketCanBeReviewed(packet: ApplicationPacket) {
     (document) => document.kind === "RESUME",
   );
   return Boolean(
+    (packet.source.name !== "GREENHOUSE" ||
+      packet.source.inspection === "AVAILABLE") &&
     resume?.storageKey &&
     requiredFields.every(
       (field) =>
         field.status === "RESOLVED" ||
-        ("classification" in field &&
-          field.classification === "DOCUMENT" &&
-          Boolean(field.value)),
+        field.status === "CANDIDATE_REQUIRED_EXTERNAL",
     ),
   );
 }

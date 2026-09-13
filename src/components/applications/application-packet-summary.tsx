@@ -28,11 +28,21 @@ function Field({ field }: { readonly field: ApplicationPacketField }) {
         </div>
       ) : (
         <span className="text-sm text-foreground-muted">
-          {field.required
-            ? "Required value needs review."
-            : "No value required for this packet."}
+          {field.status === "CANDIDATE_REQUIRED_EXTERNAL"
+            ? "Complete or verify this on the employer form."
+            : field.status === "UNSUPPORTED"
+              ? "RoleProwl cannot safely represent this required control."
+              : field.required
+                ? "Required value needs review."
+                : "No value required for this packet."}
         </span>
       )}
+      {field.value && field.status === "CANDIDATE_REQUIRED_EXTERNAL" ? (
+        <span className="text-xs text-foreground-muted">
+          Intended value is known, but you must complete or verify this control
+          on the employer form.
+        </span>
+      ) : null}
       {field.alternatives?.length ? (
         <span className="text-xs text-foreground-muted">
           Other known value{field.alternatives.length === 1 ? "" : "s"}:{" "}
@@ -96,7 +106,16 @@ export function ApplicationPacketSummary({
   const packet: ApplicationPacket = value;
   const answers = packet.answers ?? [];
   const needsReview = [...packet.identity, ...answers].filter(
-    (field) => field.status === "UNRESOLVED" || field.status === "CONFLICTING",
+    (field) =>
+      field.status === "UNRESOLVED" ||
+      field.status === "CONFLICTING" ||
+      field.status === "UNSUPPORTED",
+  );
+  const candidateRequired = answers.filter(
+    (field) => field.status === "CANDIDATE_REQUIRED_EXTERNAL",
+  );
+  const roleProwlPrepared = [...packet.identity, ...answers].filter(
+    (field) => field.status === "RESOLVED",
   );
   const editableBlockers = needsReview.filter(
     (field) =>
@@ -149,10 +168,25 @@ export function ApplicationPacketSummary({
             }
           />
         </div>
+        {packet.source.name === "GREENHOUSE" &&
+        packet.source.inspection !== "AVAILABLE" ? (
+          <p className="m-0 rounded-lg border border-brand p-3 text-sm">
+            RoleProwl could not inspect the current employer question schema.
+            This packet cannot be marked ready for employer handoff until the
+            schema is available and reviewed.
+          </p>
+        ) : null}
+        {packet.reviewInvalidatedReason ===
+        "MATERIAL_REQUIRED_QUESTION_SCHEMA_CHANGED" ? (
+          <p className="m-0 rounded-lg border border-brand p-3 text-sm">
+            The employer changed a required question or control after your last
+            review. Review the rebuilt packet again before handoff.
+          </p>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-4">
           {[
             ["Known", packet.completeness.known],
-            ["Ready", packet.completeness.ready],
+            ["RoleProwl prepared", packet.completeness.ready],
             ["Needs review", packet.completeness.needsReview],
             ["Human required", packet.completeness.humanRequired],
           ].map(([label, count]) => (
@@ -250,6 +284,12 @@ export function ApplicationPacketSummary({
               <p className="safe-filename m-0 min-w-0 text-sm text-foreground-muted">
                 {document.fileName ?? "No document selected"}
               </p>
+              {document.fileName ? (
+                <p className="m-0 text-xs text-foreground-muted">
+                  Available in RoleProwl for handoff; not attached to the
+                  employer form. Attach it there if required.
+                </p>
+              ) : null}
               {document.kind === "RESUME" &&
               document.fileName &&
               resumeDownloadAvailable ? (
@@ -282,6 +322,37 @@ export function ApplicationPacketSummary({
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
+        <section className="card grid gap-3 p-5">
+          <h2 className="text-base font-semibold">RoleProwl prepared</h2>
+          <p className="m-0 text-sm">
+            These values are represented in this packet. This does not mean the
+            employer form has accepted them.
+          </p>
+          <ul className="m-0 grid gap-1 pl-5 text-sm">
+            {roleProwlPrepared.map((field) => (
+              <li key={field.key}>{field.label}</li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="card grid gap-3 border-brand p-5">
+          <h2 className="text-base font-semibold">
+            Complete on the employer form
+          </h2>
+          <p className="m-0 text-sm">
+            You remain responsible for required files, consent, dynamic
+            controls, CAPTCHA or authentication, final review, and Submit.
+          </p>
+          <ul className="m-0 grid gap-1 pl-5 text-sm">
+            {candidateRequired.map((field) => (
+              <li key={field.key}>{field.label}</li>
+            ))}
+            {packet.transfer.humanSteps.map((step) => (
+              <li key={step.label}>{step.label}</li>
+            ))}
+          </ul>
+        </section>
+
         <section className="card grid gap-3 border-brand p-5">
           <h2 className="text-base font-semibold">Needs review</h2>
           {needsReview.length ? (
@@ -313,8 +384,8 @@ export function ApplicationPacketSummary({
             {packet.transfer.status.replaceAll("_", " ").toLowerCase()}
           </p>
           <p className="m-0 text-sm">
-            RoleProwl has mapped these values but has not claimed they were
-            transferred.
+            RoleProwl has mapped supported values but has not claimed they were
+            transferred, validated, or accepted by Greenhouse.
           </p>
           <ul className="m-0 grid gap-1 pl-5 text-sm">
             {packet.transfer.humanSteps.map((step) => (

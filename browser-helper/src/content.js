@@ -179,7 +179,8 @@
   }
 
   function fillField(document, field, used) {
-    if (field.kind === "DOCUMENT") return "HUMAN_REQUIRED";
+    if (["DOCUMENT", "HUMAN_REQUIRED"].includes(field.kind))
+      return "HUMAN_REQUIRED";
     const matches = candidateElements(document, field).filter(
       (element) => !used.has(element),
     );

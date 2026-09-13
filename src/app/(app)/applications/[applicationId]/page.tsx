@@ -16,6 +16,7 @@ import {
   APPLICATION_OUTCOME_POLICY_COPY,
   applicationEventLabel,
   applicationOutcomeActionLabel,
+  applicationRecordedStateLabel,
   applicationStateLabel,
 } from "@/features/applications/application-presentation";
 import {
@@ -170,7 +171,7 @@ export default async function ApplicationDetailPage({
     application.state === "READY" &&
     packet?.completeness.readyForSubmissionHandoff !== true
       ? "Packet refresh required"
-      : applicationStateLabel(application.state);
+      : applicationRecordedStateLabel(application);
   const greenhouseTransfer = assistedTransferDraft(
     canConfirmExternal ? packet : null,
     application.submissionDestination,
@@ -215,10 +216,17 @@ export default async function ApplicationDetailPage({
               </dd>
             </div>
             <div>
-              <dt className="font-semibold">External receipt</dt>
+              <dt className="font-semibold">
+                RoleProwl confirmation reference
+              </dt>
               <dd className="m-0">
                 <Unknown>{application.externalSubmissionId}</Unknown>
               </dd>
+              {application.externalSubmissionId ? (
+                <dd className="m-0 text-xs text-foreground-muted">
+                  RoleProwl-generated; not an employer receipt or ATS ID.
+                </dd>
+              ) : null}
             </div>
           </dl>
         </div>
@@ -240,7 +248,7 @@ export default async function ApplicationDetailPage({
               </dd>
             </div>
             <div>
-              <dt className="font-semibold">External confirmation</dt>
+              <dt className="font-semibold">Candidate external confirmation</dt>
               <dd className="m-0">
                 <Unknown>
                   {application.externalConfirmedAt?.toLocaleString()}
@@ -292,7 +300,7 @@ export default async function ApplicationDetailPage({
           <h2 className="text-base font-semibold">Review required</h2>
           <p className="m-0 text-sm">
             Resolve the pending review item before marking this application
-            ready for employer submission.
+            ready for employer handoff.
           </p>
           <Link className="font-semibold text-brand" href="/queue">
             Open review queue →
@@ -358,9 +366,10 @@ export default async function ApplicationDetailPage({
         <section className="card grid gap-3 border-brand p-5">
           <h2 className="text-base font-semibold">Continue manually</h2>
           <p className="m-0 text-sm">
-            Open the employer&apos;s site and complete the application yourself.
-            RoleProwl will not mark it submitted until you confirm that you
-            submitted it.
+            RoleProwl prepared the supported packet values. Open the official
+            employer site, transfer or enter them, attach required files,
+            complete human-required controls, review the form, and click Submit
+            yourself.
           </p>
           <div className="flex flex-wrap gap-2">
             {application.submissionDestination && (
@@ -373,19 +382,28 @@ export default async function ApplicationDetailPage({
                 Continue on employer site
               </a>
             )}
-            <form action={confirmExternalApplicationAction}>
+            <form
+              action={confirmExternalApplicationAction}
+              className="grid max-w-xl gap-2"
+            >
               <input
                 name="applicationId"
                 type="hidden"
                 value={application.id}
               />
-              <button
-                className="button button-secondary"
-                name="confirmed"
-                type="submit"
-                value="yes"
-              >
-                Confirm I submitted it
+              <label className="flex items-start gap-2 text-sm">
+                <input name="confirmed" required type="checkbox" value="yes" />
+                <span>
+                  I submitted this application on the employer site and saw a
+                  success or confirmation result.
+                </span>
+              </label>
+              <p className="m-0 text-xs text-foreground-muted">
+                Use this only after employer-side success. RoleProwl cannot
+                independently verify it.
+              </p>
+              <button className="button button-secondary" type="submit">
+                Record candidate-confirmed submission
               </button>
             </form>
           </div>
@@ -435,8 +453,10 @@ export default async function ApplicationDetailPage({
           <ol className="grid gap-3 pl-5 text-sm">
             {application.events.map((event) => (
               <li key={event.id}>
-                <strong>{applicationEventLabel(event.type)}</strong> ·{" "}
-                {event.createdAt.toLocaleString()}
+                <strong>
+                  {applicationEventLabel(event.type, event.detail)}
+                </strong>{" "}
+                · {event.createdAt.toLocaleString()}
                 <br />
                 <span className="text-foreground-muted">
                   {event.fromState

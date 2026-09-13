@@ -39,6 +39,9 @@ class MemoryRepository implements ApplicationSubmissionRepository {
   preparedInput:
     Parameters<ApplicationSubmissionRepository["prepare"]>[0] | null = null;
   record: ApplicationSubmissionRecord | null = null;
+  confirmation:
+    Parameters<ApplicationSubmissionRepository["markSubmitted"]>[3] | null =
+    null;
 
   async prepare(
     input: Parameters<ApplicationSubmissionRepository["prepare"]>[0],
@@ -64,7 +67,15 @@ class MemoryRepository implements ApplicationSubmissionRepository {
     this.record = { ...this.required(), state: "SUBMITTING" };
   }
 
-  async markSubmitted() {
+  async markSubmitted(
+    _applicationId: string,
+    _userId: string,
+    _receipt: Parameters<ApplicationSubmissionRepository["markSubmitted"]>[2],
+    confirmation: Parameters<
+      ApplicationSubmissionRepository["markSubmitted"]
+    >[3],
+  ) {
+    this.confirmation = confirmation;
     this.record = { ...this.required(), state: "SUBMITTED" };
     return this.record;
   }
@@ -221,6 +232,38 @@ describe("honest application submission", () => {
         confirmedAt: new Date(),
       }),
     ).toMatchObject({ state: "SUBMITTED" });
+    expect(repository.confirmation).toBe("USER_CONFIRMED_EXTERNAL");
+  });
+
+  it("rejects external confirmation before READY or for another candidate", async () => {
+    const repository = new MemoryRepository();
+    const base: ApplicationSubmissionRecord = {
+      applicationId: "application-1",
+      destinationUrl: applicationPackage.destinationUrl,
+      mechanism: "EXTERNAL_APPLICATION",
+      package: applicationPackage,
+      state: "PREPARING",
+      userId: "user-1",
+    };
+    await expect(
+      confirmExternalSubmission({
+        application: base,
+        repository,
+        userId: "user-1",
+        confirmed: true,
+        confirmedAt: new Date(),
+      }),
+    ).rejects.toThrow("Only a ready external application");
+    await expect(
+      confirmExternalSubmission({
+        application: { ...base, state: "READY" },
+        repository,
+        userId: "user-2",
+        confirmed: true,
+        confirmedAt: new Date(),
+      }),
+    ).rejects.toThrow("does not belong to this user");
+    expect(repository.confirmation).toBeNull();
   });
 
   it("rejects insecure or credential-bearing external destinations", async () => {
