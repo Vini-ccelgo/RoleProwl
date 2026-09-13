@@ -3,7 +3,11 @@ import type {
   CandidateKnowledgeConcept,
   CandidateKnowledgeQueryResult,
 } from "@/core/domain/candidate/candidate-knowledge";
-import { normalizeLanguageKey } from "@/core/domain/candidate/candidate-knowledge";
+import {
+  jurisdictionCandidateKnowledgeConcept,
+  legacyUsCandidateKnowledgeAlias,
+  normalizeLanguageKey,
+} from "@/core/domain/candidate/candidate-knowledge";
 import type {
   ApplicationQuestionResolution,
   ResolvableApplicationQuestion,
@@ -37,24 +41,6 @@ const CONCEPT_PATTERNS: readonly [
   ["PHONE", [/\b(?:phone|telephone|telefone|celular)\b/iu]],
   ["LINKEDIN_URL", [/\blinked\s*in\b/iu]],
   ["WEBSITE_URL", [/\b(?:website|portfolio|site pessoal)\b/iu]],
-  [
-    "US_WORK_AUTHORIZATION",
-    [
-      /\b(?:authorized|eligible|permitted) to work (?:in|within) (?:the )?(?:u\.?s\.?|united states)\b/iu,
-      /\b(?:u\.?s\.?|united states) work authorization\b/iu,
-      /\bautorizad[oa] a trabalhar nos estados unidos\b/iu,
-    ],
-  ],
-  [
-    "US_FUTURE_SPONSORSHIP",
-    [
-      /\b(?:now or in the future).{0,30}(?:sponsorship|sponsor|visa)\b/iu,
-      /\b(?:require|need).{0,25}(?:sponsorship|sponsor)\b/iu,
-      /\b(?:visa|employment) sponsorship\b/iu,
-      /\b(?:precisar[aá]|necessita).{0,25}(?:patroc[ií]nio|sponsor).{0,20}(?:visto)?\b/iu,
-      /\bpatroc[ií]nio de visto\b/iu,
-    ],
-  ],
   [
     "CURRENT_EMPLOYMENT_STATUS",
     [
@@ -136,6 +122,166 @@ const CONCEPT_PATTERNS: readonly [
   ],
 ];
 
+type JurisdictionSensitiveFamily =
+  "WORK_AUTHORIZATION" | "SPONSORSHIP_REQUIREMENT";
+
+export interface ApplicationJurisdictionContext {
+  readonly jobLocations?: readonly string[] | null;
+}
+
+const AUTHORIZATION_PATTERNS = [
+  /\b(?:authorized|eligible|permitted|legally able) to work\b/iu,
+  /\bwork authorization\b/iu,
+  /\bautoriza[cç][aã]o para trabalhar\b/iu,
+  /\b(?:possui|tem|legalmente|est[aá])?.{0,18}autorizad[oa] a trabalhar\b/iu,
+] as const;
+const SPONSORSHIP_PATTERNS = [
+  /\b(?:now or in the future).{0,30}(?:sponsorship|sponsor|visa)\b/iu,
+  /\b(?:require|need).{0,25}(?:sponsorship|sponsor)\b/iu,
+  /\b(?:visa|employment|immigration) sponsorship\b/iu,
+  /\b(?:precisar[aá]|necessita|requer).{0,25}(?:patroc[ií]nio|sponsor).{0,20}(?:visto)?\b/iu,
+  /\bpatroc[ií]nio de visto\b/iu,
+] as const;
+
+function jurisdictionSensitiveFamily(
+  question: PublicApplicationQuestion,
+): JurisdictionSensitiveFamily | null {
+  const value = searchable(question);
+  if (AUTHORIZATION_PATTERNS.some((pattern) => pattern.test(value)))
+    return "WORK_AUTHORIZATION";
+  if (SPONSORSHIP_PATTERNS.some((pattern) => pattern.test(value)))
+    return "SPONSORSHIP_REQUIREMENT";
+  return null;
+}
+
+function explicitCountryCode(value: string) {
+  const normalizedValue = normalized(value).toLocaleLowerCase("en-US");
+  const found = new Set<string>();
+  if (/\b(?:brazil|brasil)\b/iu.test(normalizedValue)) found.add("BR");
+  if (
+    /\b(?:united states(?: of america)?|u\.s(?:\.a)?\.?|usa|estados unidos)(?=\W|$)/iu.test(
+      normalizedValue,
+    )
+  )
+    found.add("US");
+  return found.size === 0
+    ? undefined
+    : found.size === 1
+      ? [...found][0]!
+      : null;
+}
+
+const BRAZIL_SUBDIVISIONS = new Set([
+  "AC",
+  "AL",
+  "AP",
+  "AM",
+  "BA",
+  "CE",
+  "DF",
+  "ES",
+  "GO",
+  "MA",
+  "MT",
+  "MS",
+  "MG",
+  "PA",
+  "PB",
+  "PR",
+  "PE",
+  "PI",
+  "RJ",
+  "RN",
+  "RS",
+  "RO",
+  "RR",
+  "SC",
+  "SP",
+  "SE",
+  "TO",
+]);
+const US_SUBDIVISIONS = new Set([
+  "AL",
+  "AK",
+  "AZ",
+  "AR",
+  "CA",
+  "CO",
+  "CT",
+  "DE",
+  "FL",
+  "GA",
+  "HI",
+  "ID",
+  "IL",
+  "IN",
+  "IA",
+  "KS",
+  "KY",
+  "LA",
+  "ME",
+  "MD",
+  "MA",
+  "MI",
+  "MN",
+  "MS",
+  "MO",
+  "MT",
+  "NE",
+  "NV",
+  "NH",
+  "NJ",
+  "NM",
+  "NY",
+  "NC",
+  "ND",
+  "OH",
+  "OK",
+  "OR",
+  "PA",
+  "RI",
+  "SC",
+  "SD",
+  "TN",
+  "TX",
+  "UT",
+  "VT",
+  "VA",
+  "WA",
+  "WV",
+  "WI",
+  "WY",
+  "DC",
+]);
+
+function locationCountryCode(location: string) {
+  const explicit = explicitCountryCode(location);
+  if (explicit !== undefined) return explicit;
+  const subdivision = normalized(location).match(
+    /(?:,|\s)\s*([A-Z]{2})$/u,
+  )?.[1];
+  if (!subdivision) return null;
+  const brazil = BRAZIL_SUBDIVISIONS.has(subdivision);
+  const unitedStates = US_SUBDIVISIONS.has(subdivision);
+  if (brazil === unitedStates) return null;
+  return brazil ? "BR" : "US";
+}
+
+export function applicationJurisdictionCountryCode(input: {
+  readonly question: PublicApplicationQuestion;
+  readonly context?: ApplicationJurisdictionContext;
+}) {
+  const explicit = explicitCountryCode(searchable(input.question));
+  if (explicit !== undefined) return explicit;
+  const locations = input.context?.jobLocations?.filter((item) => item.trim());
+  if (!locations?.length) return null;
+  const countries = locations.map(locationCountryCode);
+  return countries.every((country): country is string => Boolean(country)) &&
+    new Set(countries).size === 1
+    ? countries[0]!
+    : null;
+}
+
 const LANGUAGE_NAMES: Readonly<Record<string, readonly string[]>> = {
   english: ["english", "inglês", "ingles"],
   portuguese: ["portuguese", "português", "portugues"],
@@ -146,8 +292,19 @@ const LANGUAGE_NAMES: Readonly<Record<string, readonly string[]>> = {
 
 export function mapApplicationQuestionToCandidateConcept(
   question: PublicApplicationQuestion,
+  context?: ApplicationJurisdictionContext,
 ): CandidateKnowledgeConcept | null {
   const value = searchable(question);
+  const family = jurisdictionSensitiveFamily(question);
+  if (family) {
+    const countryCode = applicationJurisdictionCountryCode({
+      question,
+      context,
+    });
+    return countryCode
+      ? jurisdictionCandidateKnowledgeConcept(family, countryCode)
+      : null;
+  }
   if (
     /\b(?:proficiency|fluency|fluent|comfort(?:able)?|n[ií]vel|flu[eê]ncia)\b/iu.test(
       value,
@@ -289,6 +446,7 @@ function deterministicResolution(
     CandidateKnowledgeConcept,
     CandidateKnowledgeQueryResult
   >,
+  context?: ApplicationJurisdictionContext,
 ): ApplicationQuestionResolution | null {
   if (question.controlDisposition === "CANDIDATE_REQUIRED_EXTERNAL")
     return {
@@ -308,9 +466,18 @@ function deterministicResolution(
       candidateKnowledgeReferences: [],
       reasonCode: "UNSUPPORTED_CONTROL",
     };
-  const concept = mapApplicationQuestionToCandidateConcept(question);
+  const concept = mapApplicationQuestionToCandidateConcept(question, context);
   if (!concept) {
     const value = searchable(question);
+    if (jurisdictionSensitiveFamily(question))
+      return {
+        questionId: question.id,
+        canonicalConcept: null,
+        disposition: "CANDIDATE_REQUIRED",
+        value: null,
+        candidateKnowledgeReferences: [],
+        reasonCode: "AUTHORIZATION_JURISDICTION_REQUIRED",
+      };
     if (EMPLOYER_SPECIFIC.test(value))
       return {
         questionId: question.id,
@@ -335,7 +502,9 @@ function deterministicResolution(
   const rawValue = candidate?.value ?? null;
   const displayValue = candidateKnowledgeDisplayValue(rawValue);
   const authorizationStatus =
-    concept === "US_WORK_AUTHORIZATION" && typeof rawValue?.status === "string"
+    (concept === "US_WORK_AUTHORIZATION" ||
+      concept.startsWith("WORK_AUTHORIZATION:")) &&
+    typeof rawValue?.status === "string"
       ? rawValue.status.toLocaleLowerCase("en-US")
       : null;
   const explicitLanguagePresence =
@@ -500,16 +669,27 @@ export async function resolveApplicationQuestions(input: {
   readonly ai?: AIProvider;
   readonly correlationId: string;
   readonly knowledge: readonly CandidateKnowledgeQueryResult[];
+  readonly jurisdictionContext?: ApplicationJurisdictionContext;
   readonly questions: readonly ResolvableApplicationQuestion[];
   readonly userId: string;
 }) {
-  const knowledge = new Map(
-    input.knowledge.map((item) => [item.concept, item]),
-  );
+  const knowledge = new Map<
+    CandidateKnowledgeConcept,
+    CandidateKnowledgeQueryResult
+  >(input.knowledge.map((item) => [item.concept, item]));
+  for (const item of input.knowledge) {
+    const alias = legacyUsCandidateKnowledgeAlias(item.concept);
+    if (alias && !knowledge.has(alias))
+      knowledge.set(alias, { ...item, concept: alias });
+  }
   const results = new Map<string, ApplicationQuestionResolution>();
   const unknown: ResolvableApplicationQuestion[] = [];
   for (const question of input.questions) {
-    const resolution = deterministicResolution(question, knowledge);
+    const resolution = deterministicResolution(
+      question,
+      knowledge,
+      input.jurisdictionContext,
+    );
     if (resolution) results.set(question.id, resolution);
     else unknown.push(question);
   }

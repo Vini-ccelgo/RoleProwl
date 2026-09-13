@@ -8,7 +8,8 @@ describe("rememberApplicationAnswer", () => {
     await rememberApplicationAnswer({
       answer: { value: true },
       autoAnswerAllowed: true,
-      question: "Will you now or in the future need visa sponsorship?",
+      question:
+        "Will you now or in the future need United States visa sponsorship?",
       repository: { upsert },
       source: "EXPLICIT_CONSEQUENTIAL",
       userId: "user-1",
@@ -21,6 +22,21 @@ describe("rememberApplicationAnswer", () => {
         answer: { value: true },
       }),
     );
+  });
+
+  it("rejects jurisdiction-free sponsorship instead of storing it as US", async () => {
+    const upsert = vi.fn();
+    await expect(
+      rememberApplicationAnswer({
+        answer: { value: true },
+        autoAnswerAllowed: true,
+        question: "Do you require sponsorship?",
+        repository: { upsert },
+        source: "EXPLICIT_CONSEQUENTIAL",
+        userId: "user-1",
+      }),
+    ).rejects.toThrow("no canonical answer concept");
+    expect(upsert).not.toHaveBeenCalled();
   });
 
   it("requires an explicit canonical concept for unmatched wording", async () => {

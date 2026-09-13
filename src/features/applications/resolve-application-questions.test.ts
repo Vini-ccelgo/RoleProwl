@@ -5,6 +5,7 @@ import type {
   CandidateKnowledgeQueryResult,
 } from "@/core/domain/candidate/candidate-knowledge";
 import {
+  applicationJurisdictionCountryCode,
   mapApplicationQuestionToCandidateConcept,
   resolveApplicationQuestions,
   type ResolvableApplicationQuestion,
@@ -106,10 +107,10 @@ describe("application question resolver", () => {
     "Will you now or in the future require visa sponsorship?",
     "Do you require sponsorship?",
     "Precisará de patrocínio de visto?",
-  ])("maps sponsorship variant: %s", (label) => {
-    expect(mapApplicationQuestionToCandidateConcept(question(label))).toBe(
-      "US_FUTURE_SPONSORSHIP",
-    );
+  ])("requires jurisdiction for a generic sponsorship variant: %s", (label) => {
+    expect(
+      mapApplicationQuestionToCandidateConcept(question(label)),
+    ).toBeNull();
   });
 
   it("distinguishes an explicit language from its proficiency", () => {
@@ -159,11 +160,215 @@ describe("application question resolver", () => {
         knowledge("US_WORK_AUTHORIZATION", { status: "Citizen" }),
         knowledge("US_FUTURE_SPONSORSHIP", { required: false }),
       ],
+      jurisdictionContext: { jobLocations: ["New York, NY"] },
     });
     expect(results.map((result) => result.value)).toEqual(["Yes", "No"]);
     expect(
       results.every((result) => result.disposition === "AUTO_RESOLVED"),
     ).toBe(true);
+  });
+
+  it.each([
+    ["Are you legally authorized to work in Brazil?", "WORK_AUTHORIZATION:BR"],
+    [
+      "Você possui autorização para trabalhar no Brasil?",
+      "WORK_AUTHORIZATION:BR",
+    ],
+    [
+      "Are you legally authorized to work in the United States?",
+      "WORK_AUTHORIZATION:US",
+    ],
+    ["Will you require sponsorship in Brazil?", "SPONSORSHIP_REQUIREMENT:BR"],
+    [
+      "Precisará de patrocínio de visto no Brasil?",
+      "SPONSORSHIP_REQUIREMENT:BR",
+    ],
+    [
+      "Will you require sponsorship in the United States?",
+      "SPONSORSHIP_REQUIREMENT:US",
+    ],
+  ] as const)("maps explicit jurisdiction wording: %s", (label, concept) => {
+    expect(mapApplicationQuestionToCandidateConcept(question(label))).toBe(
+      concept,
+    );
+  });
+
+  it("resolves generic questions only from a single-country job context", () => {
+    const brazil = {
+      jobLocations: [
+        "Belo Horizonte, MG",
+        "Curitiba, PR",
+        "Recife, PE",
+        "São Paulo, SP",
+      ],
+    };
+    expect(
+      mapApplicationQuestionToCandidateConcept(
+        question(
+          "Are you legally authorized to work in the country where this role is located?",
+        ),
+        brazil,
+      ),
+    ).toBe("WORK_AUTHORIZATION:BR");
+    expect(
+      mapApplicationQuestionToCandidateConcept(
+        question("Do you require sponsorship?"),
+        brazil,
+      ),
+    ).toBe("SPONSORSHIP_REQUIREMENT:BR");
+    expect(
+      applicationJurisdictionCountryCode({
+        question: question("Do you require sponsorship?"),
+        context: brazil,
+      }),
+    ).toBe("BR");
+  });
+
+  it("gives explicit employer wording authority over a different job-location context", () => {
+    expect(
+      mapApplicationQuestionToCandidateConcept(
+        question("Are you authorized to work in the United States?"),
+        { jobLocations: ["São Paulo, SP"] },
+      ),
+    ).toBe("WORK_AUTHORIZATION:US");
+    expect(
+      mapApplicationQuestionToCandidateConcept(
+        question("Are you authorized to work in Brazil or the United States?"),
+        { jobLocations: ["São Paulo, SP"] },
+      ),
+    ).toBeNull();
+  });
+
+  it.each([
+    [["São Paulo, SP", "New York, NY"]],
+    [["Remote", "São Paulo, SP"]],
+    [null],
+  ])(
+    "keeps generic wording candidate-required for ambiguous context: %s",
+    async (jobLocations) => {
+      const [result] = await resolveApplicationQuestions({
+        correlationId: "application-ambiguous",
+        userId: "candidate-1",
+        questions: [question("Do you require sponsorship?")],
+        knowledge: [knowledge("US_FUTURE_SPONSORSHIP", { required: false })],
+        jurisdictionContext: { jobLocations },
+      });
+      expect(result).toMatchObject({
+        canonicalConcept: null,
+        disposition: "CANDIDATE_REQUIRED",
+        reasonCode: "AUTHORIZATION_JURISDICTION_REQUIRED",
+        value: null,
+      });
+    },
+  );
+
+  it.each(["PROFILE", "RESUME"] as const)(
+    "never uses %s location or biography to infer authorization jurisdiction",
+    async (source) => {
+      const [result] = await resolveApplicationQuestions({
+        correlationId: "application-no-job-country",
+        userId: "candidate-1",
+        questions: [question("Are you authorized to work?")],
+        knowledge: [
+          knowledge(
+            "CURRENT_LOCATION",
+            { text: "São Paulo, Brazil" },
+            { provenance: { source, sourceId: "location-1" } },
+          ),
+          knowledge("REUSABLE_SELF_DESCRIPTION", {
+            text: "Brazilian citizen and resident",
+          }),
+          knowledge("WORK_AUTHORIZATION:BR", { status: "Authorized" }),
+        ],
+      });
+      expect(result).toMatchObject({
+        canonicalConcept: null,
+        disposition: "CANDIDATE_REQUIRED",
+        reasonCode: "AUTHORIZATION_JURISDICTION_REQUIRED",
+      });
+    },
+  );
+
+  it("keeps authorization and sponsorship values isolated across Brazil and US", async () => {
+    const questions = [
+      question("Are you authorized to work in Brazil?", {
+        fieldTypes: ["input_radio"],
+        options: ["Yes", "No"],
+      }),
+      question("Will you require sponsorship in Brazil?", {
+        fieldTypes: ["input_radio"],
+        options: ["Yes", "No"],
+      }),
+      question("Are you authorized to work in the United States?", {
+        fieldTypes: ["input_radio"],
+        options: ["Yes", "No"],
+      }),
+      question("Will you require sponsorship in the United States?", {
+        fieldTypes: ["input_radio"],
+        options: ["Yes", "No"],
+      }),
+    ];
+    const brazilOnly = await resolveApplicationQuestions({
+      correlationId: "application-br",
+      userId: "candidate-1",
+      questions,
+      knowledge: [
+        knowledge("WORK_AUTHORIZATION:BR", { status: "Authorized" }),
+        knowledge("SPONSORSHIP_REQUIREMENT:BR", { required: false }),
+      ],
+    });
+    expect(brazilOnly.map((result) => result.disposition)).toEqual([
+      "AUTO_RESOLVED",
+      "AUTO_RESOLVED",
+      "CANDIDATE_REQUIRED",
+      "CANDIDATE_REQUIRED",
+    ]);
+    const legacyUsOnly = await resolveApplicationQuestions({
+      correlationId: "application-us",
+      userId: "candidate-1",
+      questions,
+      knowledge: [
+        knowledge("US_WORK_AUTHORIZATION", { status: "Citizen" }),
+        knowledge("US_FUTURE_SPONSORSHIP", { required: false }),
+      ],
+    });
+    expect(legacyUsOnly.map((result) => result.disposition)).toEqual([
+      "CANDIDATE_REQUIRED",
+      "CANDIDATE_REQUIRED",
+      "AUTO_RESOLVED",
+      "AUTO_RESOLVED",
+    ]);
+    expect(
+      legacyUsOnly.slice(2).map((result) => result.canonicalConcept),
+    ).toEqual(["WORK_AUTHORIZATION:US", "SPONSORSHIP_REQUIREMENT:US"]);
+  });
+
+  it("proves the Inter Brazil fixture cannot consume legacy US sponsorship", async () => {
+    const [result] = await resolveApplicationQuestions({
+      correlationId: "cmtz3cnz0003p04jk97po0v0b",
+      userId: "candidate-1",
+      questions: [
+        question("Precisará de patrocínio de visto?", {
+          fieldTypes: ["input_radio"],
+          options: ["Sim", "Não"],
+        }),
+      ],
+      knowledge: [knowledge("US_FUTURE_SPONSORSHIP", { required: false })],
+      jurisdictionContext: {
+        jobLocations: [
+          "Belo Horizonte, MG",
+          "Curitiba, PR",
+          "Recife, PE",
+          "São Paulo, SP",
+        ],
+      },
+    });
+    expect(result).toMatchObject({
+      canonicalConcept: "SPONSORSHIP_REQUIREMENT:BR",
+      disposition: "CANDIDATE_REQUIRED",
+      reasonCode: "CANDIDATE_KNOWLEDGE_MISSING",
+    });
+    expect(result.candidateKnowledgeReferences).toEqual([]);
   });
 
   it.each([
@@ -323,12 +528,16 @@ describe("application question resolver", () => {
           period: "monthly",
         }),
         knowledge("APPLICATION_EMAIL", { text: "private@example.test" }),
+        knowledge("WORK_AUTHORIZATION:BR", { status: "Authorized" }),
+        knowledge("US_FUTURE_SPONSORSHIP", { required: false }),
       ],
     });
     expect(fake.generateStructured).toHaveBeenCalledOnce();
     const aiInput = JSON.stringify(fake.generateStructured.mock.calls[0]);
     expect(aiInput).not.toContain("10000");
     expect(aiInput).not.toContain("private@example.test");
+    expect(aiInput).not.toContain("WORK_AUTHORIZATION:BR");
+    expect(aiInput).not.toContain("US_FUTURE_SPONSORSHIP");
     expect(results[0]).toMatchObject({
       disposition: "PROPOSED_FOR_CANDIDATE",
       reasonCode: "AI_GROUNDED_REFRAME_APPROVAL_REQUIRED",
@@ -410,12 +619,20 @@ describe("application question resolver", () => {
         knowledge("US_FUTURE_SPONSORSHIP", { required: false }),
         knowledge("NOTICE_PERIOD", { text: "30 days" }),
       ],
+      jurisdictionContext: {
+        jobLocations: [
+          "Belo Horizonte, MG",
+          "Curitiba, PR",
+          "Recife, PE",
+          "São Paulo, SP",
+        ],
+      },
     });
     expect(
       results.filter((result) => result.disposition === "AUTO_RESOLVED"),
-    ).toHaveLength(5);
+    ).toHaveLength(4);
     expect(
       results.filter((result) => result.disposition === "CANDIDATE_REQUIRED"),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
   });
 });

@@ -25,9 +25,9 @@ const CONCEPT_PATTERNS: Readonly<Record<AnswerConcept, readonly RegExp[]>> = {
     /\b(?:u\.?s\.?|united states) work authorization\b/iu,
   ],
   US_FUTURE_SPONSORSHIP: [
-    /\b(?:now or in the future ).{0,20}(?:sponsorship|sponsor)\b/iu,
-    /\b(?:require|need).{0,20}(?:visa|immigration).{0,15}sponsor/iu,
-    /\b(?:visa|employment) sponsorship\b/iu,
+    /\b(?:now or in the future ).{0,30}(?:u\.?s\.?|united states).{0,30}(?:sponsorship|sponsor)\b/iu,
+    /\b(?:require|need).{0,30}(?:u\.?s\.?|united states).{0,30}(?:visa|immigration|employment)?\s*sponsor/iu,
+    /\b(?:u\.?s\.?|united states).{0,20}(?:visa|employment) sponsorship\b/iu,
   ],
   DESIRED_SALARY: [
     /\b(?:desired|expected|target).{0,15}(?:salary|compensation|pay)\b/iu,

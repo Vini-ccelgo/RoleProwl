@@ -49,7 +49,9 @@ export type StaticCandidateKnowledgeConcept =
 export type CandidateKnowledgeConcept =
   | StaticCandidateKnowledgeConcept
   | `LANGUAGE:${string}`
-  | `LANGUAGE_PROFICIENCY:${string}`;
+  | `LANGUAGE_PROFICIENCY:${string}`
+  | `WORK_AUTHORIZATION:${string}`
+  | `SPONSORSHIP_REQUIREMENT:${string}`;
 
 export interface CandidateKnowledgePolicy {
   readonly class: CandidateKnowledgeClass;
@@ -138,6 +140,11 @@ export function candidateKnowledgePolicy(
 ): CandidateKnowledgePolicy | null {
   if (concept.startsWith("LANGUAGE:")) return STABLE;
   if (concept.startsWith("LANGUAGE_PROFICIENCY:")) return REUSABLE;
+  if (
+    concept.startsWith("WORK_AUTHORIZATION:") ||
+    concept.startsWith("SPONSORSHIP_REQUIREMENT:")
+  )
+    return VOLATILE_90;
   return (
     CANDIDATE_KNOWLEDGE_REGISTRY[concept as StaticCandidateKnowledgeConcept] ??
     null
@@ -154,9 +161,39 @@ export function isCandidateKnowledgeConcept(
     const language = concept.slice(concept.indexOf(":") + 1);
     return Boolean(language && normalizeLanguageKey(language) === language);
   }
+  if (
+    concept.startsWith("WORK_AUTHORIZATION:") ||
+    concept.startsWith("SPONSORSHIP_REQUIREMENT:")
+  ) {
+    const countryCode = concept.slice(concept.indexOf(":") + 1);
+    return /^[A-Z]{2}$/u.test(countryCode);
+  }
   return STATIC_CANDIDATE_KNOWLEDGE_CONCEPTS.includes(
     concept as StaticCandidateKnowledgeConcept,
   );
+}
+
+export function jurisdictionCandidateKnowledgeConcept(
+  family: "WORK_AUTHORIZATION" | "SPONSORSHIP_REQUIREMENT",
+  countryCode: string,
+): CandidateKnowledgeConcept | null {
+  const normalizedCountryCode = countryCode
+    .normalize("NFKC")
+    .trim()
+    .toUpperCase();
+  return /^[A-Z]{2}$/u.test(normalizedCountryCode)
+    ? `${family}:${normalizedCountryCode}`
+    : null;
+}
+
+export function legacyUsCandidateKnowledgeAlias(
+  concept: CandidateKnowledgeConcept,
+): CandidateKnowledgeConcept | null {
+  if (concept === "US_WORK_AUTHORIZATION") return "WORK_AUTHORIZATION:US";
+  if (concept === "US_FUTURE_SPONSORSHIP") return "SPONSORSHIP_REQUIREMENT:US";
+  if (concept === "WORK_AUTHORIZATION:US") return "US_WORK_AUTHORIZATION";
+  if (concept === "SPONSORSHIP_REQUIREMENT:US") return "US_FUTURE_SPONSORSHIP";
+  return null;
 }
 
 export interface CandidateKnowledgeEvidence {

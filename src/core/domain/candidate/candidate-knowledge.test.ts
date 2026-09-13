@@ -357,4 +357,194 @@ describe("candidate knowledge coverage", () => {
       autoAnswerAllowed: false,
     });
   });
+
+  it("accepts only uppercase ISO-style jurisdiction concepts with the volatile policy", () => {
+    expect(isCandidateKnowledgeConcept("WORK_AUTHORIZATION:BR")).toBe(true);
+    expect(isCandidateKnowledgeConcept("SPONSORSHIP_REQUIREMENT:US")).toBe(
+      true,
+    );
+    expect(isCandidateKnowledgeConcept("WORK_AUTHORIZATION:br")).toBe(false);
+    expect(isCandidateKnowledgeConcept("WORK_AUTHORIZATION:BRA")).toBe(false);
+    expect(
+      candidateKnowledgePolicy("WORK_AUTHORIZATION:BR")?.reverifyAfterDays,
+    ).toBe(90);
+    expect(
+      candidateKnowledgePolicy("SPONSORSHIP_REQUIREMENT:US")?.reverifyAfterDays,
+    ).toBe(90);
+  });
+
+  it("projects an explicit authorization profile only into its own jurisdiction", () => {
+    const evidence = evidenceFromCandidateSources({
+      ...emptySources(),
+      authorization: {
+        id: "authorization-br",
+        countryCode: "br",
+        authorizationStatus: "Authorized",
+        requiresSponsorship: false,
+        updatedAt: now,
+      },
+    });
+    expect(
+      resolveCandidateKnowledge({
+        concept: "WORK_AUTHORIZATION:BR",
+        evidence,
+        now,
+      }).status,
+    ).toBe("AVAILABLE");
+    expect(
+      resolveCandidateKnowledge({
+        concept: "SPONSORSHIP_REQUIREMENT:BR",
+        evidence,
+        now,
+      }).status,
+    ).toBe("AVAILABLE");
+    expect(
+      resolveCandidateKnowledge({
+        concept: "WORK_AUTHORIZATION:US",
+        evidence,
+        now,
+      }).status,
+    ).toBe("MISSING");
+    expect(
+      resolveCandidateKnowledge({
+        concept: "US_WORK_AUTHORIZATION",
+        evidence,
+        now,
+      }).status,
+    ).toBe("MISSING");
+  });
+
+  it("reads legacy US memories through US parameterized aliases in both directions", () => {
+    const legacyEvidence = evidenceFromCandidateSources({
+      ...emptySources(),
+      memories: [
+        {
+          id: "legacy-us",
+          concept: "US_WORK_AUTHORIZATION",
+          answer: { status: "Citizen" },
+          autoAnswerAllowed: true,
+          origin: "EXPLICIT",
+          candidateApproved: true,
+          reusable: true,
+          verifiedAt: now,
+        },
+      ],
+    });
+    expect(
+      resolveCandidateKnowledge({
+        concept: "WORK_AUTHORIZATION:US",
+        evidence: legacyEvidence,
+        now,
+      }).status,
+    ).toBe("AVAILABLE");
+    const dynamicEvidence = evidenceFromCandidateSources({
+      ...emptySources(),
+      memories: [
+        {
+          id: "dynamic-us",
+          concept: "SPONSORSHIP_REQUIREMENT:US",
+          answer: { required: false },
+          autoAnswerAllowed: true,
+          origin: "EXPLICIT",
+          candidateApproved: true,
+          reusable: true,
+          verifiedAt: now,
+        },
+      ],
+    });
+    expect(
+      resolveCandidateKnowledge({
+        concept: "US_FUTURE_SPONSORSHIP",
+        evidence: dynamicEvidence,
+        now,
+      }).status,
+    ).toBe("AVAILABLE");
+  });
+
+  it("keeps freshness, conflicts, and reconfirmation independent by jurisdiction", () => {
+    const old = new Date("2026-01-01T00:00:00Z");
+    const recent = new Date("2026-09-01T00:00:00Z");
+    const evidence = [
+      item({
+        concept: "WORK_AUTHORIZATION:BR",
+        confirmedAt: old,
+        value: { status: "Authorized" },
+      }),
+      item({
+        concept: "WORK_AUTHORIZATION:US",
+        confirmedAt: recent,
+        value: { status: "Citizen" },
+      }),
+      item({
+        concept: "SPONSORSHIP_REQUIREMENT:BR",
+        confirmedAt: recent,
+        sourceId: "br-new",
+        value: { required: false },
+      }),
+      item({
+        concept: "SPONSORSHIP_REQUIREMENT:BR",
+        confirmedAt: old,
+        sourceId: "br-old",
+        value: { required: true },
+      }),
+      item({
+        concept: "SPONSORSHIP_REQUIREMENT:US",
+        confirmedAt: old,
+        value: { required: true },
+      }),
+    ];
+    expect(
+      resolveCandidateKnowledge({
+        concept: "WORK_AUTHORIZATION:BR",
+        evidence,
+        now,
+      }).status,
+    ).toBe("STALE_CONFIRMATION_REQUIRED");
+    expect(
+      resolveCandidateKnowledge({
+        concept: "WORK_AUTHORIZATION:US",
+        evidence,
+        now,
+      }).status,
+    ).toBe("AVAILABLE");
+    expect(
+      resolveCandidateKnowledge({
+        concept: "SPONSORSHIP_REQUIREMENT:BR",
+        evidence,
+        now,
+      }).conflict,
+    ).toBe(true);
+    expect(
+      resolveCandidateKnowledge({
+        concept: "SPONSORSHIP_REQUIREMENT:US",
+        evidence,
+        now,
+      }),
+    ).toMatchObject({ status: "STALE_CONFIRMATION_REQUIRED", conflict: false });
+
+    const confirmedBrazil = [
+      ...evidence,
+      item({
+        concept: "WORK_AUTHORIZATION:BR",
+        confirmedAt: now,
+        source: "ANSWER_MEMORY",
+        sourceId: "br-confirmed",
+        value: { status: "Authorized" },
+      }),
+    ];
+    expect(
+      resolveCandidateKnowledge({
+        concept: "WORK_AUTHORIZATION:BR",
+        evidence: confirmedBrazil,
+        now,
+      }).status,
+    ).toBe("AVAILABLE");
+    expect(
+      resolveCandidateKnowledge({
+        concept: "SPONSORSHIP_REQUIREMENT:US",
+        evidence: confirmedBrazil,
+        now,
+      }).status,
+    ).toBe("STALE_CONFIRMATION_REQUIRED");
+  });
 });

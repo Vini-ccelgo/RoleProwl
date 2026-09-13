@@ -1,5 +1,7 @@
 import {
   isCandidateKnowledgeConcept,
+  jurisdictionCandidateKnowledgeConcept,
+  legacyUsCandidateKnowledgeAlias,
   normalizeLanguageKey,
   type CandidateKnowledgeEvidence,
   type CandidateKnowledgeOrigin,
@@ -279,31 +281,40 @@ export function evidenceFromCandidateSources(
     }
   }
 
-  if (sources.authorization?.countryCode.toUpperCase() === "US") {
-    items.push(
-      evidence({
-        concept: "US_WORK_AUTHORIZATION",
-        confirmedAt: sources.authorization.updatedAt,
-        source: "CANDIDATE_DIRECT",
-        sourceId: sources.authorization.id,
-        origin: "EXPLICIT",
-        value: { status: sources.authorization.authorizationStatus },
-      }),
-      evidence({
-        concept: "US_FUTURE_SPONSORSHIP",
-        confirmedAt: sources.authorization.updatedAt,
-        source: "CANDIDATE_DIRECT",
-        sourceId: sources.authorization.id,
-        origin: "EXPLICIT",
-        value: { required: sources.authorization.requiresSponsorship },
-      }),
+  if (sources.authorization) {
+    const authorizationConcept = jurisdictionCandidateKnowledgeConcept(
+      "WORK_AUTHORIZATION",
+      sources.authorization.countryCode,
     );
+    const sponsorshipConcept = jurisdictionCandidateKnowledgeConcept(
+      "SPONSORSHIP_REQUIREMENT",
+      sources.authorization.countryCode,
+    );
+    if (authorizationConcept && sponsorshipConcept)
+      items.push(
+        evidence({
+          concept: authorizationConcept,
+          confirmedAt: sources.authorization.updatedAt,
+          source: "CANDIDATE_DIRECT",
+          sourceId: sources.authorization.id,
+          origin: "EXPLICIT",
+          value: { status: sources.authorization.authorizationStatus },
+        }),
+        evidence({
+          concept: sponsorshipConcept,
+          confirmedAt: sources.authorization.updatedAt,
+          source: "CANDIDATE_DIRECT",
+          sourceId: sources.authorization.id,
+          origin: "EXPLICIT",
+          value: { required: sources.authorization.requiresSponsorship },
+        }),
+      );
   }
 
   for (const memory of sources.memories) {
     const answer = record(memory.answer);
     if (!answer || !isCandidateKnowledgeConcept(memory.concept)) continue;
-    items.push({
+    const item: CandidateKnowledgeEvidence = {
       concept: memory.concept,
       confirmedAt: memory.verifiedAt,
       source: "ANSWER_MEMORY",
@@ -313,7 +324,21 @@ export function evidenceFromCandidateSources(
       candidateApproved: memory.candidateApproved,
       reusable: memory.reusable,
       value: answer,
-    });
+    };
+    items.push(item);
+  }
+  for (const item of [...items]) {
+    const alias = legacyUsCandidateKnowledgeAlias(item.concept);
+    if (
+      alias &&
+      !items.some(
+        (candidate) =>
+          candidate.concept === alias &&
+          candidate.source === item.source &&
+          candidate.sourceId === item.sourceId,
+      )
+    )
+      items.push({ ...item, concept: alias });
   }
   return items;
 }

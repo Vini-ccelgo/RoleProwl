@@ -219,6 +219,11 @@ describe("Prisma application packet repository", () => {
     expect(mocks.applicationFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "application-1", userId: "user-1" },
+        select: expect.objectContaining({
+          job: expect.objectContaining({
+            select: expect.objectContaining({ locations: true }),
+          }),
+        }),
       }),
     );
     expect(mocks.applicationUpdateMany).toHaveBeenCalledWith(

@@ -240,4 +240,47 @@ describe("candidate knowledge proposal review persistence", () => {
     expect(audit).not.toContain("30 days");
     expect(audit).not.toContain("Professional fluent");
   });
+
+  it("persists authorization answers under independent jurisdiction keys", async () => {
+    const db = database();
+    await saveDirectCandidateKnowledgeBatch(
+      [
+        {
+          userId: "candidate-a",
+          concept: "WORK_AUTHORIZATION:BR",
+          answer: { text: "Yes" },
+        },
+        {
+          userId: "candidate-a",
+          concept: "WORK_AUTHORIZATION:US",
+          answer: { text: "No" },
+        },
+      ],
+      db.client as never,
+    );
+    expect(db.transaction.answerMemory.upsert).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: {
+          userId_concept: {
+            userId: "candidate-a",
+            concept: "WORK_AUTHORIZATION:BR",
+          },
+        },
+        create: expect.objectContaining({ reverifyAfterDays: 90 }),
+      }),
+    );
+    expect(db.transaction.answerMemory.upsert).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: {
+          userId_concept: {
+            userId: "candidate-a",
+            concept: "WORK_AUTHORIZATION:US",
+          },
+        },
+        create: expect.objectContaining({ reverifyAfterDays: 90 }),
+      }),
+    );
+  });
 });

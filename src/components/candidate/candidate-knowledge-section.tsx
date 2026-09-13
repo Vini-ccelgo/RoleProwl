@@ -14,8 +14,14 @@ import { CandidateKnowledgeReviewForm } from "./candidate-knowledge-review-form"
 type Snapshot = Awaited<ReturnType<typeof getCandidateKnowledgeSnapshot>>;
 
 function label(concept: CandidateKnowledgeConcept) {
+  const countryLabel = (countryCode: string) =>
+    ({ BR: "Brazil", US: "United States" })[countryCode] ?? countryCode;
   if (concept.startsWith("LANGUAGE_PROFICIENCY:"))
     return `${concept.slice("LANGUAGE_PROFICIENCY:".length).replaceAll("-", " ")} proficiency`;
+  if (concept.startsWith("WORK_AUTHORIZATION:"))
+    return `Work authorization — ${countryLabel(concept.slice("WORK_AUTHORIZATION:".length))}`;
+  if (concept.startsWith("SPONSORSHIP_REQUIREMENT:"))
+    return `Sponsorship requirement — ${countryLabel(concept.slice("SPONSORSHIP_REQUIREMENT:".length))}`;
   return concept.toLocaleLowerCase("en-US").replaceAll("_", " ");
 }
 

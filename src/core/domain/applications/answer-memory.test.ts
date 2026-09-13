@@ -8,10 +8,9 @@ import {
 describe("answer memory concepts", () => {
   it.each([
     [
-      "Will you now or in the future need visa sponsorship?",
+      "Will you now or in the future need United States visa sponsorship?",
       "US_FUTURE_SPONSORSHIP",
     ],
-    ["Do you require immigration sponsorship?", "US_FUTURE_SPONSORSHIP"],
     [
       "Are you eligible to work within the United States?",
       "US_WORK_AUTHORIZATION",
@@ -34,6 +33,16 @@ describe("answer memory concepts", () => {
       mapQuestionToAnswerConcept("What makes a good platform?"),
     ).toBeNull();
   });
+
+  it.each([
+    "Will you now or in the future need visa sponsorship?",
+    "Do you require immigration sponsorship?",
+  ])(
+    "does not reinterpret jurisdiction-free sponsorship as US: %s",
+    (question) => {
+      expect(mapQuestionToAnswerConcept(question)).toBeNull();
+    },
+  );
 });
 
 describe("answer memory staleness", () => {

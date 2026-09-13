@@ -171,7 +171,12 @@ const readyPacket = buildApplicationPacket({
 });
 
 function packetForResolution(input: {
-  readonly concept: "LANGUAGE_PROFICIENCY:english" | null;
+  readonly concept:
+    | "LANGUAGE_PROFICIENCY:english"
+    | "WORK_AUTHORIZATION:BR"
+    | "SPONSORSHIP_REQUIREMENT:BR"
+    | "WORK_AUTHORIZATION:US"
+    | null;
   readonly disposition: "CANDIDATE_REQUIRED" | "PROPOSED_FOR_CANDIDATE";
   readonly reasonCode: string;
   readonly value: string | null;
@@ -533,6 +538,70 @@ describe("application packet actions", () => {
     await saveApplicationOverridesAction(value);
     expect(saveApplicationOverrides).toHaveBeenCalledOnce();
     expect(saveDirectCandidateKnowledgeBatch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["WORK_AUTHORIZATION:BR", "Yes"],
+    ["SPONSORSHIP_REQUIREMENT:BR", "No"],
+    ["WORK_AUTHORIZATION:US", "Yes"],
+  ] as const)(
+    "learns an explicit jurisdiction-scoped answer as %s",
+    async (concept, answer) => {
+      findFirst.mockResolvedValue({
+        submissionPayloadSnapshot: {
+          packet: packetForResolution({
+            concept,
+            disposition: "CANDIDATE_REQUIRED",
+            reasonCode: "CANDIDATE_KNOWLEDGE_MISSING",
+            value: null,
+          }),
+        },
+      });
+      const value = form();
+      value.set("answer:question-42", answer);
+      await saveApplicationOverridesAction(value);
+      expect(saveDirectCandidateKnowledgeBatch).toHaveBeenCalledWith([
+        {
+          userId: "user-1",
+          concept,
+          answer: { text: answer },
+          resolvesConflicts: false,
+        },
+      ]);
+    },
+  );
+
+  it("reconfirms only the selected jurisdiction concept", async () => {
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: {
+        packet: packetForResolution({
+          concept: "WORK_AUTHORIZATION:BR",
+          disposition: "CANDIDATE_REQUIRED",
+          reasonCode: "CANDIDATE_KNOWLEDGE_STALE",
+          value: "Yes",
+        }),
+      },
+    });
+    queryCandidateKnowledgeBatch.mockResolvedValue([
+      {
+        concept: "WORK_AUTHORIZATION:BR",
+        status: "STALE_CONFIRMATION_REQUIRED",
+        value: { status: "Authorized" },
+      },
+    ]);
+    const value = form();
+    value.set("questionId", "question-42");
+    await confirmCandidateKnowledgeAction(value);
+    expect(queryCandidateKnowledgeBatch).toHaveBeenCalledWith({
+      userId: "user-1",
+      concepts: ["WORK_AUTHORIZATION:BR"],
+    });
+    expect(saveDirectCandidateKnowledgeBatch).toHaveBeenCalledWith([
+      expect.objectContaining({ concept: "WORK_AUTHORIZATION:BR" }),
+    ]);
+    expect(
+      JSON.stringify(saveDirectCandidateKnowledgeBatch.mock.calls),
+    ).not.toContain("WORK_AUTHORIZATION:US");
   });
 
   it("reconfirms a stale reusable value through candidate memory and refreshes the application", async () => {

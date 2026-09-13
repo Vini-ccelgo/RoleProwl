@@ -76,6 +76,7 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
         submissionPayloadSnapshot: true,
         job: {
           select: {
+            locations: true,
             title: true,
             sourceRecords: {
               orderBy: { lastSeenAt: "desc" },
@@ -238,6 +239,13 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
       ai,
       correlationId: application.id,
       knowledge: candidateKnowledge,
+      jurisdictionContext: {
+        jobLocations: Array.isArray(application.job.locations)
+          ? application.job.locations.filter(
+              (location): location is string => typeof location === "string",
+            )
+          : null,
+      },
       questions: questions.map((question) => ({
         ...question,
         controlDisposition: applicationQuestionControlDisposition(question),
