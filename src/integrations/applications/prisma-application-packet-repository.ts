@@ -1,5 +1,6 @@
 import "server-only";
 import {
+  applicationQuestionControlDisposition,
   buildApplicationPacket,
   isApplicationPacket,
   materialRequiredQuestionSchemaChanged,
@@ -7,6 +8,11 @@ import {
   reconcileApplicationQuestionOverrides,
   type ApplicationPacketSource,
 } from "@/core/domain/applications/application-packet";
+import type { AIProvider } from "@/core/contracts/ai-provider";
+import type {
+  CandidateKnowledgeConcept,
+  CandidateKnowledgeQueryResult,
+} from "@/core/domain/candidate/candidate-knowledge";
 import type { ApplicationPacketRepository } from "@/features/applications/refresh-application-packet";
 import { ConflictError, NotFoundError } from "@/core/errors/application-errors";
 import type { Prisma } from "@/generated/prisma/client";
@@ -15,6 +21,12 @@ import {
   selectApplicationResume,
 } from "@/core/domain/applications/application-resume";
 import { databaseClient } from "@/lib/db/client";
+import { queryCandidateKnowledgeBatch } from "@/integrations/candidate/prisma-candidate-knowledge";
+import { currentAIProvider } from "@/integrations/ai/provider-factory";
+import {
+  candidateKnowledgeDisplayValue,
+  resolveApplicationQuestions,
+} from "@/features/applications/resolve-application-questions";
 import {
   fetchGreenhouseApplicationQuestions,
   greenhouseQuestionReference,
@@ -31,14 +43,6 @@ function object(value: Prisma.JsonValue): Record<string, Prisma.JsonValue> {
     : {};
 }
 
-function text(value: Prisma.JsonValue) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const candidate = (value as Record<string, Prisma.JsonValue>).text;
-  return typeof candidate === "string" && candidate.trim()
-    ? candidate.trim()
-    : null;
-}
-
 function unique(values: readonly (string | null | undefined)[]) {
   return [
     ...new Set(
@@ -47,21 +51,13 @@ function unique(values: readonly (string | null | undefined)[]) {
   ];
 }
 
-function experienceLabel(value: {
-  readonly employer: string;
-  readonly title: string;
-  readonly startDate: Date;
-  readonly endDate: Date | null;
-  readonly isCurrent: boolean;
-}) {
-  const end = value.isCurrent
-    ? "Present"
-    : (value.endDate?.toISOString().slice(0, 10) ?? "Unknown end");
-  return `${value.title} at ${value.employer} (${value.startDate.toISOString().slice(0, 10)}–${end})`;
-}
-
 export class PrismaApplicationPacketRepository implements ApplicationPacketRepository {
-  constructor(private readonly request: GreenhouseQuestionFetch = fetch) {}
+  constructor(
+    private readonly request: GreenhouseQuestionFetch = fetch,
+    private readonly queryKnowledge: typeof queryCandidateKnowledgeBatch = queryCandidateKnowledgeBatch,
+    private readonly aiProvider: () => AIProvider | undefined = () =>
+      currentAIProvider(),
+  ) {}
 
   async refresh(input: Parameters<ApplicationPacketRepository["refresh"]>[0]) {
     const database = databaseClient();
@@ -158,64 +154,17 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
     );
     const effectiveReviewed = input.reviewed && !reviewInvalidated;
 
-    const [
-      user,
-      profile,
-      verifiedResumeFacts,
-      experiences,
-      education,
-      credentials,
-      skills,
-      authorization,
-      preferences,
-      answerMemories,
-      writingArtifacts,
-    ] = await Promise.all([
+    const [user, candidateKnowledge, writingArtifacts] = await Promise.all([
       database.user.findUnique({
         where: { id: input.userId },
         select: { email: true },
       }),
-      database.candidateProfile.findUnique({ where: { userId: input.userId } }),
-      database.candidateFact.findMany({
-        where: { userId: input.userId, status: "ACTIVE" },
-        select: { factType: true, value: true },
-        orderBy: { createdAt: "asc" },
-      }),
-      database.workExperience.findMany({
-        where: { userId: input.userId },
-        orderBy: { startDate: "desc" },
-      }),
-      database.education.findMany({
-        where: { userId: input.userId },
-        orderBy: { startDate: "desc" },
-      }),
-      database.credential.findMany({
-        where: { userId: input.userId },
-        orderBy: { issuedAt: "desc" },
-      }),
-      database.skill.findMany({
-        where: { userId: input.userId },
-        orderBy: { canonicalName: "asc" },
-      }),
-      database.workAuthorizationProfile.findUnique({
-        where: { userId: input.userId },
-      }),
-      database.candidatePreferences.findUnique({
-        where: { userId: input.userId },
-      }),
-      database.answerMemory.findMany({
-        where: { userId: input.userId },
-        orderBy: { updatedAt: "desc" },
-      }),
+      this.queryKnowledge({ userId: input.userId }),
       database.applicationWritingArtifact.findMany({
         where: { userId: input.userId, targetJobId: application.jobId },
         orderBy: { generatedAt: "desc" },
       }),
     ]);
-    const facts = verifiedResumeFacts.flatMap((fact) => {
-      const value = text(fact.value);
-      return value ? [{ factType: fact.factType, text: value }] : [];
-    });
     let resume = selectedApplicationResume({
       documentsSnapshot: application.documentsSnapshot,
       resumeVersionId: application.resumeVersionId,
@@ -263,55 +212,81 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
     const coverLetter = writingArtifacts.find(
       (artifact) => artifact.type === "COVER_LETTER",
     );
-    const source: ApplicationPacketSource = {
-      accountEmail: user?.email ?? null,
-      profile: profile
-        ? {
-            firstName: profile.firstName,
-            lastName: profile.lastName,
-            applicationEmail: profile.applicationEmail,
-            phone: profile.phone,
-            location: profile.location,
-            countryCode: profile.countryCode,
-            professionalTitle: profile.professionalTitle,
-          }
-        : null,
-      verifiedResumeFacts: facts,
-      applicationOverrides,
-      experience: experiences.map(experienceLabel),
-      education: education.map((item) =>
-        [item.credential, item.program, item.institution]
-          .filter(Boolean)
-          .join(" · "),
-      ),
-      credentials: credentials.map((item) =>
-        [item.name, item.issuer].filter(Boolean).join(" · "),
-      ),
-      skills: skills.map((item) => item.canonicalName),
-      languages: [],
-      workAuthorization: authorization?.authorizationStatus ?? null,
-      sponsorshipRequired: authorization?.requiresSponsorship ?? null,
-      answerMemories: answerMemories.map((memory) => ({
-        concept: memory.concept,
-        answer: object(memory.answer),
-        source: memory.source,
-        verifiedAt: memory.verifiedAt,
-        reverifyAfterDays: memory.reverifyAfterDays,
-        autoAnswerAllowed: memory.autoAnswerAllowed,
+    const knowledgeByConcept = new Map<
+      CandidateKnowledgeConcept,
+      CandidateKnowledgeQueryResult
+    >(candidateKnowledge.map((item) => [item.concept, item]));
+    const currentValue = (concept: CandidateKnowledgeConcept) => {
+      const item = knowledgeByConcept.get(concept);
+      return item?.status === "AVAILABLE" && !item.conflict
+        ? candidateKnowledgeDisplayValue(item.value)
+        : null;
+    };
+    const firstName = currentValue("FIRST_NAME");
+    const lastName = currentValue("LAST_NAME");
+    const applicationEmail = currentValue("APPLICATION_EMAIL");
+    const phone = currentValue("PHONE");
+    const location = currentValue("CURRENT_LOCATION");
+    const professionalTitle = currentValue("TARGET_ROLE");
+    let ai: AIProvider | undefined;
+    try {
+      ai = this.aiProvider();
+    } catch {
+      // Provider selection and real-data policy are optional for Apply.
+    }
+    const questionResolutions = await resolveApplicationQuestions({
+      ai,
+      correlationId: application.id,
+      knowledge: candidateKnowledge,
+      questions: questions.map((question) => ({
+        ...question,
+        controlDisposition: applicationQuestionControlDisposition(question),
       })),
-      preferences: preferences
-        ? {
-            desiredSalary:
-              preferences.salaryMinimum && preferences.salaryCurrency
-                ? `${preferences.salaryCurrency} ${preferences.salaryMinimum}`
-                : preferences.salaryMinimum
-                  ? String(preferences.salaryMinimum)
-                  : null,
-            willingToRelocate: preferences.willingToRelocate,
-            remotePreference: preferences.remotePreference,
-            travelPercent: preferences.maximumTravelPercent,
-          }
-        : null,
+      userId: input.userId,
+    });
+    const sponsorship = knowledgeByConcept.get("US_FUTURE_SPONSORSHIP")?.value
+      ?.required;
+    const source: ApplicationPacketSource = {
+      accountEmail:
+        knowledgeByConcept.get("APPLICATION_EMAIL")?.conflict === true
+          ? null
+          : (user?.email ?? null),
+      profile:
+        firstName || lastName || applicationEmail || phone || location
+          ? {
+              firstName: firstName ?? "",
+              lastName: lastName ?? "",
+              applicationEmail,
+              phone,
+              location,
+              countryCode: null,
+              professionalTitle,
+            }
+          : null,
+      verifiedResumeFacts: [],
+      applicationOverrides,
+      experience: currentValue("EMPLOYMENT_HISTORY")
+        ? [currentValue("EMPLOYMENT_HISTORY")!]
+        : [],
+      education: currentValue("EDUCATION_HISTORY")
+        ? [currentValue("EDUCATION_HISTORY")!]
+        : [],
+      credentials: currentValue("CERTIFICATIONS")
+        ? [currentValue("CERTIFICATIONS")!]
+        : [],
+      skills: currentValue("SKILLS") ? [currentValue("SKILLS")!] : [],
+      languages: candidateKnowledge.flatMap((item) => {
+        if (!item.concept.startsWith("LANGUAGE_PROFICIENCY:")) return [];
+        const value = candidateKnowledgeDisplayValue(item.value);
+        return value
+          ? [`${item.concept.slice(item.concept.indexOf(":") + 1)} — ${value}`]
+          : [];
+      }),
+      workAuthorization: currentValue("US_WORK_AUTHORIZATION"),
+      sponsorshipRequired:
+        typeof sponsorship === "boolean" ? sponsorship : null,
+      answerMemories: [],
+      preferences: null,
       selectedResume: resume?.packetSource ?? null,
       coverLetter: coverLetter
         ? {
@@ -320,7 +295,12 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
             storageKey: null,
           }
         : null,
+      profileProvenance: {
+        source: "STRUCTURED_CAREER_PROFILE",
+        label: "Candidate memory",
+      },
       questions,
+      questionResolutions,
       questionInspection,
       sourceName: sourceRecord?.source ?? "UNKNOWN",
       targetRole: application.job.title,

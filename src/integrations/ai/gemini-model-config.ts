@@ -32,6 +32,10 @@ export const GEMINI_TASK_ROUTES: Readonly<Record<AITask, GeminiTaskRoute>> = {
     preferredTier: "LITE",
     allowFlashEscalation: false,
   },
+  APPLICATION_QUESTION_RESOLUTION: {
+    preferredTier: "LITE",
+    allowFlashEscalation: false,
+  },
   FREE_TEXT_APPLICATION_GENERATION: {
     preferredTier: "LITE",
     allowFlashEscalation: true,

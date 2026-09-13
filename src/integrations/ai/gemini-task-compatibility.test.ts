@@ -216,6 +216,7 @@ const outputs: Readonly<Record<AITask, unknown>> = {
     confidence: 0.91,
     rationale: "This asks for a role-specific narrative.",
   },
+  APPLICATION_QUESTION_RESOLUTION: { resolutions: [] },
   FREE_TEXT_APPLICATION_GENERATION: {
     text: "A synthetic response grounded in the supplied fixture.",
     claims: [],
@@ -239,6 +240,7 @@ const expectedModel: Readonly<Record<AITask, string>> = {
   JOB_REQUIREMENT_NORMALIZATION: config.liteModel,
   SEMANTIC_EVIDENCE_COMPARISON: config.liteModel,
   APPLICATION_QUESTION_CLASSIFICATION: config.liteModel,
+  APPLICATION_QUESTION_RESOLUTION: config.liteModel,
   FREE_TEXT_APPLICATION_GENERATION: config.liteModel,
   RESUME_TAILORING: config.flashModel,
   COVER_LETTER_GENERATION: config.flashModel,

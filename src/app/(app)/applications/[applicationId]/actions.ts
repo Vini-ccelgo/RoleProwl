@@ -12,6 +12,10 @@ import {
   type ApplicationSubmissionRecord,
 } from "@/core/domain/applications/submission";
 import {
+  candidateKnowledgePolicy,
+  isCandidateKnowledgeConcept,
+} from "@/core/domain/candidate/candidate-knowledge";
+import {
   isApplicationIdentityKey,
   isApplicationPacket,
 } from "@/core/domain/applications/application-packet";
@@ -41,6 +45,10 @@ import { PrismaProductAnalyticsProvider } from "@/integrations/analytics/prisma-
 import { currentAIProvider } from "@/integrations/ai/provider-factory";
 import { PrismaApplicationWritingRepository } from "@/integrations/writing/prisma-application-writing-repository";
 import { databaseClient } from "@/lib/db/client";
+import {
+  saveDirectCandidateKnowledgeBatch,
+  queryCandidateKnowledgeBatch,
+} from "@/integrations/candidate/prisma-candidate-knowledge";
 
 const USER_OUTCOME_STATES = new Set<ApplicationState>([
   "RESPONSE",
@@ -71,7 +79,7 @@ export interface CoverLetterGenerationActionState {
   readonly message: string;
 }
 
-function evidenceSnapshot(value: Prisma.JsonValue) {
+function evidenceSnapshot(value: Prisma.JsonValue | undefined) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Readonly<Record<string, unknown>>)
     : null;
@@ -349,12 +357,108 @@ export async function saveApplicationOverridesAction(formData: FormData) {
       ? [{ key: name.slice("answer:".length), value: candidate || null }]
       : [],
   );
+  const application = await databaseClient().application.findFirst({
+    where: { id: applicationId, userId: actor.id, submittedAt: null },
+    select: { submissionPayloadSnapshot: true },
+  });
+  const payload = evidenceSnapshot(application?.submissionPayloadSnapshot);
+  const packet = isApplicationPacket(payload?.packet) ? payload.packet : null;
+  const reusableAnswers = answers.flatMap((answer) => {
+    const packetAnswer = packet?.answers.find(
+      (candidate) => candidate.questionId === answer.key,
+    );
+    const concept = packetAnswer?.canonicalConcept;
+    const policy =
+      concept && isCandidateKnowledgeConcept(concept)
+        ? candidateKnowledgePolicy(concept)
+        : null;
+    return answer.value &&
+      concept &&
+      policy?.reusableForEmployerQuestions &&
+      packetAnswer?.resolutionReasonCode !== "EMPLOYER_SPECIFIC_ANSWER" &&
+      packetAnswer?.resolutionDisposition !== "HUMAN_REQUIRED"
+      ? [
+          {
+            userId: actor.id,
+            concept,
+            answer: { text: answer.value },
+            resolvesConflicts:
+              packetAnswer.resolutionReasonCode ===
+              "CANDIDATE_KNOWLEDGE_CONFLICT",
+          },
+        ]
+      : [];
+  });
+  const uniqueReusableAnswers = [
+    ...new Map(
+      reusableAnswers.map((answer) => [answer.concept, answer]),
+    ).values(),
+  ];
+  if (uniqueReusableAnswers.length)
+    await saveDirectCandidateKnowledgeBatch(uniqueReusableAnswers);
   await saveApplicationOverrides({
     applicationId,
     userId: actor.id,
     identity,
     answers,
     repository: new PrismaApplicationOverrideRepository(),
+  });
+  revalidatePath("/applications");
+  revalidatePath(`/applications/${applicationId}`);
+  revalidatePath("/dashboard");
+}
+
+export async function confirmCandidateKnowledgeAction(formData: FormData) {
+  const actor = await requireAuthenticatedActor(currentAuthProvider());
+  const applicationId = String(formData.get("applicationId") ?? "");
+  const questionIds = new Set(
+    formData
+      .getAll("questionId")
+      .flatMap((value) => (typeof value === "string" && value ? [value] : [])),
+  );
+  if (!applicationId || !questionIds.size) return;
+  const application = await databaseClient().application.findFirst({
+    where: { id: applicationId, userId: actor.id, submittedAt: null },
+    select: { submissionPayloadSnapshot: true },
+  });
+  const payload = evidenceSnapshot(application?.submissionPayloadSnapshot);
+  const packet = isApplicationPacket(payload?.packet) ? payload.packet : null;
+  const concepts = [
+    ...new Set(
+      (packet?.answers ?? []).flatMap((answer) =>
+        questionIds.has(answer.questionId) &&
+        answer.canonicalConcept &&
+        isCandidateKnowledgeConcept(answer.canonicalConcept) &&
+        answer.resolutionReasonCode === "CANDIDATE_KNOWLEDGE_STALE"
+          ? [answer.canonicalConcept]
+          : [],
+      ),
+    ),
+  ];
+  if (!concepts.length) return;
+  const current = await queryCandidateKnowledgeBatch({
+    userId: actor.id,
+    concepts,
+  });
+  const confirmedAt = new Date();
+  const confirmations = current.flatMap((item) =>
+    item.value && item.status === "STALE_CONFIRMATION_REQUIRED"
+      ? [
+          {
+            userId: actor.id,
+            concept: item.concept,
+            answer: item.value,
+            confirmedAt,
+          },
+        ]
+      : [],
+  );
+  if (!confirmations.length) return;
+  await saveDirectCandidateKnowledgeBatch(confirmations);
+  await refreshApplicationPacket({
+    applicationId,
+    repository: new PrismaApplicationPacketRepository(),
+    userId: actor.id,
   });
   revalidatePath("/applications");
   revalidatePath(`/applications/${applicationId}`);

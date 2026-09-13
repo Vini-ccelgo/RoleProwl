@@ -13,6 +13,8 @@ const {
   requireAuthenticatedActor,
   revalidatePath,
   saveApplicationOverrides,
+  saveDirectCandidateKnowledgeBatch,
+  queryCandidateKnowledgeBatch,
   selectRelevantWritingEvidence,
 } = vi.hoisted(() => ({
   candidateFactsFindMany: vi.fn(),
@@ -25,6 +27,8 @@ const {
   requireAuthenticatedActor: vi.fn(async () => ({ id: "user-1" })),
   revalidatePath: vi.fn(),
   saveApplicationOverrides: vi.fn(async () => undefined),
+  saveDirectCandidateKnowledgeBatch: vi.fn(async () => []),
+  queryCandidateKnowledgeBatch: vi.fn(),
   selectRelevantWritingEvidence: vi.fn(
     (evidence: Array<{ snapshot: unknown }>) =>
       evidence.filter((item) =>
@@ -62,6 +66,10 @@ vi.mock("@/features/applications/refresh-application-packet", () => ({
 vi.mock("@/features/applications/save-application-overrides", () => ({
   saveApplicationOverrides,
 }));
+vi.mock("@/integrations/candidate/prisma-candidate-knowledge", () => ({
+  queryCandidateKnowledgeBatch,
+  saveDirectCandidateKnowledgeBatch,
+}));
 vi.mock("@/features/applications/prepare-and-submit-application", () => ({
   confirmExternalSubmission,
 }));
@@ -86,6 +94,7 @@ vi.mock("@/integrations/analytics/prisma-product-analytics-provider", () => ({
 }));
 
 import {
+  confirmCandidateKnowledgeAction,
   confirmExternalApplicationAction,
   generateCoverLetterAction,
   markApplicationReadyAction,
@@ -160,6 +169,65 @@ const readyPacket = buildApplicationPacket({
     targetRole: "Security Analyst",
   },
 });
+
+function packetForResolution(input: {
+  readonly concept: "LANGUAGE_PROFICIENCY:english" | null;
+  readonly disposition: "CANDIDATE_REQUIRED" | "PROPOSED_FOR_CANDIDATE";
+  readonly reasonCode: string;
+  readonly value: string | null;
+}) {
+  return buildApplicationPacket({
+    reviewed: false,
+    source: {
+      accountEmail: "candidate@example.test",
+      profile: {
+        firstName: "Avery",
+        lastName: "Quill",
+        applicationEmail: null,
+        phone: null,
+        location: null,
+        countryCode: null,
+        professionalTitle: null,
+      },
+      verifiedResumeFacts: [],
+      experience: [],
+      education: [],
+      credentials: [],
+      skills: [],
+      languages: [],
+      workAuthorization: null,
+      sponsorshipRequired: null,
+      answerMemories: [],
+      selectedResume: null,
+      coverLetter: null,
+      questions: [
+        {
+          id: "question-42",
+          source: "GREENHOUSE",
+          group: "STANDARD",
+          label: "English proficiency",
+          required: true,
+          fieldNames: ["english_proficiency"],
+          fieldTypes: ["input_text"],
+          options: [],
+        },
+      ],
+      questionResolutions: [
+        {
+          questionId: "question-42",
+          canonicalConcept: input.concept,
+          disposition: input.disposition,
+          value: input.value,
+          candidateKnowledgeReferences: input.concept ? ["memory-1"] : [],
+          reasonCode: input.reasonCode,
+        },
+      ],
+      questionInspection: "AVAILABLE",
+      sourceName: "GREENHOUSE",
+      targetRole: "Security Analyst",
+    },
+  });
+}
 
 describe("application packet actions", () => {
   beforeEach(() => {
@@ -416,6 +484,16 @@ describe("application packet actions", () => {
   });
 
   it("saves only typed application-specific fields for the owner", async () => {
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: {
+        packet: packetForResolution({
+          concept: "LANGUAGE_PROFICIENCY:english",
+          disposition: "PROPOSED_FOR_CANDIDATE",
+          reasonCode: "AI_GROUNDED_REFRAME_APPROVAL_REQUIRED",
+          value: "Professional fluent",
+        }),
+      },
+    });
     const value = form();
     value.set("identity:phone", "+55 51 5555 0100");
     value.set("answer:question-42", "Yes");
@@ -427,6 +505,72 @@ describe("application packet actions", () => {
         userId: "user-1",
         identity: [{ key: "phone", value: "+55 51 5555 0100" }],
         answers: [{ key: "question-42", value: "Yes" }],
+      }),
+    );
+    expect(saveDirectCandidateKnowledgeBatch).toHaveBeenCalledWith([
+      {
+        userId: "user-1",
+        concept: "LANGUAGE_PROFICIENCY:english",
+        answer: { text: "Yes" },
+        resolvesConflicts: false,
+      },
+    ]);
+  });
+
+  it("does not globalize an employer-specific answer", async () => {
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: {
+        packet: packetForResolution({
+          concept: null,
+          disposition: "CANDIDATE_REQUIRED",
+          reasonCode: "EMPLOYER_SPECIFIC_ANSWER",
+          value: null,
+        }),
+      },
+    });
+    const value = form();
+    value.set("answer:question-42", "Because this role is specific to Inter.");
+    await saveApplicationOverridesAction(value);
+    expect(saveApplicationOverrides).toHaveBeenCalledOnce();
+    expect(saveDirectCandidateKnowledgeBatch).not.toHaveBeenCalled();
+  });
+
+  it("reconfirms a stale reusable value through candidate memory and refreshes the application", async () => {
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: {
+        packet: packetForResolution({
+          concept: "LANGUAGE_PROFICIENCY:english",
+          disposition: "CANDIDATE_REQUIRED",
+          reasonCode: "CANDIDATE_KNOWLEDGE_STALE",
+          value: "Professional fluent",
+        }),
+      },
+    });
+    queryCandidateKnowledgeBatch.mockResolvedValue([
+      {
+        concept: "LANGUAGE_PROFICIENCY:english",
+        status: "STALE_CONFIRMATION_REQUIRED",
+        value: { proficiency: "Professional fluent" },
+      },
+    ]);
+    const value = form();
+    value.set("questionId", "question-42");
+    await confirmCandidateKnowledgeAction(value);
+    expect(queryCandidateKnowledgeBatch).toHaveBeenCalledWith({
+      userId: "user-1",
+      concepts: ["LANGUAGE_PROFICIENCY:english"],
+    });
+    expect(saveDirectCandidateKnowledgeBatch).toHaveBeenCalledWith([
+      expect.objectContaining({
+        userId: "user-1",
+        concept: "LANGUAGE_PROFICIENCY:english",
+        answer: { proficiency: "Professional fluent" },
+      }),
+    ]);
+    expect(refreshApplicationPacket).toHaveBeenCalledWith(
+      expect.objectContaining({
+        applicationId: "application-1",
+        userId: "user-1",
       }),
     );
   });

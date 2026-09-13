@@ -32,6 +32,7 @@ import { requireWorkspacePageActor } from "@/features/accounts/require-workspace
 import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { databaseClient } from "@/lib/db/client";
 import {
+  confirmCandidateKnowledgeAction,
   confirmExternalApplicationAction,
   markApplicationReadyAction,
   refreshApplicationPacketAction,
@@ -282,9 +283,9 @@ export default async function ApplicationDetailPage({
         <section className="card grid gap-3 p-5">
           <h2 className="text-base font-semibold">Packet source refresh</h2>
           <p className="m-0 text-sm">
-            Rebuild this pre-submission packet from the current Career Profile,
-            accepted résumé facts, answer memory, and approved document
-            candidates. A refreshed packet must be reviewed again.
+            Rebuild this pre-submission packet from current candidate memory,
+            the employer&apos;s public schema, and approved document candidates.
+            A refreshed packet must be reviewed again.
           </p>
           <form action={refreshApplicationPacketAction}>
             <input name="applicationId" type="hidden" value={application.id} />
@@ -338,6 +339,7 @@ export default async function ApplicationDetailPage({
 
       <ApplicationPacketSummary
         applicationId={application.id}
+        confirmKnowledgeAction={confirmCandidateKnowledgeAction}
         packet={packetValue}
         resumeDownloadAvailable={resumeDownloadAvailable}
         saveAction={saveApplicationOverridesAction}

@@ -1,6 +1,12 @@
 import { answerMemoryStatus } from "./answer-memory";
 import { mapQuestionToAnswerConcept } from "./answer-memory";
 import type { PublicApplicationQuestion } from "./public-application-question";
+import type {
+  ApplicationAnswerResolutionDisposition,
+  ApplicationQuestionControlDisposition,
+  ApplicationQuestionResolution,
+} from "./application-question-resolution";
+import type { CandidateKnowledgeConcept } from "@/core/domain/candidate/candidate-knowledge";
 
 export const APPLICATION_PACKET_VERSION = "application-packet-v1";
 
@@ -12,8 +18,7 @@ export type ApplicationFieldStatus =
   | "CANDIDATE_REQUIRED_EXTERNAL"
   | "UNSUPPORTED";
 
-export type ApplicationQuestionControlDisposition =
-  "ROLEPROWL_RESOLVED" | "CANDIDATE_REQUIRED_EXTERNAL" | "UNSUPPORTED";
+export type { ApplicationQuestionControlDisposition };
 
 export type ApplicationTransferStatus =
   | "NOT_ATTEMPTED"
@@ -68,6 +73,10 @@ export interface ApplicationPacketAnswer extends ApplicationPacketField {
   readonly fieldTypes: readonly string[];
   readonly options: readonly string[];
   readonly controlDisposition?: ApplicationQuestionControlDisposition;
+  readonly resolutionDisposition?: ApplicationAnswerResolutionDisposition;
+  readonly canonicalConcept?: CandidateKnowledgeConcept | null;
+  readonly resolutionReasonCode?: string;
+  readonly candidateKnowledgeReferences?: readonly string[];
 }
 
 export const APPLICATION_IDENTITY_KEYS = [
@@ -189,6 +198,7 @@ export interface ApplicationPacketSource {
     readonly countryCode: string | null;
     readonly professionalTitle: string | null;
   } | null;
+  readonly profileProvenance?: ApplicationPacketProvenance;
   readonly verifiedResumeFacts: readonly {
     readonly factType: string;
     readonly text: string;
@@ -227,6 +237,7 @@ export interface ApplicationPacketSource {
     readonly storageKey: string | null;
   } | null;
   readonly questions: readonly PublicApplicationQuestion[];
+  readonly questionResolutions?: readonly ApplicationQuestionResolution[];
   readonly questionInspection: "AVAILABLE" | "UNAVAILABLE" | "UNSUPPORTED";
   readonly sourceName: string;
   readonly targetRole: string;
@@ -391,7 +402,12 @@ function emailField(source: ApplicationPacketSource) {
       "Email",
       true,
       explicit,
-      [{ source: "CANDIDATE_PROFILE", label: "Application email" }],
+      [
+        source.profileProvenance ?? {
+          source: "CANDIDATE_PROFILE",
+          label: "Application email",
+        },
+      ],
       resumeEmails.filter(
         (value) => value !== explicit.toLocaleLowerCase("en-US"),
       ),
@@ -538,6 +554,9 @@ function packetFieldForQuestion(
         ? { alternatives: question.options }
         : {}),
     };
+  const authoritative = source.questionResolutions?.find(
+    (resolution) => resolution.questionId === question.id,
+  );
   const direct = [
     [/\bfirst[ _-]?name\b/iu, "firstName"],
     [/\blast[ _-]?name\b/iu, "lastName"],
@@ -550,7 +569,7 @@ function packetFieldForQuestion(
   const identityField = mapped
     ? identity.find((candidate) => candidate.key === mapped[1])
     : null;
-  if (identityField)
+  if (identityField && !authoritative)
     return {
       ...identityField,
       key: `question:${question.id}`,
@@ -606,6 +625,63 @@ function packetFieldForQuestion(
       fieldTypes: question.fieldTypes,
       options: question.options,
       controlDisposition,
+    };
+  }
+
+  if (authoritative) {
+    const conflict =
+      authoritative.reasonCode === "CANDIDATE_KNOWLEDGE_CONFLICT";
+    const status: ApplicationFieldStatus =
+      authoritative.disposition === "AUTO_RESOLVED"
+        ? "RESOLVED"
+        : authoritative.disposition === "HUMAN_REQUIRED"
+          ? question.required
+            ? "CANDIDATE_REQUIRED_EXTERNAL"
+            : "NOT_REQUIRED"
+          : authoritative.disposition === "UNSUPPORTED"
+            ? question.required
+              ? "UNSUPPORTED"
+              : "NOT_REQUIRED"
+            : question.required
+              ? conflict
+                ? "CONFLICTING"
+                : "UNRESOLVED"
+              : "NOT_REQUIRED";
+    return {
+      key: `question:${question.id}`,
+      questionId: question.id,
+      questionGroup: question.group,
+      label: question.label,
+      required: question.required,
+      status,
+      value: authoritative.value,
+      provenance: authoritative.candidateKnowledgeReferences.length
+        ? [
+            {
+              source: "STRUCTURED_CAREER_PROFILE",
+              label:
+                authoritative.disposition === "AUTO_RESOLVED"
+                  ? "Approved reusable candidate knowledge"
+                  : "Candidate knowledge awaiting approval",
+            },
+          ]
+        : [],
+      ...(authoritative.alternatives?.length
+        ? { alternatives: authoritative.alternatives }
+        : {}),
+      classification: authoritative.canonicalConcept
+        ? "CANDIDATE_KNOWLEDGE"
+        : authoritative.reasonCode === "EMPLOYER_SPECIFIC_ANSWER"
+          ? "APPLICATION_SPECIFIC"
+          : "UNKNOWN",
+      fieldNames: question.fieldNames,
+      fieldTypes: question.fieldTypes,
+      options: question.options,
+      controlDisposition,
+      resolutionDisposition: authoritative.disposition,
+      canonicalConcept: authoritative.canonicalConcept,
+      resolutionReasonCode: authoritative.reasonCode,
+      candidateKnowledgeReferences: authoritative.candidateKnowledgeReferences,
     };
   }
 
@@ -694,7 +770,7 @@ function identityValue(
         ]
       : profile
         ? [
-            {
+            source.profileProvenance ?? {
               source: "CANDIDATE_PROFILE" as const,
               label: "Career Profile",
             },

@@ -96,8 +96,11 @@ export async function queryCandidateKnowledge(input: {
   readonly userId: string;
   readonly concept: CandidateKnowledgeConcept;
   readonly now?: Date;
+  readonly snapshot?: Awaited<ReturnType<typeof getCandidateKnowledgeSnapshot>>;
 }) {
-  const snapshot = await getCandidateKnowledgeSnapshot(input.userId, input.now);
+  const snapshot =
+    input.snapshot ??
+    (await getCandidateKnowledgeSnapshot(input.userId, input.now));
   const found = snapshot.coverage.find(
     (item) => item.concept === input.concept,
   );
@@ -111,65 +114,126 @@ export async function queryCandidateKnowledge(input: {
   );
 }
 
-export async function saveDirectCandidateKnowledge(
-  input: {
-    readonly userId: string;
-    readonly concept: string;
-    readonly answer: Readonly<Record<string, unknown>>;
-    readonly confirmedAt?: Date;
-  },
-  database: PrismaClient = databaseClient(),
+/**
+ * Loads candidate evidence once, then deliberately resolves each concept through
+ * the public candidate-knowledge query contract. Application code uses this
+ * boundary instead of rebuilding profile/fact/preference precedence itself.
+ */
+export async function queryCandidateKnowledgeBatch(input: {
+  readonly userId: string;
+  readonly concepts?: readonly CandidateKnowledgeConcept[];
+  readonly now?: Date;
+}) {
+  const snapshot = await getCandidateKnowledgeSnapshot(input.userId, input.now);
+  const concepts =
+    input.concepts ?? snapshot.coverage.map((item) => item.concept);
+  return Promise.all(
+    [...new Set(concepts)].map((concept) =>
+      queryCandidateKnowledge({ ...input, concept, snapshot }),
+    ),
+  );
+}
+
+export interface DirectCandidateKnowledgeInput {
+  readonly userId: string;
+  readonly concept: string;
+  readonly answer: Readonly<Record<string, unknown>>;
+  readonly confirmedAt?: Date;
+  readonly resolvesConflicts?: boolean;
+}
+
+async function upsertDirectCandidateKnowledge(
+  transaction: Prisma.TransactionClient,
+  input: DirectCandidateKnowledgeInput,
 ) {
   if (!isCandidateKnowledgeConcept(input.concept))
     throw new ValidationError("Unknown recurring candidate concept.");
   if (Object.keys(input.answer).length === 0)
     throw new ValidationError("A recurring answer cannot be empty.");
   const policy = candidateKnowledgePolicy(input.concept)!;
+  const confirmedAt = input.confirmedAt ?? new Date();
+  const answer = input.resolvesConflicts
+    ? {
+        ...input.answer,
+        _candidateConflictResolvedAt: confirmedAt.toISOString(),
+      }
+    : input.answer;
+  const memory = await transaction.answerMemory.upsert({
+    where: {
+      userId_concept: { userId: input.userId, concept: input.concept },
+    },
+    create: {
+      userId: input.userId,
+      concept: input.concept,
+      answer: answer as Prisma.InputJsonObject,
+      source:
+        policy.class === "VOLATILE_CONSEQUENTIAL"
+          ? "EXPLICIT_CONSEQUENTIAL"
+          : "USER_POLICY",
+      origin: "EXPLICIT",
+      candidateApproved: true,
+      reusable: true,
+      autoAnswerAllowed: policy.reusableForEmployerQuestions,
+      reverifyAfterDays: policy.reverifyAfterDays,
+      verifiedAt: confirmedAt,
+    },
+    update: {
+      answer: answer as Prisma.InputJsonObject,
+      source:
+        policy.class === "VOLATILE_CONSEQUENTIAL"
+          ? "EXPLICIT_CONSEQUENTIAL"
+          : "USER_POLICY",
+      origin: "EXPLICIT",
+      candidateApproved: true,
+      reusable: true,
+      autoAnswerAllowed: policy.reusableForEmployerQuestions,
+      reverifyAfterDays: policy.reverifyAfterDays,
+      verifiedAt: confirmedAt,
+      sourceNarrativeId: null,
+    },
+    select: { id: true },
+  });
+  await transaction.auditEvent.create({
+    data: {
+      actorUserId: input.userId,
+      action: "QUESTION_ANSWERED",
+      entityType: "answerMemory",
+      entityId: memory.id,
+      metadata: { concept: input.concept, source: "CANDIDATE_DIRECT" },
+    },
+  });
+  return memory;
+}
+
+export async function saveDirectCandidateKnowledgeBatch(
+  inputs: readonly DirectCandidateKnowledgeInput[],
+  database: PrismaClient = databaseClient(),
+) {
+  if (!inputs.length) return [];
+  const userId = inputs[0]!.userId;
+  if (inputs.some((input) => input.userId !== userId))
+    throw new ValidationError("Recurring answers must have the same owner.");
+  const concepts = new Set<string>();
+  for (const input of inputs) {
+    if (concepts.has(input.concept))
+      throw new ValidationError("A recurring concept may be saved only once.");
+    concepts.add(input.concept);
+  }
   return database.$transaction(async (transaction) => {
-    const memory = await transaction.answerMemory.upsert({
-      where: {
-        userId_concept: { userId: input.userId, concept: input.concept },
-      },
-      create: {
-        userId: input.userId,
-        concept: input.concept,
-        answer: input.answer as Prisma.InputJsonObject,
-        source:
-          policy.class === "VOLATILE_CONSEQUENTIAL"
-            ? "EXPLICIT_CONSEQUENTIAL"
-            : "USER_POLICY",
-        origin: "EXPLICIT",
-        candidateApproved: true,
-        reusable: true,
-        autoAnswerAllowed: policy.reusableForEmployerQuestions,
-        reverifyAfterDays: policy.reverifyAfterDays,
-        verifiedAt: input.confirmedAt ?? new Date(),
-      },
-      update: {
-        answer: input.answer as Prisma.InputJsonObject,
-        source:
-          policy.class === "VOLATILE_CONSEQUENTIAL"
-            ? "EXPLICIT_CONSEQUENTIAL"
-            : "USER_POLICY",
-        origin: "EXPLICIT",
-        candidateApproved: true,
-        reusable: true,
-        autoAnswerAllowed: policy.reusableForEmployerQuestions,
-        reverifyAfterDays: policy.reverifyAfterDays,
-        verifiedAt: input.confirmedAt ?? new Date(),
-        sourceNarrativeId: null,
-      },
-      select: { id: true },
-    });
-    await transaction.auditEvent.create({
-      data: {
-        actorUserId: input.userId,
-        action: "QUESTION_ANSWERED",
-        entityType: "answerMemory",
-        entityId: memory.id,
-        metadata: { concept: input.concept, source: "CANDIDATE_DIRECT" },
-      },
-    });
+    const memories = [];
+    for (const input of inputs)
+      memories.push(await upsertDirectCandidateKnowledge(transaction, input));
+    await invalidateReadyApplicationPackets(transaction, userId);
+    return memories;
+  });
+}
+
+export async function saveDirectCandidateKnowledge(
+  input: DirectCandidateKnowledgeInput,
+  database: PrismaClient = databaseClient(),
+) {
+  return database.$transaction(async (transaction) => {
+    const memory = await upsertDirectCandidateKnowledge(transaction, input);
     await invalidateReadyApplicationPackets(transaction, input.userId);
     return memory;
   });

@@ -27,6 +27,7 @@ vi.mock("@/lib/db/client", () => ({
   })),
 }));
 vi.mock("./actions", () => ({
+  confirmCandidateKnowledgeAction: vi.fn(),
   confirmExternalApplicationAction: vi.fn(),
   generateCoverLetterAction: vi.fn(),
   markApplicationReadyAction: vi.fn(),

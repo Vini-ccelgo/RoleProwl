@@ -275,10 +275,13 @@ export async function startApplicationAction(formData: FormData) {
     repository: new PrismaApplicationStartRepository(),
     userId: actor.id,
   });
-  if (application.created)
+  if (
+    ["PREPARING", "NEEDS_REVIEW", "READY", "FAILED"].includes(application.state)
+  )
     await refreshApplicationPacket({
       applicationId: application.applicationId,
       repository: new PrismaApplicationPacketRepository(),
+      reviewed: application.state === "READY",
       userId: actor.id,
     });
   revalidatePath("/applications");

@@ -14,16 +14,16 @@ function Status({ value }: { readonly value: string }) {
 
 function Field({ field }: { readonly field: ApplicationPacketField }) {
   return (
-    <li className="border-border grid gap-1 border-b pb-3 last:border-0">
+    <li className="border-border grid min-w-0 gap-1 border-b pb-3 last:border-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <strong className="text-sm">{field.label}</strong>
+        <strong className="min-w-0 text-sm break-words">{field.label}</strong>
         {field.status !== "RESOLVED" && field.status !== "NOT_REQUIRED" ? (
           <Status value={field.status} />
         ) : null}
       </div>
       {field.value ? (
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-          <span>{field.value}</span>
+          <span className="min-w-0 break-words">{field.value}</span>
           <CopyApplicationValue value={field.value} />
         </div>
       ) : (
@@ -87,11 +87,13 @@ export function ApplicationPacketSummary({
   packet: value,
   resumeDownloadAvailable = false,
   saveAction,
+  confirmKnowledgeAction,
 }: {
   readonly applicationId: string;
   readonly packet: unknown;
   readonly resumeDownloadAvailable?: boolean;
   readonly saveAction: (formData: FormData) => Promise<void>;
+  readonly confirmKnowledgeAction?: (formData: FormData) => Promise<void>;
 }) {
   if (!isApplicationPacket(value))
     return (
@@ -116,6 +118,10 @@ export function ApplicationPacketSummary({
   );
   const roleProwlPrepared = [...packet.identity, ...answers].filter(
     (field) => field.status === "RESOLVED",
+  );
+  const staleAnswers = answers.filter(
+    (field) =>
+      field.resolutionReasonCode === "CANDIDATE_KNOWLEDGE_STALE" && field.value,
   );
   const editableBlockers = needsReview.filter(
     (field) =>
@@ -183,12 +189,14 @@ export function ApplicationPacketSummary({
             review. Review the rebuilt packet again before handoff.
           </p>
         ) : null}
-        <div className="grid gap-3 sm:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-3">
           {[
-            ["Known", packet.completeness.known],
-            ["RoleProwl prepared", packet.completeness.ready],
-            ["Needs review", packet.completeness.needsReview],
-            ["Human required", packet.completeness.humanRequired],
+            ["Automatically prepared", roleProwlPrepared.length],
+            ["Needs your answer", needsReview.length],
+            [
+              "Complete on employer site",
+              candidateRequired.length + packet.transfer.humanSteps.length,
+            ],
           ].map(([label, count]) => (
             <div className="border-border rounded-lg border p-3" key={label}>
               <strong className="text-xl text-brand">{count}</strong>
@@ -197,6 +205,45 @@ export function ApplicationPacketSummary({
           ))}
         </div>
       </div>
+
+      {staleAnswers.length > 0 && confirmKnowledgeAction ? (
+        <section className="card grid gap-3 border-brand p-5">
+          <div>
+            <h2 className="text-base font-semibold">Quick confirmations</h2>
+            <p className="m-0 text-sm text-foreground-muted">
+              These reusable answers are old enough to require confirmation.
+              Confirm the existing value or update it below.
+            </p>
+          </div>
+          <form action={confirmKnowledgeAction} className="grid gap-3">
+            <input name="applicationId" type="hidden" value={applicationId} />
+            <div className="grid gap-3 md:grid-cols-2">
+              {staleAnswers.map((answer) => (
+                <label
+                  className="border-border grid min-w-0 gap-2 rounded-lg border p-3"
+                  key={answer.questionId}
+                >
+                  <strong className="text-sm break-words">
+                    {answer.label}
+                  </strong>
+                  <span className="text-sm break-words">{answer.value}</span>
+                  <span className="flex items-center gap-2 text-sm">
+                    <input
+                      name="questionId"
+                      type="checkbox"
+                      value={answer.questionId}
+                    />
+                    Still true
+                  </span>
+                </label>
+              ))}
+            </div>
+            <button className="button button-secondary w-fit" type="submit">
+              Confirm selected answers
+            </button>
+          </form>
+        </section>
+      ) : null}
 
       {(editableFields.length > 0 || unresolvedResume) && (
         <section className="card grid gap-4 border-brand p-5">
@@ -207,8 +254,8 @@ export function ApplicationPacketSummary({
                 : "Application-specific values"}
             </h2>
             <p className="m-0 text-sm text-foreground-muted">
-              These answers apply only to this Application. They do not change
-              your global Career Profile.
+              Recurring answers update candidate memory and this Application.
+              Employer-specific answers remain scoped to this Application.
             </p>
           </div>
           {editableFields.length > 0 ? (
@@ -231,110 +278,105 @@ export function ApplicationPacketSummary({
         </section>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <section className="card p-5">
-          <h2 className="text-base font-semibold">
-            Applicant identity and contact
-          </h2>
-          <ul className="m-0 grid list-none gap-3 p-0">
-            {packet.identity.map((field) => (
-              <Field field={field} key={field.key} />
-            ))}
-          </ul>
-        </section>
-
-        <section className="card grid gap-4 p-5">
-          <h2 className="text-base font-semibold">Professional data</h2>
-          <p className="m-0 text-sm">
-            <strong>Target role:</strong> {packet.professional.targetRole}
-          </p>
-          <Values title="Experience" values={packet.professional.experience} />
-          <Values title="Education" values={packet.professional.education} />
-          <Values
-            title="Credentials"
-            values={packet.professional.credentials}
-          />
-          <Values title="Skills" values={packet.professional.skills} />
-          <Values title="Languages" values={packet.professional.languages} />
-          <p className="m-0 text-sm">
-            <strong>Work authorization:</strong>{" "}
-            {packet.professional.workAuthorization ?? "Unresolved"}
-          </p>
-          <p className="m-0 text-sm">
-            <strong>Sponsorship requirement:</strong>{" "}
-            {packet.professional.sponsorshipRequired == null
-              ? "Unresolved"
-              : packet.professional.sponsorshipRequired
-                ? "Required"
-                : "Not required"}
-          </p>
-        </section>
-
-        <section className="card grid gap-3 self-start p-5">
-          <h2 className="text-base font-semibold">Documents</h2>
-          {packet.documents.map((document) => (
-            <div
-              className="grid gap-1"
-              key={`${document.kind}-${document.fileName}`}
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <strong className="text-sm">{document.label}</strong>
-                <Status value={document.status} />
-              </div>
-              <p className="safe-filename m-0 min-w-0 text-sm text-foreground-muted">
-                {document.fileName ?? "No document selected"}
-              </p>
-              {document.fileName ? (
-                <p className="m-0 text-xs text-foreground-muted">
-                  Available in RoleProwl for handoff; not attached to the
-                  employer form. Attach it there if required.
-                </p>
-              ) : null}
-              {document.kind === "RESUME" &&
-              document.fileName &&
-              resumeDownloadAvailable ? (
-                <a
-                  className="text-sm font-semibold text-brand"
-                  href={`/api/applications/${applicationId}/resume`}
-                >
-                  Download application résumé
-                </a>
-              ) : null}
-            </div>
-          ))}
-        </section>
-
-        <section className="card p-5">
-          <h2 className="text-base font-semibold">Application answers</h2>
-          {answers.length ? (
+      <details className="card min-w-0 overflow-hidden p-5">
+        <summary className="cursor-pointer font-semibold">
+          Completed fields and packet details
+        </summary>
+        <div className="mt-5 grid min-w-0 gap-5 lg:grid-cols-2">
+          <section className="card min-w-0 p-5">
+            <h2 className="text-base font-semibold">
+              Applicant identity and contact
+            </h2>
             <ul className="m-0 grid list-none gap-3 p-0">
-              {answers.map((answer) => (
-                <Field field={answer} key={answer.questionId} />
+              {packet.identity.map((field) => (
+                <Field field={field} key={field.key} />
               ))}
             </ul>
-          ) : (
-            <p className="m-0 text-sm text-foreground-muted">
-              No public employer questions were represented. Inspect the
-              employer form manually.
+          </section>
+
+          <section className="card grid gap-4 p-5">
+            <h2 className="text-base font-semibold">Professional data</h2>
+            <p className="m-0 text-sm">
+              <strong>Target role:</strong> {packet.professional.targetRole}
             </p>
-          )}
-        </section>
-      </div>
+            <Values
+              title="Experience"
+              values={packet.professional.experience}
+            />
+            <Values title="Education" values={packet.professional.education} />
+            <Values
+              title="Credentials"
+              values={packet.professional.credentials}
+            />
+            <Values title="Skills" values={packet.professional.skills} />
+            <Values title="Languages" values={packet.professional.languages} />
+            <p className="m-0 text-sm">
+              <strong>Work authorization:</strong>{" "}
+              {packet.professional.workAuthorization ?? "Unresolved"}
+            </p>
+            <p className="m-0 text-sm">
+              <strong>Sponsorship requirement:</strong>{" "}
+              {packet.professional.sponsorshipRequired == null
+                ? "Unresolved"
+                : packet.professional.sponsorshipRequired
+                  ? "Required"
+                  : "Not required"}
+            </p>
+          </section>
+
+          <section className="card grid gap-3 self-start p-5">
+            <h2 className="text-base font-semibold">Documents</h2>
+            {packet.documents.map((document) => (
+              <div
+                className="grid gap-1"
+                key={`${document.kind}-${document.fileName}`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <strong className="text-sm">{document.label}</strong>
+                  <Status value={document.status} />
+                </div>
+                <p className="safe-filename m-0 min-w-0 text-sm text-foreground-muted">
+                  {document.fileName ?? "No document selected"}
+                </p>
+                {document.fileName ? (
+                  <p className="m-0 text-xs text-foreground-muted">
+                    Available in RoleProwl for handoff; not attached to the
+                    employer form. Attach it there if required.
+                  </p>
+                ) : null}
+                {document.kind === "RESUME" &&
+                document.fileName &&
+                resumeDownloadAvailable ? (
+                  <a
+                    className="text-sm font-semibold text-brand"
+                    href={`/api/applications/${applicationId}/resume`}
+                  >
+                    Download application résumé
+                  </a>
+                ) : null}
+              </div>
+            ))}
+          </section>
+
+          <section className="card p-5">
+            <h2 className="text-base font-semibold">Application answers</h2>
+            {answers.length ? (
+              <ul className="m-0 grid list-none gap-3 p-0">
+                {answers.map((answer) => (
+                  <Field field={answer} key={answer.questionId} />
+                ))}
+              </ul>
+            ) : (
+              <p className="m-0 text-sm text-foreground-muted">
+                No public employer questions were represented. Inspect the
+                employer form manually.
+              </p>
+            )}
+          </section>
+        </div>
+      </details>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <section className="card grid gap-3 p-5">
-          <h2 className="text-base font-semibold">RoleProwl prepared</h2>
-          <p className="m-0 text-sm">
-            These values are represented in this packet. This does not mean the
-            employer form has accepted them.
-          </p>
-          <ul className="m-0 grid gap-1 pl-5 text-sm">
-            {roleProwlPrepared.map((field) => (
-              <li key={field.key}>{field.label}</li>
-            ))}
-          </ul>
-        </section>
-
         <section className="card grid gap-3 border-brand p-5">
           <h2 className="text-base font-semibold">
             Complete on the employer form

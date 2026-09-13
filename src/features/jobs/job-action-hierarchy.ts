@@ -20,19 +20,21 @@ export function jobActionHierarchy(input: {
       secondary: [] as readonly JobCardAction[],
     };
 
-  const primary: JobCardAction[] = input.analyzed
-    ? [
-        "REVIEW_FIT",
-        ...(input.preparationAvailable
-          ? (["PREPARE_APPLICATION"] as const)
-          : []),
-      ]
-    : ["ANALYZE_FIT"];
-  const secondary: JobCardAction[] =
+  const fitAction: JobCardAction = input.analyzed
+    ? "REVIEW_FIT"
+    : "ANALYZE_FIT";
+  const primary: JobCardAction[] = input.preparationAvailable
+    ? ["PREPARE_APPLICATION"]
+    : [fitAction];
+  const dispositionActions: JobCardAction[] =
     input.disposition === "SHORTLISTED"
       ? ["REMOVE_FROM_SHORTLIST"]
       : input.disposition === "REJECTED"
         ? ["RECONSIDER"]
         : ["SHORTLIST", "NOT_PURSUING"];
+  const secondary: JobCardAction[] = [
+    ...(input.preparationAvailable ? [fitAction] : []),
+    ...dispositionActions,
+  ];
   return { primary, secondary };
 }

@@ -113,7 +113,7 @@ export function JobCardActions({
         <form action={startApplicationAction} key={actionId}>
           <input name="jobId" type="hidden" value={jobId} />
           <button className={className} type="submit">
-            Prepare application
+            Apply with RoleProwl
           </button>
         </form>
       );

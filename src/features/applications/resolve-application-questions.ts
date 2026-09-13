@@ -1,0 +1,608 @@
+import type { AIProvider } from "@/core/contracts/ai-provider";
+import type {
+  CandidateKnowledgeConcept,
+  CandidateKnowledgeQueryResult,
+} from "@/core/domain/candidate/candidate-knowledge";
+import { normalizeLanguageKey } from "@/core/domain/candidate/candidate-knowledge";
+import type {
+  ApplicationQuestionResolution,
+  ResolvableApplicationQuestion,
+} from "@/core/domain/applications/application-question-resolution";
+import type { PublicApplicationQuestion } from "@/core/domain/applications/public-application-question";
+import { aiTaskDefinitions } from "@/features/ai/task-definitions";
+
+export type {
+  ApplicationAnswerResolutionDisposition,
+  ApplicationQuestionResolution,
+  ResolvableApplicationQuestion,
+} from "@/core/domain/applications/application-question-resolution";
+
+function normalized(value: string) {
+  return value.normalize("NFKC").replace(/\s+/gu, " ").trim();
+}
+
+function searchable(question: PublicApplicationQuestion) {
+  return normalized(
+    `${question.label} ${question.fieldNames.join(" ")}`,
+  ).toLocaleLowerCase("en-US");
+}
+
+const CONCEPT_PATTERNS: readonly [
+  CandidateKnowledgeConcept,
+  readonly RegExp[],
+][] = [
+  ["FIRST_NAME", [/\bfirst[ _-]?name\b/iu, /\bnome\b/iu]],
+  ["LAST_NAME", [/\blast[ _-]?name\b/iu, /\bsobrenome\b/iu]],
+  ["APPLICATION_EMAIL", [/\be-?mail\b/iu]],
+  ["PHONE", [/\b(?:phone|telephone|telefone|celular)\b/iu]],
+  ["LINKEDIN_URL", [/\blinked\s*in\b/iu]],
+  ["WEBSITE_URL", [/\b(?:website|portfolio|site pessoal)\b/iu]],
+  [
+    "US_WORK_AUTHORIZATION",
+    [
+      /\b(?:authorized|eligible|permitted) to work (?:in|within) (?:the )?(?:u\.?s\.?|united states)\b/iu,
+      /\b(?:u\.?s\.?|united states) work authorization\b/iu,
+      /\bautorizad[oa] a trabalhar nos estados unidos\b/iu,
+    ],
+  ],
+  [
+    "US_FUTURE_SPONSORSHIP",
+    [
+      /\b(?:now or in the future).{0,30}(?:sponsorship|sponsor|visa)\b/iu,
+      /\b(?:require|need).{0,25}(?:sponsorship|sponsor)\b/iu,
+      /\b(?:visa|employment) sponsorship\b/iu,
+      /\b(?:precisar[aá]|necessita).{0,25}(?:patroc[ií]nio|sponsor).{0,20}(?:visto)?\b/iu,
+      /\bpatroc[ií]nio de visto\b/iu,
+    ],
+  ],
+  [
+    "CURRENT_EMPLOYMENT_STATUS",
+    [
+      /\bcurrent employment status\b/iu,
+      /\batualmente.{0,20}(?:empregado|trabalhando)\b/iu,
+    ],
+  ],
+  ["NOTICE_PERIOD", [/\bnotice period\b/iu, /\baviso pr[eé]vio\b/iu]],
+  [
+    "START_AVAILABILITY",
+    [
+      /\b(?:available|availability).{0,20}(?:start|begin)\b/iu,
+      /\bdata.{0,10}(?:in[ií]cio|come[cç]ar)\b/iu,
+    ],
+  ],
+  [
+    "CURRENT_COMPENSATION",
+    [
+      /\bcurrent.{0,20}(?:salary|compensation|pay)\b/iu,
+      /\bremunera[cç][aã]o atual\b/iu,
+    ],
+  ],
+  [
+    "DESIRED_SALARY",
+    [
+      /\b(?:desired|expected|target).{0,20}(?:salary|compensation|pay)\b/iu,
+      /\bpretens[aã]o salarial\b/iu,
+    ],
+  ],
+  [
+    "REMOTE_PREFERENCE",
+    [
+      /\b(?:remote|hybrid|on[- ]?site).{0,20}(?:preference|arrangement|work)\b/iu,
+      /\b(?:remoto|h[ií]brido|presencial).{0,20}prefer/iu,
+    ],
+  ],
+  [
+    "WILLING_TO_RELOCATE",
+    [
+      /\b(?:willing|open|able) to relocate\b/iu,
+      /\b(?:dispon[ií]vel|aceita).{0,20}(?:mudan[cç]a|reloca[cç][aã]o)\b/iu,
+    ],
+  ],
+  [
+    "TRAVEL_AVAILABILITY",
+    [
+      /\b(?:willing|able|available) to travel\b/iu,
+      /\btravel.{0,15}(?:percent|percentage|%)\b/iu,
+      /\bdisponibilidade.{0,20}viaj/iu,
+    ],
+  ],
+  [
+    "CURRENT_LOCATION",
+    [
+      /\b(?:current|present) (?:city|location|residence)\b/iu,
+      /\b(?:cidade|localiza[cç][aã]o|resid[eê]ncia) atual\b/iu,
+    ],
+  ],
+  [
+    "TARGET_ROLE",
+    [/\b(?:target|desired|preferred).{0,15}(?:role|position|job)\b/iu],
+  ],
+  [
+    "WORK_ENVIRONMENT_PREFERENCE",
+    [
+      /\b(?:work|team|company) environment.{0,20}(?:preference|preferred|thrive)\b/iu,
+    ],
+  ],
+  [
+    "PROFESSIONAL_STRENGTHS",
+    [/\bprofessional strengths?\b/iu, /\bpontos fortes profissionais\b/iu],
+  ],
+  [
+    "REUSABLE_SELF_DESCRIPTION",
+    [
+      /\b(?:describe yourself|professional (?:bio|description|summary))\b/iu,
+      /\b(?:resumo|descri[cç][aã]o) profissional\b/iu,
+    ],
+  ],
+];
+
+const LANGUAGE_NAMES: Readonly<Record<string, readonly string[]>> = {
+  english: ["english", "inglês", "ingles"],
+  portuguese: ["portuguese", "português", "portugues"],
+  spanish: ["spanish", "espanhol"],
+  french: ["french", "francês", "frances"],
+  german: ["german", "alemão", "alemao"],
+};
+
+export function mapApplicationQuestionToCandidateConcept(
+  question: PublicApplicationQuestion,
+): CandidateKnowledgeConcept | null {
+  const value = searchable(question);
+  if (
+    /\b(?:proficiency|fluency|fluent|comfort(?:able)?|n[ií]vel|flu[eê]ncia)\b/iu.test(
+      value,
+    )
+  ) {
+    for (const [key, names] of Object.entries(LANGUAGE_NAMES))
+      if (names.some((name) => value.includes(name)))
+        return `LANGUAGE_PROFICIENCY:${normalizeLanguageKey(key)}`;
+  }
+  if (/\b(?:speak|language|languages|fala|idioma|l[ií]ngua)\b/iu.test(value)) {
+    for (const [key, names] of Object.entries(LANGUAGE_NAMES))
+      if (names.some((name) => value.includes(name)))
+        return `LANGUAGE:${normalizeLanguageKey(key)}`;
+  }
+  for (const [concept, patterns] of CONCEPT_PATTERNS)
+    if (patterns.some((pattern) => pattern.test(value))) return concept;
+  return null;
+}
+
+export function candidateKnowledgeDisplayValue(
+  value: Readonly<Record<string, unknown>> | null,
+) {
+  if (!value) return null;
+  const proficiency = value.proficiency;
+  if (typeof proficiency === "string" && proficiency.trim())
+    return proficiency.trim();
+  const amount = value.amount;
+  if (typeof amount === "number" || typeof amount === "string") {
+    const currency = typeof value.currency === "string" ? value.currency : null;
+    const period = typeof value.period === "string" ? value.period : null;
+    return [currency, String(amount), period].filter(Boolean).join(" ");
+  }
+  for (const key of [
+    "text",
+    "value",
+    "answer",
+    "selected",
+    "status",
+    "required",
+    "language",
+  ]) {
+    const candidate = value[key];
+    if (["string", "number", "boolean"].includes(typeof candidate))
+      return String(candidate);
+    if (
+      Array.isArray(candidate) &&
+      candidate.every((item) => typeof item === "string")
+    )
+      return candidate.join(", ");
+  }
+  return null;
+}
+
+function referenceId(result: CandidateKnowledgeQueryResult) {
+  return `${result.concept}:${result.provenance?.source ?? "UNKNOWN"}:${result.provenance?.sourceId ?? "NONE"}`;
+}
+
+function adaptToField(
+  value: string,
+  question: PublicApplicationQuestion,
+): {
+  disposition: "AUTO_RESOLVED" | "PROPOSED_FOR_CANDIDATE";
+  value: string;
+} | null {
+  if (!question.options.length) return { disposition: "AUTO_RESOLVED", value };
+  const exact = question.options.find(
+    (option) =>
+      normalized(option).toLocaleLowerCase("en-US") ===
+      normalized(value).toLocaleLowerCase("en-US"),
+  );
+  if (exact) return { disposition: "AUTO_RESOLVED", value: exact };
+  const normalizedValue = normalized(value).toLocaleLowerCase("en-US");
+  const booleanValue = ["true", "yes", "sim", "required"].includes(
+    normalizedValue,
+  )
+    ? true
+    : ["false", "no", "não", "nao", "not required"].includes(normalizedValue)
+      ? false
+      : null;
+  if (booleanValue != null) {
+    const option = question.options.find((candidate) =>
+      booleanValue
+        ? /^(?:yes|sim)(?:\b|$)/iu.test(normalized(candidate))
+        : /^(?:no|não|nao)(?:\b|$)/iu.test(normalized(candidate)),
+    );
+    if (option) return { disposition: "AUTO_RESOLVED", value: option };
+  }
+  const tier = /(?:native|nativo)/u.test(normalizedValue)
+    ? /(?:native|nativo)/u
+    : /(?:fluent|fluente)/u.test(normalizedValue)
+      ? /(?:fluent|fluente)/u
+      : /(?:advanced|avançado|avancado|professional|profissional)/u.test(
+            normalizedValue,
+          )
+        ? /(?:advanced|avançado|avancado|professional|profissional)/u
+        : /(?:intermediate|intermediário|intermediario)/u.test(normalizedValue)
+          ? /(?:intermediate|intermediário|intermediario)/u
+          : null;
+  const proficiency = tier
+    ? question.options.find((option) =>
+        tier.test(normalized(option).toLocaleLowerCase("en-US")),
+      )
+    : null;
+  return proficiency
+    ? { disposition: "PROPOSED_FOR_CANDIDATE", value: proficiency }
+    : null;
+}
+
+const EMPLOYER_SPECIFIC =
+  /\b(?:why (?:do you want to (?:work|join)|are you interested)|por que.{0,30}(?:empresa|companhia)|why .{1,40}\?)\b/iu;
+const UNKNOWN_CONSEQUENTIAL =
+  /\b(?:salary|compensation|pay|authorized|authorization|sponsor|sponsorship|visa|clearance|criminal|legal|background check|relocat|travel|remunera[cç][aã]o|sal[aá]rio|visto|patroc[ií]nio)\b/iu;
+
+const AI_REFRAME_CONCEPTS = new Set<CandidateKnowledgeConcept>([
+  "EMPLOYMENT_HISTORY",
+  "EDUCATION_HISTORY",
+  "CERTIFICATIONS",
+  "SKILLS",
+  "PROJECTS",
+  "TARGET_ROLE",
+  "WORK_ENVIRONMENT_PREFERENCE",
+  "PROFESSIONAL_STRENGTHS",
+  "REUSABLE_SELF_DESCRIPTION",
+]);
+
+function canSupplyToApplicationAI(item: CandidateKnowledgeQueryResult) {
+  return (
+    !item.conflict &&
+    item.freshness === "CURRENT" &&
+    (AI_REFRAME_CONCEPTS.has(item.concept) ||
+      item.concept.startsWith("LANGUAGE:") ||
+      item.concept.startsWith("LANGUAGE_PROFICIENCY:"))
+  );
+}
+
+function deterministicResolution(
+  question: ResolvableApplicationQuestion,
+  knowledge: ReadonlyMap<
+    CandidateKnowledgeConcept,
+    CandidateKnowledgeQueryResult
+  >,
+): ApplicationQuestionResolution | null {
+  if (question.controlDisposition === "CANDIDATE_REQUIRED_EXTERNAL")
+    return {
+      questionId: question.id,
+      canonicalConcept: null,
+      disposition: "HUMAN_REQUIRED",
+      value: null,
+      candidateKnowledgeReferences: [],
+      reasonCode: "EXTERNAL_OR_SENSITIVE_CONTROL",
+    };
+  if (question.controlDisposition === "UNSUPPORTED")
+    return {
+      questionId: question.id,
+      canonicalConcept: null,
+      disposition: "UNSUPPORTED",
+      value: null,
+      candidateKnowledgeReferences: [],
+      reasonCode: "UNSUPPORTED_CONTROL",
+    };
+  const concept = mapApplicationQuestionToCandidateConcept(question);
+  if (!concept) {
+    const value = searchable(question);
+    if (EMPLOYER_SPECIFIC.test(value))
+      return {
+        questionId: question.id,
+        canonicalConcept: null,
+        disposition: "CANDIDATE_REQUIRED",
+        value: null,
+        candidateKnowledgeReferences: [],
+        reasonCode: "EMPLOYER_SPECIFIC_ANSWER",
+      };
+    if (UNKNOWN_CONSEQUENTIAL.test(value))
+      return {
+        questionId: question.id,
+        canonicalConcept: null,
+        disposition: "CANDIDATE_REQUIRED",
+        value: null,
+        candidateKnowledgeReferences: [],
+        reasonCode: "UNKNOWN_CONSEQUENTIAL_QUESTION",
+      };
+    return null;
+  }
+  const candidate = knowledge.get(concept);
+  const rawValue = candidate?.value ?? null;
+  const displayValue = candidateKnowledgeDisplayValue(rawValue);
+  const authorizationStatus =
+    concept === "US_WORK_AUTHORIZATION" && typeof rawValue?.status === "string"
+      ? rawValue.status.toLocaleLowerCase("en-US")
+      : null;
+  const explicitLanguagePresence =
+    concept.startsWith("LANGUAGE:") &&
+    /\b(?:do you speak|can you speak|fala|consegue falar)\b/iu.test(
+      searchable(question),
+    );
+  const value = explicitLanguagePresence
+    ? "Yes"
+    : authorizationStatus
+      ? /(?:not authorized|unauthorized|not eligible)/u.test(
+          authorizationStatus,
+        )
+        ? "No"
+        : /(?:authorized|eligible|citizen|permanent resident|green card)/u.test(
+              authorizationStatus,
+            )
+          ? "Yes"
+          : displayValue
+      : displayValue;
+  if (!candidate || candidate.status === "MISSING")
+    return {
+      questionId: question.id,
+      canonicalConcept: concept,
+      disposition: "CANDIDATE_REQUIRED",
+      value: null,
+      candidateKnowledgeReferences: [],
+      reasonCode: "CANDIDATE_KNOWLEDGE_MISSING",
+    };
+  const references = [referenceId(candidate)];
+  const conflictResolvedAt = candidate.value?._candidateConflictResolvedAt;
+  const conflictExplicitlyResolved =
+    typeof conflictResolvedAt === "string" &&
+    Number.isFinite(Date.parse(conflictResolvedAt)) &&
+    candidate.conflictingEvidence.every(
+      (item) => item.confirmedAt.getTime() <= Date.parse(conflictResolvedAt),
+    );
+  if (candidate.conflict && !conflictExplicitlyResolved)
+    return {
+      questionId: question.id,
+      canonicalConcept: concept,
+      disposition: "CANDIDATE_REQUIRED",
+      value,
+      candidateKnowledgeReferences: references,
+      reasonCode: "CANDIDATE_KNOWLEDGE_CONFLICT",
+      alternatives: candidate.conflictingEvidence.flatMap((item) => {
+        const alternative = candidateKnowledgeDisplayValue(item.value);
+        return alternative ? [alternative] : [];
+      }),
+    };
+  if (candidate.status === "STALE_CONFIRMATION_REQUIRED")
+    return {
+      questionId: question.id,
+      canonicalConcept: concept,
+      disposition: "CANDIDATE_REQUIRED",
+      value,
+      candidateKnowledgeReferences: references,
+      reasonCode: "CANDIDATE_KNOWLEDGE_STALE",
+    };
+  if (!value)
+    return {
+      questionId: question.id,
+      canonicalConcept: concept,
+      disposition: "CANDIDATE_REQUIRED",
+      value: null,
+      candidateKnowledgeReferences: references,
+      reasonCode: "CANDIDATE_VALUE_NOT_REPRESENTABLE",
+    };
+  if (
+    !candidate.candidateApproved ||
+    !candidate.reusable ||
+    !candidate.autoAnswerAllowed ||
+    candidate.applicationUse !== "REUSABLE_ANSWER" ||
+    candidate.freshness !== "CURRENT"
+  )
+    return {
+      questionId: question.id,
+      canonicalConcept: concept,
+      disposition: "PROPOSED_FOR_CANDIDATE",
+      value,
+      candidateKnowledgeReferences: references,
+      reasonCode: "CANDIDATE_APPROVAL_REQUIRED",
+    };
+  const adapted = adaptToField(value, question);
+  if (!adapted)
+    return {
+      questionId: question.id,
+      canonicalConcept: concept,
+      disposition: "CANDIDATE_REQUIRED",
+      value,
+      candidateKnowledgeReferences: references,
+      reasonCode: "FIELD_TAXONOMY_MISMATCH",
+      alternatives: question.options,
+    };
+  return {
+    questionId: question.id,
+    canonicalConcept: concept,
+    disposition: adapted.disposition,
+    value: adapted.value,
+    candidateKnowledgeReferences: references,
+    reasonCode:
+      adapted.disposition === "AUTO_RESOLVED"
+        ? "APPROVED_REUSABLE_KNOWLEDGE"
+        : "FIELD_TAXONOMY_APPROVAL_REQUIRED",
+  };
+}
+
+function groundedProposal(input: {
+  readonly proposed: string;
+  readonly question: string;
+  readonly referencedValues: readonly string[];
+  readonly options: readonly string[];
+}) {
+  const proposal = normalized(input.proposed);
+  if (!proposal || !input.referencedValues.length) return false;
+  if (input.options.length && !input.options.includes(proposal)) return false;
+  const evidence = normalized(
+    input.referencedValues.join(" "),
+  ).toLocaleLowerCase("en-US");
+  const proposed = proposal.toLocaleLowerCase("en-US");
+  const numbers = proposed.match(/\b\d+(?:[.,]\d+)?\b/gu) ?? [];
+  if (numbers.some((number) => !evidence.includes(number))) return false;
+  const upgrades = [
+    "native",
+    "bilingual",
+    "c2",
+    "executive",
+    "board",
+    "client",
+  ];
+  if (
+    upgrades.some((word) => proposed.includes(word) && !evidence.includes(word))
+  )
+    return false;
+  const allowedText = `${evidence} ${normalized(input.question).toLocaleLowerCase("en-US")}`;
+  const ignored = new Set([
+    "about",
+    "also",
+    "from",
+    "have",
+    "into",
+    "that",
+    "their",
+    "these",
+    "this",
+    "with",
+    "your",
+  ]);
+  const words = proposed.match(/[\p{L}\p{N}]{4,}/gu) ?? [];
+  return (
+    words.length > 0 &&
+    words.every(
+      (word) =>
+        ignored.has(word) ||
+        allowedText.includes(word) ||
+        (word.length >= 6 && allowedText.includes(word.slice(0, 5))),
+    )
+  );
+}
+
+export async function resolveApplicationQuestions(input: {
+  readonly ai?: AIProvider;
+  readonly correlationId: string;
+  readonly knowledge: readonly CandidateKnowledgeQueryResult[];
+  readonly questions: readonly ResolvableApplicationQuestion[];
+  readonly userId: string;
+}) {
+  const knowledge = new Map(
+    input.knowledge.map((item) => [item.concept, item]),
+  );
+  const results = new Map<string, ApplicationQuestionResolution>();
+  const unknown: ResolvableApplicationQuestion[] = [];
+  for (const question of input.questions) {
+    const resolution = deterministicResolution(question, knowledge);
+    if (resolution) results.set(question.id, resolution);
+    else unknown.push(question);
+  }
+  if (input.ai && unknown.length) {
+    const suppliedKnowledge = input.knowledge.flatMap((item) => {
+      const value = candidateKnowledgeDisplayValue(item.value);
+      return item.status === "AVAILABLE" &&
+        item.candidateApproved &&
+        item.reusable &&
+        item.applicationUse === "REUSABLE_ANSWER" &&
+        canSupplyToApplicationAI(item) &&
+        value
+        ? [{ referenceId: referenceId(item), concept: item.concept, value }]
+        : [];
+    });
+    if (suppliedKnowledge.length) {
+      try {
+        const definition = aiTaskDefinitions.APPLICATION_QUESTION_RESOLUTION;
+        const generated = await input.ai.generateStructured({
+          ...definition,
+          task: "APPLICATION_QUESTION_RESOLUTION",
+          dataClassification: "REAL_CANDIDATE",
+          correlationId: input.correlationId,
+          rateLimitSubject: input.userId,
+          input: {
+            questions: unknown.map((question) => ({
+              id: question.id,
+              label: question.label,
+              fieldTypes: question.fieldTypes,
+              options: question.options,
+            })),
+            candidateKnowledge: suppliedKnowledge,
+            allowedConcepts: suppliedKnowledge.map((item) => item.concept),
+          },
+        });
+        const byReference = new Map(
+          suppliedKnowledge.map((item) => [item.referenceId, item]),
+        );
+        for (const proposal of generated.data.resolutions) {
+          const question = unknown.find(
+            (item) => item.id === proposal.questionId,
+          );
+          if (!question || results.has(question.id)) continue;
+          const references = proposal.candidateKnowledgeReferences.flatMap(
+            (id) => {
+              const item = byReference.get(id);
+              return item ? [item] : [];
+            },
+          );
+          const conceptAllowed =
+            proposal.canonicalConcept != null &&
+            references.length > 0 &&
+            references.length ===
+              proposal.candidateKnowledgeReferences.length &&
+            references.every(
+              (item) => item.concept === proposal.canonicalConcept,
+            );
+          const grounded =
+            proposal.proposedValue != null &&
+            groundedProposal({
+              proposed: proposal.proposedValue,
+              question: question.label,
+              referencedValues: references.map((item) => item.value),
+              options: question.options,
+            });
+          if (conceptAllowed && grounded) {
+            results.set(question.id, {
+              questionId: question.id,
+              canonicalConcept:
+                proposal.canonicalConcept as CandidateKnowledgeConcept,
+              disposition: "PROPOSED_FOR_CANDIDATE",
+              value: proposal.proposedValue,
+              candidateKnowledgeReferences: references.map(
+                (item) => item.referenceId,
+              ),
+              reasonCode: "AI_GROUNDED_REFRAME_APPROVAL_REQUIRED",
+            });
+          }
+        }
+      } catch {
+        // AI is optional. Deterministic preparation and handoff remain available.
+      }
+    }
+  }
+  for (const question of unknown)
+    if (!results.has(question.id))
+      results.set(question.id, {
+        questionId: question.id,
+        canonicalConcept: null,
+        disposition: "CANDIDATE_REQUIRED",
+        value: null,
+        candidateKnowledgeReferences: [],
+        reasonCode: "NO_GROUNDED_CANDIDATE_KNOWLEDGE",
+      });
+  return input.questions.map((question) => results.get(question.id)!);
+}

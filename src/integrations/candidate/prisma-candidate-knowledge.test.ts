@@ -15,6 +15,7 @@ import {
   getCandidateKnowledgeSnapshot,
   reviewCandidateKnowledgeProposal,
   saveDirectCandidateKnowledge,
+  saveDirectCandidateKnowledgeBatch,
 } from "./prisma-candidate-knowledge";
 
 function database(proposalUserId = "candidate-a") {
@@ -201,5 +202,42 @@ describe("candidate knowledge proposal review persistence", () => {
         }),
       }),
     );
+  });
+
+  it("stores a residual answer batch in one transaction and invalidates packets once", async () => {
+    const db = database();
+    await saveDirectCandidateKnowledgeBatch(
+      [
+        {
+          userId: "candidate-a",
+          concept: "NOTICE_PERIOD",
+          answer: { text: "30 days" },
+        },
+        {
+          userId: "candidate-a",
+          concept: "LANGUAGE_PROFICIENCY:english",
+          answer: { text: "Professional fluent" },
+          confirmedAt: new Date("2026-09-13T00:00:00Z"),
+          resolvesConflicts: true,
+        },
+      ],
+      db.client as never,
+    );
+    expect(db.client.$transaction).toHaveBeenCalledOnce();
+    expect(db.transaction.answerMemory.upsert).toHaveBeenCalledTimes(2);
+    expect(db.transaction.answerMemory.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          answer: {
+            text: "Professional fluent",
+            _candidateConflictResolvedAt: "2026-09-13T00:00:00.000Z",
+          },
+        }),
+      }),
+    );
+    expect(invalidateReadyApplicationPackets).toHaveBeenCalledOnce();
+    const audit = JSON.stringify(db.transaction.auditEvent.create.mock.calls);
+    expect(audit).not.toContain("30 days");
+    expect(audit).not.toContain("Professional fluent");
   });
 });

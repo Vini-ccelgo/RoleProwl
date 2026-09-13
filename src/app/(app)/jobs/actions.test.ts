@@ -325,6 +325,33 @@ describe("candidate job disposition action", () => {
     );
   });
 
+  it("reuses and refreshes the existing application on repeated Apply", async () => {
+    startApplication.mockResolvedValueOnce({
+      applicationId: "application-1",
+      created: false,
+      state: "NEEDS_REVIEW",
+    });
+    const form = new FormData();
+    form.set("jobId", "job-1");
+    await startApplicationAction(form);
+    expect(refreshApplicationPacket).toHaveBeenCalledOnce();
+    expect(redirect).toHaveBeenCalledWith("/applications/application-1");
+  });
+
+  it("preserves an existing READY review unless the refreshed schema invalidates it", async () => {
+    startApplication.mockResolvedValueOnce({
+      applicationId: "application-1",
+      created: false,
+      state: "READY",
+    });
+    const form = new FormData();
+    form.set("jobId", "job-1");
+    await startApplicationAction(form);
+    expect(refreshApplicationPacket).toHaveBeenCalledWith(
+      expect.objectContaining({ reviewed: true }),
+    );
+  });
+
   it("persists an owner-scoped shortlist and refreshes relevant views", async () => {
     await setJobDispositionAction(dispositionForm("SHORTLISTED"));
     expect(upsert).toHaveBeenCalledWith({

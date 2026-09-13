@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { jobActionHierarchy } from "./job-action-hierarchy";
 
 describe("job card progressive action hierarchy", () => {
-  it("keeps untouched jobs focused on analysis and candidate disposition", () => {
+  it("lets an untouched job enter Apply without fit analysis", () => {
     expect(
       jobActionHierarchy({
         analyzed: false,
@@ -11,12 +11,12 @@ describe("job card progressive action hierarchy", () => {
         preparationAvailable: true,
       }),
     ).toEqual({
-      primary: ["ANALYZE_FIT"],
-      secondary: ["SHORTLIST", "NOT_PURSUING"],
+      primary: ["PREPARE_APPLICATION"],
+      secondary: ["ANALYZE_FIT", "SHORTLIST", "NOT_PURSUING"],
     });
   });
 
-  it("advances analyzed jobs to fit review and application preparation", () => {
+  it("keeps Apply primary and fit review optional after analysis", () => {
     expect(
       jobActionHierarchy({
         analyzed: true,
@@ -24,7 +24,7 @@ describe("job card progressive action hierarchy", () => {
         disposition: null,
         preparationAvailable: true,
       }).primary,
-    ).toEqual(["REVIEW_FIT", "PREPARE_APPLICATION"]);
+    ).toEqual(["PREPARE_APPLICATION"]);
   });
 
   it("prioritizes continuation once an application exists", () => {

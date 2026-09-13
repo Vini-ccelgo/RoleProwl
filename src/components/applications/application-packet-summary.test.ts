@@ -63,9 +63,85 @@ describe("application packet summary", () => {
     expect(markup).toContain("Avery");
     expect(markup).toContain("Incident response");
     expect(markup).toContain("Application question 8");
+    expect(markup).toContain("Automatically prepared");
+    expect(markup).toContain("Needs your answer");
+    expect(markup).toContain("Complete on employer site");
+    expect(markup).toContain("Completed fields and packet details");
+    expect(markup).toContain("<details");
     expect(markup).toContain("/api/applications/application-1/resume");
     expect(markup).toContain("card grid gap-3 self-start p-5");
     expect(markup).not.toContain("candidate-documents/private-key");
+  });
+
+  it("wraps long residual questions and offers compact stale confirmation", () => {
+    const longQuestion =
+      "How comfortable are you conducting detailed professional security meetings in English with several collaborating engineering groups?";
+    const packet = buildApplicationPacket({
+      reviewed: false,
+      source: {
+        accountEmail: "candidate@example.test",
+        profile: {
+          firstName: "Avery",
+          lastName: "Quill",
+          applicationEmail: null,
+          phone: null,
+          location: null,
+          countryCode: null,
+          professionalTitle: null,
+        },
+        verifiedResumeFacts: [],
+        experience: [],
+        education: [],
+        credentials: [],
+        skills: [],
+        languages: [],
+        workAuthorization: null,
+        sponsorshipRequired: null,
+        answerMemories: [],
+        selectedResume: null,
+        coverLetter: null,
+        questions: [
+          {
+            id: "standard:english",
+            source: "GREENHOUSE",
+            group: "STANDARD",
+            label: longQuestion,
+            required: true,
+            fieldNames: ["english_proficiency"],
+            fieldTypes: ["input_text"],
+            options: [],
+          },
+        ],
+        questionResolutions: [
+          {
+            questionId: "standard:english",
+            canonicalConcept: "LANGUAGE_PROFICIENCY:english",
+            disposition: "CANDIDATE_REQUIRED",
+            value: "Professional fluent",
+            candidateKnowledgeReferences: ["memory-1"],
+            reasonCode: "CANDIDATE_KNOWLEDGE_STALE",
+          },
+        ],
+        questionInspection: "AVAILABLE",
+        sourceName: "GREENHOUSE",
+        targetRole: "Security Analyst",
+      },
+    });
+    const markup = renderToStaticMarkup(
+      createElement(ApplicationPacketSummary, {
+        applicationId: "application-1",
+        packet,
+        saveAction: async () => undefined,
+        confirmKnowledgeAction: async () => undefined,
+      }),
+    );
+    expect(markup).toContain("Quick confirmations");
+    expect(markup).toContain("Still true");
+    expect(markup).toContain("Confirm selected answers");
+    expect(markup).toContain('name="questionId"');
+    expect(markup).toContain("break-words");
+    expect(markup).toContain("max-w-full min-w-0");
+    expect(markup).toContain(longQuestion);
   });
 
   it("does not render a download link without a canonical Application snapshot", () => {

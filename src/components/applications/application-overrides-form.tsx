@@ -53,8 +53,8 @@ function OverrideInput({ field }: { readonly field: EditableField }) {
     );
     if (useRadio)
       return (
-        <fieldset className="field">
-          <legend>{label}</legend>
+        <fieldset className="field max-w-full min-w-0">
+          <legend className="max-w-full break-words">{label}</legend>
           {mismatch ? (
             <small>
               Current answer: <strong>{field.value}</strong>. Your previous
@@ -63,7 +63,7 @@ function OverrideInput({ field }: { readonly field: EditableField }) {
             </small>
           ) : null}
           {answerOptions.map((option) => (
-            <label className="flex items-center gap-2" key={option}>
+            <label className="flex min-w-0 items-center gap-2" key={option}>
               <input
                 defaultChecked={!mismatch && field.value === option}
                 name={name}
@@ -71,14 +71,14 @@ function OverrideInput({ field }: { readonly field: EditableField }) {
                 type="radio"
                 value={option}
               />
-              <span>{option}</span>
+              <span className="min-w-0 break-words">{option}</span>
             </label>
           ))}
         </fieldset>
       );
     return (
-      <label className="field">
-        <span>{label}</span>
+      <label className="field max-w-full min-w-0">
+        <span className="break-words">{label}</span>
         {mismatch ? (
           <small>
             Current answer: <strong>{field.value}</strong>. Your previous answer
@@ -87,6 +87,7 @@ function OverrideInput({ field }: { readonly field: EditableField }) {
           </small>
         ) : null}
         <select
+          className="max-w-full min-w-0"
           defaultValue={mismatch ? "" : (field.value ?? "")}
           name={name}
           required={field.required || mismatch}
@@ -105,9 +106,10 @@ function OverrideInput({ field }: { readonly field: EditableField }) {
     answer && !(answer.fieldTypes ?? []).includes("input_text");
   if (isLongAnswer)
     return (
-      <label className="field sm:col-span-2">
-        <span>{label}</span>
+      <label className="field max-w-full min-w-0 md:col-span-2">
+        <span className="break-words">{label}</span>
         <textarea
+          className="max-w-full min-w-0"
           defaultValue={field.value ?? ""}
           maxLength={4_000}
           name={name}
@@ -117,9 +119,10 @@ function OverrideInput({ field }: { readonly field: EditableField }) {
       </label>
     );
   return (
-    <label className="field">
-      <span>{label}</span>
+    <label className="field max-w-full min-w-0">
+      <span className="break-words">{label}</span>
       <input
+        className="max-w-full min-w-0"
         defaultValue={field.value ?? ""}
         maxLength={field.key === "country" ? 2 : 4_000}
         name={name}
@@ -166,7 +169,13 @@ export function ApplicationOverridesForm({
   readonly saveAction: (formData: FormData) => Promise<void>;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
-  const [dirty, setDirty] = useState(false);
+  const approvalRequired = fields.some(
+    (field) =>
+      "questionId" in field &&
+      (field.resolutionDisposition === "PROPOSED_FOR_CANDIDATE" ||
+        field.resolutionReasonCode === "CANDIDATE_KNOWLEDGE_CONFLICT"),
+  );
+  const [dirty, setDirty] = useState(approvalRequired);
   const initialValues = Object.fromEntries(
     fields.map((field) => [
       fieldName(field),
@@ -177,7 +186,9 @@ export function ApplicationOverridesForm({
   function updateDirty() {
     if (!formRef.current) return;
     const current = new FormData(formRef.current);
-    setDirty(applicationOverridesAreDirty(initialValues, current));
+    setDirty(
+      approvalRequired || applicationOverridesAreDirty(initialValues, current),
+    );
   }
 
   return (
@@ -188,7 +199,7 @@ export function ApplicationOverridesForm({
       ref={formRef}
     >
       <input name="applicationId" type="hidden" value={applicationId} />
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid min-w-0 gap-4 md:grid-cols-2">
         {fields.map((field) => (
           <OverrideInput field={field} key={field.key} />
         ))}

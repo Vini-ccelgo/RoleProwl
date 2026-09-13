@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   resumeFindFirst: vi.fn(),
   documentFindFirst: vi.fn(),
   writingFindMany: vi.fn(),
+  queryKnowledge: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -46,6 +47,12 @@ vi.mock("@/lib/db/client", () => ({
       }),
     ),
   })),
+}));
+vi.mock("@/integrations/candidate/prisma-candidate-knowledge", () => ({
+  queryCandidateKnowledgeBatch: mocks.queryKnowledge,
+}));
+vi.mock("@/integrations/ai/provider-factory", () => ({
+  currentAIProvider: vi.fn(() => undefined),
 }));
 
 import { PrismaApplicationPacketRepository } from "./prisma-application-packet-repository";
@@ -113,6 +120,68 @@ describe("Prisma application packet repository", () => {
       storageKey: "candidate-documents/safe",
     });
     mocks.writingFindMany.mockResolvedValue([]);
+    mocks.queryKnowledge.mockResolvedValue([
+      {
+        concept: "FIRST_NAME",
+        applicationUse: "REUSABLE_ANSWER",
+        autoAnswerAllowed: true,
+        candidateApproved: true,
+        conflict: false,
+        conflictingEvidence: [],
+        confirmedAt: new Date("2026-08-23T00:00:00Z"),
+        freshness: "CURRENT",
+        origin: "EXPLICIT",
+        provenance: { source: "PROFILE", sourceId: "profile-1" },
+        reusable: true,
+        status: "AVAILABLE",
+        value: { text: "Avery" },
+      },
+      {
+        concept: "LAST_NAME",
+        applicationUse: "REUSABLE_ANSWER",
+        autoAnswerAllowed: true,
+        candidateApproved: true,
+        conflict: false,
+        conflictingEvidence: [],
+        confirmedAt: new Date("2026-08-23T00:00:00Z"),
+        freshness: "CURRENT",
+        origin: "EXPLICIT",
+        provenance: { source: "PROFILE", sourceId: "profile-1" },
+        reusable: true,
+        status: "AVAILABLE",
+        value: { text: "Quill" },
+      },
+      {
+        concept: "APPLICATION_EMAIL",
+        applicationUse: "REUSABLE_ANSWER",
+        autoAnswerAllowed: true,
+        candidateApproved: true,
+        conflict: false,
+        conflictingEvidence: [],
+        confirmedAt: new Date("2026-08-23T00:00:00Z"),
+        freshness: "CURRENT",
+        origin: "EXPLICIT",
+        provenance: { source: "PROFILE", sourceId: "profile-1" },
+        reusable: true,
+        status: "AVAILABLE",
+        value: { text: "apply@example.test" },
+      },
+      {
+        concept: "SKILLS",
+        applicationUse: "REUSABLE_ANSWER",
+        autoAnswerAllowed: true,
+        candidateApproved: true,
+        conflict: false,
+        conflictingEvidence: [],
+        confirmedAt: new Date("2026-08-23T00:00:00Z"),
+        freshness: "CURRENT",
+        origin: "EXPLICIT",
+        provenance: { source: "RESUME", sourceId: "fact-1" },
+        reusable: true,
+        status: "AVAILABLE",
+        value: { text: "Incident response" },
+      },
+    ]);
   });
 
   it("builds and approves a complete owner-scoped packet", async () => {
@@ -141,6 +210,12 @@ describe("Prisma application packet repository", () => {
     );
     expect(packet.completeness.readyForSubmissionHandoff).toBe(true);
     expect(packet.professional.skills).toContain("Incident response");
+    expect(mocks.queryKnowledge).toHaveBeenCalledOnce();
+    expect(mocks.queryKnowledge).toHaveBeenCalledWith({ userId: "user-1" });
+    expect(mocks.profileFindUnique).not.toHaveBeenCalled();
+    expect(mocks.factsFindMany).not.toHaveBeenCalled();
+    expect(mocks.preferencesFindUnique).not.toHaveBeenCalled();
+    expect(mocks.answerFindMany).not.toHaveBeenCalled();
     expect(mocks.applicationFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "application-1", userId: "user-1" },
@@ -164,6 +239,52 @@ describe("Prisma application packet repository", () => {
         }),
       }),
     );
+  });
+
+  it("keeps deterministic preparation available when the one AI batch fails", async () => {
+    const generateStructured = vi.fn(async () => {
+      throw new Error("provider timeout");
+    });
+    const request = vi.fn(async () =>
+      Response.json({
+        questions: [
+          {
+            required: true,
+            label: "First Name",
+            fields: [{ name: "first_name", type: "input_text" }],
+          },
+          {
+            required: true,
+            label: "Describe how you communicate technical findings",
+            fields: [{ name: "question_42", type: "textarea" }],
+          },
+        ],
+      }),
+    );
+    const packet = await new PrismaApplicationPacketRepository(
+      request,
+      mocks.queryKnowledge,
+      () => ({ generateStructured }) as never,
+    ).refresh({
+      applicationId: "application-1",
+      userId: "user-1",
+      reviewed: false,
+    });
+    expect(generateStructured).toHaveBeenCalledOnce();
+    expect(mocks.queryKnowledge).toHaveBeenCalledOnce();
+    expect(packet.answers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "First Name",
+          status: "RESOLVED",
+        }),
+        expect.objectContaining({
+          label: "Describe how you communicate technical findings",
+          status: "UNRESOLVED",
+        }),
+      ]),
+    );
+    expect(mocks.applicationUpdateMany).toHaveBeenCalledOnce();
   });
 
   it("includes the latest cover letter only on explicit unreviewed packet refresh", async () => {

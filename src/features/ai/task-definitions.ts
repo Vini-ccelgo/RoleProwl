@@ -136,6 +136,25 @@ export const aiTaskDefinitions = {
       rationale: z.string().max(2_000),
     }),
   },
+  APPLICATION_QUESTION_RESOLUTION: {
+    promptVersion: "application-question-resolution-v1",
+    schemaName: "application_question_resolutions",
+    system:
+      "Map only the supplied ordinary employer questions to allowedConcepts and supplied candidateKnowledge. A proposed value must be a faithful direct value or bounded reformulation supported by every listed candidateKnowledgeReference. Never invent facts, upgrade proficiency or experience, infer compensation, work authorization, sponsorship, or consent, or answer employer-specific motivation. Return no resolution when the supplied knowledge is insufficient. Every proposed value requires candidate approval.",
+    schema: z.object({
+      resolutions: z
+        .array(
+          z.object({
+            questionId: z.string().max(500),
+            canonicalConcept: z.string().max(128).nullable(),
+            proposedValue: z.string().max(4_000).nullable(),
+            candidateKnowledgeReferences: z.array(z.string().max(512)).max(8),
+            confidence: z.number().min(0).max(1),
+          }),
+        )
+        .max(50),
+    }),
+  },
   FREE_TEXT_APPLICATION_GENERATION: {
     promptVersion: "application-free-text-v1",
     schemaName: "application_free_text",

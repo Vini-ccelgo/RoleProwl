@@ -282,6 +282,113 @@ describe("application packet", () => {
     });
   });
 
+  it("consumes resolver dispositions and transfers only approved resolved values", () => {
+    const questions = [
+      {
+        id: "standard:english",
+        source: "GREENHOUSE" as const,
+        group: "STANDARD" as const,
+        label: "English proficiency",
+        required: true,
+        fieldNames: ["english_proficiency"],
+        fieldTypes: ["input_text"],
+        options: [],
+      },
+      {
+        id: "standard:communication",
+        source: "GREENHOUSE" as const,
+        group: "STANDARD" as const,
+        label: "Describe how you communicate findings",
+        required: true,
+        fieldNames: ["communication"],
+        fieldTypes: ["textarea"],
+        options: [],
+      },
+    ];
+    const packet = buildApplicationPacket({
+      reviewed: false,
+      source: source({
+        questions,
+        questionResolutions: [
+          {
+            questionId: "standard:english",
+            canonicalConcept: "LANGUAGE_PROFICIENCY:english",
+            disposition: "AUTO_RESOLVED",
+            value: "Professional fluent",
+            candidateKnowledgeReferences: ["english-memory"],
+            reasonCode: "APPROVED_REUSABLE_KNOWLEDGE",
+          },
+          {
+            questionId: "standard:communication",
+            canonicalConcept: "REUSABLE_SELF_DESCRIPTION",
+            disposition: "PROPOSED_FOR_CANDIDATE",
+            value: "I communicate findings to engineering teams.",
+            candidateKnowledgeReferences: ["summary-memory"],
+            reasonCode: "AI_GROUNDED_REFRAME_APPROVAL_REQUIRED",
+          },
+        ],
+      }),
+    });
+    expect(packet.answers[0]).toMatchObject({
+      status: "RESOLVED",
+      resolutionDisposition: "AUTO_RESOLVED",
+      canonicalConcept: "LANGUAGE_PROFICIENCY:english",
+    });
+    expect(packet.answers[1]).toMatchObject({
+      status: "UNRESOLVED",
+      resolutionDisposition: "PROPOSED_FOR_CANDIDATE",
+    });
+    expect(
+      packet.transfer.fields.find(
+        (field) => field.externalFieldId === "standard:english",
+      ),
+    ).toMatchObject({ status: "NOT_ATTEMPTED" });
+    expect(
+      packet.transfer.fields.find(
+        (field) => field.externalFieldId === "standard:communication",
+      ),
+    ).toMatchObject({ status: "UNSUPPORTED" });
+  });
+
+  it("keeps an application-specific override above an AI proposal", () => {
+    const packet = buildApplicationPacket({
+      reviewed: false,
+      source: source({
+        applicationOverrides: {
+          identity: {},
+          answers: { "standard:communication": "Candidate-approved answer" },
+        },
+        questions: [
+          {
+            id: "standard:communication",
+            source: "GREENHOUSE",
+            group: "STANDARD",
+            label: "Describe how you communicate findings",
+            required: true,
+            fieldNames: ["communication"],
+            fieldTypes: ["textarea"],
+            options: [],
+          },
+        ],
+        questionResolutions: [
+          {
+            questionId: "standard:communication",
+            canonicalConcept: "REUSABLE_SELF_DESCRIPTION",
+            disposition: "PROPOSED_FOR_CANDIDATE",
+            value: "AI proposal",
+            candidateKnowledgeReferences: ["summary-memory"],
+            reasonCode: "AI_GROUNDED_REFRAME_APPROVAL_REQUIRED",
+          },
+        ],
+      }),
+    });
+    expect(packet.answers[0]).toMatchObject({
+      status: "RESOLVED",
+      value: "Candidate-approved answer",
+      provenance: [expect.objectContaining({ source: "APPLICATION_OVERRIDE" })],
+    });
+  });
+
   it("preserves an explicit answer across stable logical question metadata changes", () => {
     const previous = buildApplicationPacket({
       reviewed: false,
