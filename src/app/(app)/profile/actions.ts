@@ -31,6 +31,8 @@ import {
   createCandidateNarrative,
   getCandidateKnowledgeSnapshot,
   persistCandidateKnowledgeProposals,
+  reconfirmDirectCandidateKnowledge,
+  removeDirectCandidateKnowledge,
   reviewCandidateKnowledgeProposal,
   saveDirectCandidateKnowledge,
   saveDirectCandidateKnowledgeBatch,
@@ -553,6 +555,41 @@ export async function saveCandidateKnowledgeAnswer(
     await saveDirectCandidateKnowledge({ userId: actor.id, concept, answer });
     return success(
       "Recurring answer saved and marked as candidate-approved.",
+      actor.id,
+    );
+  } catch (error) {
+    return formError(error);
+  }
+}
+
+export async function reconfirmCandidateKnowledgeAnswer(
+  _state: CandidateFormState,
+  formData: FormData,
+): Promise<CandidateFormState> {
+  try {
+    const actor = await requireAuthenticatedActor(currentAuthProvider());
+    await reconfirmDirectCandidateKnowledge({
+      userId: actor.id,
+      concept: value(formData, "concept").trim(),
+    });
+    return success("Recurring detail confirmed as still current.", actor.id);
+  } catch (error) {
+    return formError(error);
+  }
+}
+
+export async function removeCandidateKnowledgeAnswer(
+  _state: CandidateFormState,
+  formData: FormData,
+): Promise<CandidateFormState> {
+  try {
+    const actor = await requireAuthenticatedActor(currentAuthProvider());
+    await removeDirectCandidateKnowledge({
+      userId: actor.id,
+      concept: value(formData, "concept").trim(),
+    });
+    return success(
+      "Saved answer removed. Other supported profile evidence is unchanged.",
       actor.id,
     );
   } catch (error) {

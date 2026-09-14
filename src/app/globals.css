@@ -1098,13 +1098,31 @@ p {
   font-size: 0.78rem;
 }
 .candidate-knowledge-proposals,
-.candidate-knowledge-review-form {
+.candidate-knowledge-review-form,
+.candidate-knowledge-current {
   display: grid;
   gap: 0.75rem;
 }
-.candidate-knowledge-proposals h3 {
+.candidate-knowledge-proposals h3,
+.candidate-knowledge-current h3 {
   margin: 0;
   font-size: 0.95rem;
+}
+.candidate-knowledge-current .vault-record {
+  display: grid;
+  gap: 0.35rem;
+}
+.candidate-knowledge-current .vault-record > small {
+  color: var(--foreground-muted);
+}
+.candidate-knowledge-inline-action .vault-form-grid {
+  display: none;
+}
+.candidate-knowledge-inline-action .vault-form-footer {
+  justify-content: flex-start;
+}
+.candidate-knowledge-inline-action .form-message:empty {
+  display: none;
 }
 .candidate-knowledge-review-actions {
   display: flex;

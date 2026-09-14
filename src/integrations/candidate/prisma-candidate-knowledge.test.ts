@@ -13,6 +13,8 @@ vi.mock("@/integrations/applications/invalidate-application-packets", () => ({
 
 import {
   getCandidateKnowledgeSnapshot,
+  reconfirmDirectCandidateKnowledge,
+  removeDirectCandidateKnowledge,
   reviewCandidateKnowledgeProposal,
   saveDirectCandidateKnowledge,
   saveDirectCandidateKnowledgeBatch,
@@ -46,6 +48,71 @@ function database(proposalUserId = "candidate-a") {
       $transaction: vi.fn(async (run) => run(transaction)),
     },
   };
+}
+
+function snapshotDatabase(input?: {
+  memories?: Array<Record<string, unknown>>;
+  narratives?: Array<Record<string, unknown>>;
+  profile?: Record<string, unknown> | null;
+}) {
+  let memories = input?.memories ?? [];
+  const candidateFactDelete = vi.fn();
+  const transaction = {
+    answerMemory: {
+      findFirst: vi.fn(
+        async ({ where }) =>
+          memories.find(
+            (memory) =>
+              memory.userId === where.userId &&
+              memory.concept === where.concept,
+          ) ?? null,
+      ),
+      deleteMany: vi.fn(async ({ where }) => {
+        const before = memories.length;
+        memories = memories.filter(
+          (memory) =>
+            memory.userId !== where.userId || memory.concept !== where.concept,
+        );
+        return { count: before - memories.length };
+      }),
+      upsert: vi.fn(async () => ({ id: "memory-upserted" })),
+    },
+    candidateFact: { deleteMany: candidateFactDelete },
+    auditEvent: { create: vi.fn(async () => ({})) },
+    application: { findMany: vi.fn(async () => []), updateMany: vi.fn() },
+    applicationEvent: { create: vi.fn() },
+  };
+  const emptyMany = { findMany: vi.fn(async () => []) };
+  const client = {
+    $transaction: vi.fn(async (run) => run(transaction)),
+    candidateProfile: {
+      findUnique: vi.fn(async ({ where }) =>
+        where.userId === "candidate-a" ? (input?.profile ?? null) : null,
+      ),
+    },
+    workExperience: emptyMany,
+    education: emptyMany,
+    skill: emptyMany,
+    project: emptyMany,
+    credential: emptyMany,
+    candidateFact: { findMany: vi.fn(async () => []) },
+    candidatePreferences: { findUnique: vi.fn(async () => null) },
+    workAuthorizationProfile: { findUnique: vi.fn(async () => null) },
+    answerMemory: {
+      findMany: vi.fn(async ({ where }) =>
+        memories.filter((memory) => memory.userId === where.userId),
+      ),
+    },
+    candidateNarrative: {
+      findMany: vi.fn(async ({ where }) =>
+        (input?.narratives ?? []).filter(
+          (narrative) => narrative.userId === where.userId,
+        ),
+      ),
+    },
+    candidateKnowledgeProposal: { findMany: vi.fn(async () => []) },
+  };
+  return { candidateFactDelete, client, transaction };
 }
 
 describe("candidate knowledge proposal review persistence", () => {
@@ -174,6 +241,65 @@ describe("candidate knowledge proposal review persistence", () => {
     }
   });
 
+  it("projects known recurring details and saved jurisdictions separately from gaps", async () => {
+    const verifiedAt = new Date("2026-09-14T12:00:00Z");
+    const memory = (concept: string, answer: Record<string, unknown>) => ({
+      id: `memory-${concept}`,
+      userId: "candidate-a",
+      concept,
+      answer,
+      autoAnswerAllowed: true,
+      origin: "EXPLICIT",
+      candidateApproved: true,
+      reusable: true,
+      verifiedAt,
+    });
+    const db = snapshotDatabase({
+      memories: [
+        memory("NOTICE_PERIOD", { text: "30 days" }),
+        memory("WORK_AUTHORIZATION:BR", { status: "Authorized" }),
+        memory("SPONSORSHIP_REQUIREMENT:BR", { required: false }),
+        memory("WORK_AUTHORIZATION:US", { status: "Not authorized" }),
+        memory("SPONSORSHIP_REQUIREMENT:US", { required: true }),
+      ],
+      narratives: [
+        {
+          id: "narrative-current",
+          userId: "candidate-a",
+          theme: "RECURRING_DETAILS",
+          content: "My current recurring details.",
+          createdAt: verifiedAt,
+          updatedAt: verifiedAt,
+        },
+      ],
+    });
+    const snapshot = await getCandidateKnowledgeSnapshot(
+      "candidate-a",
+      verifiedAt,
+      db.client as never,
+    );
+    expect(snapshot.currentDetails.map((item) => item.concept)).toContain(
+      "NOTICE_PERIOD",
+    );
+    expect(snapshot.jurisdictions.map((item) => item.countryCode)).toEqual([
+      "BR",
+      "US",
+    ]);
+    expect(snapshot.jurisdictions[0]).toEqual(
+      expect.objectContaining({
+        countryCode: "BR",
+        authorization: expect.objectContaining({ status: "KNOWN" }),
+        sponsorship: expect.objectContaining({ status: "KNOWN" }),
+      }),
+    );
+    expect(
+      snapshot.gapPrompts.flatMap((prompt) => prompt.concepts),
+    ).not.toContain("NOTICE_PERIOD");
+    expect(snapshot.narratives[0]?.content).toBe(
+      "My current recurring details.",
+    );
+  });
+
   it("stores optional current compensation with explicit structure and confirmation time", async () => {
     const db = database();
     const confirmedAt = new Date("2026-09-12T12:00:00Z");
@@ -202,6 +328,155 @@ describe("candidate knowledge proposal review persistence", () => {
         }),
       }),
     );
+  });
+
+  it("edits one canonical memory row with renewed candidate authority", async () => {
+    const db = database();
+    const confirmedAt = new Date("2026-09-14T12:00:00Z");
+    await saveDirectCandidateKnowledge(
+      {
+        userId: "candidate-a",
+        concept: "NOTICE_PERIOD",
+        answer: { text: "45 days" },
+        confirmedAt,
+      },
+      db.client as never,
+    );
+    expect(db.transaction.answerMemory.upsert).toHaveBeenCalledOnce();
+    expect(db.transaction.answerMemory.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          userId_concept: {
+            userId: "candidate-a",
+            concept: "NOTICE_PERIOD",
+          },
+        },
+        update: expect.objectContaining({
+          answer: { text: "45 days" },
+          autoAnswerAllowed: true,
+          candidateApproved: true,
+          reusable: true,
+          verifiedAt: confirmedAt,
+        }),
+      }),
+    );
+  });
+
+  it("reconfirms a stale value without requiring re-entry", async () => {
+    const verifiedAt = new Date("2026-01-01T00:00:00Z");
+    const confirmedAt = new Date("2026-09-14T12:00:00Z");
+    const db = snapshotDatabase({
+      memories: [
+        {
+          id: "memory-1",
+          userId: "candidate-a",
+          concept: "NOTICE_PERIOD",
+          answer: { text: "30 days" },
+          autoAnswerAllowed: true,
+          origin: "EXPLICIT",
+          candidateApproved: true,
+          reusable: true,
+          verifiedAt,
+        },
+      ],
+    });
+    await reconfirmDirectCandidateKnowledge(
+      { userId: "candidate-a", concept: "NOTICE_PERIOD", confirmedAt },
+      db.client as never,
+    );
+    expect(db.transaction.answerMemory.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          answer: { text: "30 days" },
+          verifiedAt: confirmedAt,
+        }),
+      }),
+    );
+  });
+
+  it("clears only the owner's answer-memory override and falls back to profile evidence", async () => {
+    const now = new Date("2026-09-14T12:00:00Z");
+    const db = snapshotDatabase({
+      profile: {
+        id: "profile-a",
+        userId: "candidate-a",
+        firstName: "Maya",
+        lastName: "Chen",
+        applicationEmail: null,
+        phone: null,
+        location: "São Paulo, Brazil",
+        websiteUrl: null,
+        linkedInUrl: null,
+        updatedAt: now,
+      },
+      memories: [
+        {
+          id: "memory-a",
+          userId: "candidate-a",
+          concept: "CURRENT_LOCATION",
+          answer: { text: "Curitiba, Brazil" },
+          autoAnswerAllowed: true,
+          origin: "EXPLICIT",
+          candidateApproved: true,
+          reusable: true,
+          verifiedAt: now,
+        },
+        {
+          id: "memory-b",
+          userId: "candidate-b",
+          concept: "CURRENT_LOCATION",
+          answer: { text: "Boston, US" },
+          autoAnswerAllowed: true,
+          origin: "EXPLICIT",
+          candidateApproved: true,
+          reusable: true,
+          verifiedAt: now,
+        },
+      ],
+    });
+    await removeDirectCandidateKnowledge(
+      { userId: "candidate-a", concept: "CURRENT_LOCATION" },
+      db.client as never,
+    );
+    const snapshot = await getCandidateKnowledgeSnapshot(
+      "candidate-a",
+      now,
+      db.client as never,
+    );
+    expect(
+      snapshot.coverage.find((item) => item.concept === "CURRENT_LOCATION")
+        ?.result.value,
+    ).toEqual({ text: "São Paulo, Brazil" });
+    expect(db.transaction.answerMemory.deleteMany).toHaveBeenCalledWith({
+      where: {
+        id: "memory-a",
+        userId: "candidate-a",
+        concept: "CURRENT_LOCATION",
+      },
+    });
+    expect(db.candidateFactDelete).not.toHaveBeenCalled();
+    expect(
+      JSON.stringify(db.transaction.auditEvent.create.mock.calls),
+    ).not.toContain("Curitiba");
+  });
+
+  it("fails a cross-user clear without touching the other candidate's memory", async () => {
+    const db = snapshotDatabase({
+      memories: [
+        {
+          id: "memory-b",
+          userId: "candidate-b",
+          concept: "NOTICE_PERIOD",
+        },
+      ],
+    });
+    await expect(
+      removeDirectCandidateKnowledge(
+        { userId: "candidate-a", concept: "NOTICE_PERIOD" },
+        db.client as never,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundError);
+    expect(db.transaction.auditEvent.create).not.toHaveBeenCalled();
   });
 
   it("stores a residual answer batch in one transaction and invalidates packets once", async () => {

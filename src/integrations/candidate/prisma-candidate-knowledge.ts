@@ -70,8 +70,54 @@ export async function getCandidateKnowledgeSnapshot(
     memories,
   });
   const coverage = buildCandidateKnowledgeCoverage({ evidence, now });
+  const currentDetails = coverage.filter(
+    (item) =>
+      item.result.value !== null &&
+      ![
+        "FIRST_NAME",
+        "LAST_NAME",
+        "APPLICATION_EMAIL",
+        "PHONE",
+        "WEBSITE_URL",
+        "LINKEDIN_URL",
+        "EMPLOYMENT_HISTORY",
+        "EDUCATION_HISTORY",
+        "CERTIFICATIONS",
+        "SKILLS",
+        "PROJECTS",
+        "US_WORK_AUTHORIZATION",
+        "US_FUTURE_SPONSORSHIP",
+      ].includes(item.concept) &&
+      !item.concept.startsWith("LANGUAGE:") &&
+      !item.concept.startsWith("WORK_AUTHORIZATION:") &&
+      !item.concept.startsWith("SPONSORSHIP_REQUIREMENT:"),
+  );
+  const jurisdictionCountryCodes = new Set(
+    coverage.flatMap((item) => {
+      if (
+        !item.result.value ||
+        (!item.concept.startsWith("WORK_AUTHORIZATION:") &&
+          !item.concept.startsWith("SPONSORSHIP_REQUIREMENT:"))
+      )
+        return [];
+      return [item.concept.slice(item.concept.indexOf(":") + 1)];
+    }),
+  );
+  const jurisdictions = [...jurisdictionCountryCodes]
+    .sort()
+    .map((countryCode) => ({
+      countryCode,
+      authorization: coverage.find(
+        (item) => item.concept === `WORK_AUTHORIZATION:${countryCode}`,
+      ),
+      sponsorship: coverage.find(
+        (item) => item.concept === `SPONSORSHIP_REQUIREMENT:${countryCode}`,
+      ),
+    }));
   return {
     coverage,
+    currentDetails,
+    jurisdictions,
     gapPrompts: candidateKnowledgeGapPrompts(coverage),
     narratives,
     proposals,
@@ -236,6 +282,78 @@ export async function saveDirectCandidateKnowledge(
     const memory = await upsertDirectCandidateKnowledge(transaction, input);
     await invalidateReadyApplicationPackets(transaction, input.userId);
     return memory;
+  });
+}
+
+export async function reconfirmDirectCandidateKnowledge(
+  input: {
+    readonly userId: string;
+    readonly concept: string;
+    readonly confirmedAt?: Date;
+  },
+  database: PrismaClient = databaseClient(),
+) {
+  if (!isCandidateKnowledgeConcept(input.concept))
+    throw new ValidationError("Unknown recurring candidate concept.");
+  const confirmedAt = input.confirmedAt ?? new Date();
+  const current = await queryCandidateKnowledge({
+    userId: input.userId,
+    concept: input.concept,
+    now: confirmedAt,
+    snapshot: await getCandidateKnowledgeSnapshot(
+      input.userId,
+      confirmedAt,
+      database,
+    ),
+  });
+  if (!current.value) throw new NotFoundError();
+  return saveDirectCandidateKnowledge(
+    {
+      userId: input.userId,
+      concept: input.concept,
+      answer: current.value,
+      confirmedAt,
+      resolvesConflicts: current.conflict,
+    },
+    database,
+  );
+}
+
+export async function removeDirectCandidateKnowledge(
+  input: { readonly userId: string; readonly concept: string },
+  database: PrismaClient = databaseClient(),
+) {
+  if (!isCandidateKnowledgeConcept(input.concept))
+    throw new ValidationError("Unknown recurring candidate concept.");
+  return database.$transaction(async (transaction) => {
+    const current = await transaction.answerMemory.findFirst({
+      where: { userId: input.userId, concept: input.concept },
+      select: { id: true },
+    });
+    if (!current) throw new NotFoundError();
+    const removed = await transaction.answerMemory.deleteMany({
+      where: {
+        id: current.id,
+        userId: input.userId,
+        concept: input.concept,
+      },
+    });
+    if (removed.count !== 1) throw new NotFoundError();
+    await transaction.auditEvent.create({
+      data: {
+        actorUserId: input.userId,
+        action: "QUESTION_ANSWERED",
+        entityType: "answerMemory",
+        entityId: current.id,
+        metadata: {
+          concept: input.concept,
+          operation: "REMOVED",
+          reason: "USER_REVOCATION",
+        },
+      },
+    });
+    await invalidateReadyApplicationPackets(transaction, input.userId);
+    return { removed: true as const };
   });
 }
 
