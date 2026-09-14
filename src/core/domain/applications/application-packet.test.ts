@@ -3,8 +3,11 @@ import {
   applicationPacketCanBeReviewed,
   applicationTransferStatus,
   buildApplicationPacket,
+  fanOutCompatibleApplicationAnswers,
   materialRequiredQuestionSchemaChanged,
   reconcileApplicationQuestionOverrides,
+  semanticApplicationAnswerGroups,
+  type ApplicationPacketAnswer,
   type ApplicationPacketSource,
 } from "./application-packet";
 
@@ -723,5 +726,68 @@ describe("application packet", () => {
         questions: [{ ...question, options: ["Day", "Night", "Flexible"] }],
       }),
     ).toBe(true);
+  });
+});
+
+describe("semantic employer question groups", () => {
+  function answer(
+    questionId: string,
+    overrides: Partial<ApplicationPacketAnswer> = {},
+  ): ApplicationPacketAnswer {
+    return {
+      key: `question:${questionId}`,
+      questionId,
+      label: questionId,
+      required: true,
+      status: "UNRESOLVED",
+      value: null,
+      provenance: [],
+      classification: "CANDIDATE_KNOWLEDGE",
+      fieldNames: [questionId],
+      fieldTypes: ["input_text"],
+      options: [],
+      canonicalConcept: "FIRST_NAME",
+      ...overrides,
+    };
+  }
+
+  it("coalesces compatible duplicate concepts while retaining every employer ID", () => {
+    const groups = semanticApplicationAnswerGroups([
+      answer("first_name", { label: "First name" }),
+      answer("nome", { label: "Nome", fieldTypes: ["textarea"] }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.answers.map((item) => item.questionId)).toEqual([
+      "first_name",
+      "nome",
+    ]);
+  });
+
+  it("does not coalesce materially incompatible choice taxonomies", () => {
+    const groups = semanticApplicationAnswerGroups([
+      answer("english_a", {
+        canonicalConcept: "LANGUAGE_PROFICIENCY:english",
+        fieldTypes: ["input_radio"],
+        options: ["Basic", "Fluent"],
+      }),
+      answer("english_b", {
+        canonicalConcept: "LANGUAGE_PROFICIENCY:english",
+        fieldTypes: ["multi_value_single_select"],
+        options: ["A1", "A2", "B1", "B2", "C1", "C2"],
+      }),
+    ]);
+    expect(groups).toHaveLength(2);
+  });
+
+  it("fans one candidate answer out to all compatible employer controls", () => {
+    const answers = [answer("first_name"), answer("nome")];
+    expect(
+      fanOutCompatibleApplicationAnswers(answers, [
+        { key: "first_name", value: "Avery" },
+      ]),
+    ).toEqual([
+      { key: "first_name", value: "Avery" },
+      { key: "nome", value: "Avery" },
+    ]);
   });
 });

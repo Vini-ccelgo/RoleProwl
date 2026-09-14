@@ -1,6 +1,7 @@
 import type { AIProvider } from "@/core/contracts/ai-provider";
 import {
   isCandidateKnowledgeConcept,
+  jurisdictionConceptsExplicitlyNamed,
   type CandidateKnowledgeConcept,
 } from "@/core/domain/candidate/candidate-knowledge";
 import { aiTaskDefinitions } from "@/features/ai/task-definitions";
@@ -27,6 +28,10 @@ export async function extractCandidateNarrativeProposals(input: {
   if (!narrative || narrative.length > MAX_CANDIDATE_NARRATIVE_CHARACTERS)
     throw new Error("Candidate narrative must contain 1 to 12,000 characters.");
   const definition = aiTaskDefinitions.CANDIDATE_NARRATIVE_EXTRACTION;
+  const allowedConcepts = new Set([
+    ...input.allowedConcepts,
+    ...jurisdictionConceptsExplicitlyNamed(narrative),
+  ]);
   const generated = await input.ai.generateStructured({
     task: "CANDIDATE_NARRATIVE_EXTRACTION",
     dataClassification: "REAL_CANDIDATE",
@@ -40,14 +45,13 @@ export async function extractCandidateNarrativeProposals(input: {
     allowFlashEscalation: false,
     input: {
       candidateNarrative: narrative,
-      allowedConcepts: input.allowedConcepts,
+      allowedConcepts: [...allowedConcepts],
     },
   });
-  const allowed = new Set(input.allowedConcepts);
   return generated.data.proposals.flatMap((proposal) => {
     if (
       !isCandidateKnowledgeConcept(proposal.concept) ||
-      !allowed.has(proposal.concept) ||
+      !allowedConcepts.has(proposal.concept) ||
       !narrative.includes(proposal.supportingText)
     )
       return [];

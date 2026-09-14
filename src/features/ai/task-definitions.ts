@@ -55,7 +55,7 @@ export const aiTaskDefinitions = {
     promptVersion: "candidate-narrative-v1",
     schemaName: "candidate_narrative_proposals",
     system:
-      "Extract only reusable concepts explicitly supported by the candidate-authored narrative. Select only from allowedConcepts. supportingText must be an exact substring of the narrative. Faithful normalization may be DERIVED; do not infer missing facts, consent, salary, authorization, sponsorship, proficiency, or preferences. Every result remains a proposal requiring candidate review.",
+      "Extract only reusable concepts explicitly supported by the candidate-authored narrative. Select only from allowedConcepts. supportingText must be an exact substring of the narrative. Faithful normalization may be DERIVED; do not infer missing facts, consent, salary, proficiency, preferences, or any authorization/sponsorship jurisdiction. Authorization or sponsorship may be proposed only when the candidate explicitly states the fact and its country. Every result remains a proposal requiring candidate review.",
     schema: z.object({
       proposals: z
         .array(

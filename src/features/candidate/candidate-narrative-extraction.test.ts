@@ -103,4 +103,70 @@ describe("candidate narrative extraction", () => {
     ).rejects.toThrow("1 to 12,000");
     expect(fake.generateStructured).not.toHaveBeenCalled();
   });
+
+  it("does not allow jurisdiction-free sponsorship or borrow candidate location", async () => {
+    const fake = provider({
+      proposals: [
+        {
+          concept: "SPONSORSHIP_REQUIREMENT:BR",
+          value: "Not required",
+          supportingText: "I do not need sponsorship",
+          origin: "EXPLICIT",
+          confidence: 0.9,
+          approvalRequired: true,
+        },
+      ],
+    });
+    const result = await extractCandidateNarrativeProposals({
+      ai: fake.ai,
+      allowedConcepts: [],
+      correlationId: "correlation-generic",
+      narrative: "I live in Brazil. I do not need sponsorship.",
+      userId: "candidate-a",
+    });
+    expect(result).toEqual([]);
+    expect(fake.generateStructured.mock.calls[0][0].input).toEqual({
+      candidateNarrative: "I live in Brazil. I do not need sponsorship.",
+      allowedConcepts: [],
+    });
+  });
+
+  it("allows Brazil concepts only when the narrative explicitly binds facts to Brazil", async () => {
+    const narrative =
+      "I am authorized to work in Brazil and do not require sponsorship there.";
+    const fake = provider({
+      proposals: [
+        {
+          concept: "WORK_AUTHORIZATION:BR",
+          value: "Authorized",
+          supportingText: "authorized to work in Brazil",
+          origin: "EXPLICIT",
+          confidence: 0.95,
+          approvalRequired: true,
+        },
+        {
+          concept: "SPONSORSHIP_REQUIREMENT:BR",
+          value: "Not required",
+          supportingText: "do not require sponsorship there",
+          origin: "EXPLICIT",
+          confidence: 0.95,
+          approvalRequired: true,
+        },
+      ],
+    });
+    const result = await extractCandidateNarrativeProposals({
+      ai: fake.ai,
+      allowedConcepts: [],
+      correlationId: "correlation-br",
+      narrative,
+      userId: "candidate-a",
+    });
+    expect(result.map((proposal) => proposal.concept)).toEqual([
+      "WORK_AUTHORIZATION:BR",
+      "SPONSORSHIP_REQUIREMENT:BR",
+    ]);
+    expect(fake.generateStructured.mock.calls[0][0].input).toMatchObject({
+      allowedConcepts: ["WORK_AUTHORIZATION:BR", "SPONSORSHIP_REQUIREMENT:BR"],
+    });
+  });
 });

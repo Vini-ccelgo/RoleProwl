@@ -110,7 +110,12 @@ function scalarEvidence(input: {
 }
 
 const FACT_CONCEPTS = {
+  PROFILE_FIRST_NAME: "FIRST_NAME",
+  PROFILE_LAST_NAME: "LAST_NAME",
   PROFILE_EMAIL: "APPLICATION_EMAIL",
+  PROFILE_PHONE: "PHONE",
+  PROFILE_LINKEDIN_URL: "LINKEDIN_URL",
+  PROFILE_WEBSITE_URL: "WEBSITE_URL",
   PROFILE_LOCATION: "CURRENT_LOCATION",
   WORK_EXPERIENCE_TEXT: "EMPLOYMENT_HISTORY",
   EDUCATION_TEXT: "EDUCATION_HISTORY",
@@ -157,6 +162,38 @@ function languageEvidence(
   return items;
 }
 
+function collectionRecordValue(
+  concept:
+    | "EMPLOYMENT_HISTORY"
+    | "EDUCATION_HISTORY"
+    | "SKILLS"
+    | "PROJECTS"
+    | "CERTIFICATIONS",
+  value: Dated & Record<string, unknown>,
+) {
+  const textFields: Readonly<Record<typeof concept, readonly string[]>> = {
+    EMPLOYMENT_HISTORY: ["title", "employer"],
+    EDUCATION_HISTORY: ["credential", "program", "institution"],
+    SKILLS: ["canonicalName", "name"],
+    PROJECTS: ["name", "title"],
+    CERTIFICATIONS: ["name", "title", "issuer"],
+  };
+  const explicitText = typeof value.text === "string" ? value.text.trim() : "";
+  const summary =
+    explicitText ||
+    textFields[concept]
+      .flatMap((key) => {
+        const candidate = value[key];
+        return typeof candidate === "string" && candidate.trim()
+          ? [candidate.trim()]
+          : [];
+      })
+      .join(" — ");
+  return summary
+    ? { identity: value.id, text: summary }
+    : { identity: value.id };
+}
+
 export function evidenceFromCandidateSources(
   sources: CandidateKnowledgeSources,
 ): CandidateKnowledgeEvidence[] {
@@ -201,7 +238,9 @@ export function evidenceFromCandidateSources(
         ),
         source: "TRUTH_VAULT",
         origin: "EXPLICIT",
-        value: { recordIds: values.map((value) => value.id) },
+        value: {
+          items: values.map((value) => collectionRecordValue(concept, value)),
+        },
       }),
     );
   }
@@ -234,7 +273,12 @@ export function evidenceFromCandidateSources(
         source: "RESUME",
         sourceId: fact.id,
         origin:
+          fact.factType === "PROFILE_FIRST_NAME" ||
+          fact.factType === "PROFILE_LAST_NAME" ||
           fact.factType === "PROFILE_EMAIL" ||
+          fact.factType === "PROFILE_PHONE" ||
+          fact.factType === "PROFILE_LINKEDIN_URL" ||
+          fact.factType === "PROFILE_WEBSITE_URL" ||
           fact.factType === "PROFILE_LOCATION"
             ? "DERIVED"
             : "EXPLICIT",

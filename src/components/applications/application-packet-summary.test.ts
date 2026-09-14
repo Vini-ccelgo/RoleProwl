@@ -478,4 +478,82 @@ describe("application packet summary", () => {
     expect(markup).toContain('data-dirty="false"');
     expect(markup).toContain("disabled");
   });
+
+  it("counts and renders one candidate interaction for compatible duplicate controls", () => {
+    const questions = [
+      {
+        id: "first_name",
+        source: "GREENHOUSE" as const,
+        group: "STANDARD" as const,
+        label: "First name",
+        required: true,
+        fieldNames: ["first_name"],
+        fieldTypes: ["input_text"],
+        options: [],
+      },
+      {
+        id: "nome",
+        source: "GREENHOUSE" as const,
+        group: "STANDARD" as const,
+        label: "Nome",
+        required: true,
+        fieldNames: ["nome"],
+        fieldTypes: ["input_text"],
+        options: [],
+      },
+    ];
+    const packet = buildApplicationPacket({
+      reviewed: false,
+      source: {
+        accountEmail: "candidate@example.test",
+        profile: {
+          firstName: "",
+          lastName: "Quill",
+          applicationEmail: "candidate@example.test",
+          phone: null,
+          location: null,
+          countryCode: null,
+          professionalTitle: null,
+        },
+        verifiedResumeFacts: [],
+        experience: [],
+        education: [],
+        credentials: [],
+        skills: [],
+        languages: [],
+        workAuthorization: null,
+        sponsorshipRequired: null,
+        answerMemories: [],
+        selectedResume: null,
+        coverLetter: null,
+        questions,
+        questionResolutions: questions.map((question) => ({
+          questionId: question.id,
+          canonicalConcept: "FIRST_NAME" as const,
+          disposition: "CANDIDATE_REQUIRED" as const,
+          value: null,
+          candidateKnowledgeReferences: [],
+          reasonCode: "CANDIDATE_KNOWLEDGE_MISSING",
+        })),
+        questionInspection: "AVAILABLE",
+        sourceName: "GREENHOUSE",
+        targetRole: "Security Analyst",
+      },
+    });
+    const markup = renderToStaticMarkup(
+      createElement(ApplicationPacketSummary, {
+        applicationId: "application-1",
+        packet,
+        saveAction: async () => undefined,
+      }),
+    );
+    expect(markup).toMatch(/>1<\/strong><p[^>]*>Needs your answer<\/p>/u);
+    expect(markup).toContain('name="answer:first_name"');
+    expect(markup).not.toContain('name="answer:nome"');
+    expect(markup).not.toContain('name="identity:firstName"');
+    expect(packet.answers.map((answer) => answer.questionId)).toEqual([
+      "first_name",
+      "nome",
+    ]);
+  });
 });

@@ -1,9 +1,12 @@
 import {
   saveCandidateKnowledgeAnswer,
+  saveJurisdictionCandidateKnowledge,
   submitCandidateNarrative,
 } from "@/app/(app)/profile/actions";
 import {
+  candidateKnowledgeConflictSourceLabels,
   candidateKnowledgePolicy,
+  candidateKnowledgeSourceLabel,
   type CandidateKnowledgeConcept,
 } from "@/core/domain/candidate/candidate-knowledge";
 import type { getCandidateKnowledgeSnapshot } from "@/integrations/candidate/prisma-candidate-knowledge";
@@ -86,16 +89,14 @@ export function CandidateKnowledgeSection({
                   <li key={item.concept}>
                     {label(item.concept)}: the current{" "}
                     {item.result.provenance?.source
-                      .toLocaleLowerCase("en-US")
-                      .replaceAll("_", " ")}{" "}
+                      ? candidateKnowledgeSourceLabel(
+                          item.result.provenance.source,
+                        )
+                      : "candidate knowledge"}{" "}
                     value is retained and differs from{" "}
-                    {item.result.conflictingEvidence
-                      .map((evidence) =>
-                        evidence.provenance.source
-                          .toLocaleLowerCase("en-US")
-                          .replaceAll("_", " "),
-                      )
-                      .join(", ")}{" "}
+                    {candidateKnowledgeConflictSourceLabels(item.result).join(
+                      ", ",
+                    )}{" "}
                     evidence.
                   </li>
                 ))}
@@ -144,6 +145,43 @@ export function CandidateKnowledgeSection({
             No high-value recurring gaps remain.
           </p>
         )}
+
+        <details>
+          <summary>Add work authorization for a jurisdiction</summary>
+          <VaultForm
+            action={saveJurisdictionCandidateKnowledge}
+            resetOnSuccess
+            submitLabel="Save authorization details"
+          >
+            <TextField
+              name="jurisdictionCountryCode"
+              label="Country code"
+              placeholder="BR"
+              required
+            />
+            <label className="field">
+              <span>Work authorization</span>
+              <select name="workAuthorization" required>
+                <option value="">Select…</option>
+                <option value="AUTHORIZED">Authorized</option>
+                <option value="NOT_AUTHORIZED">Not authorized</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Sponsorship requirement</span>
+              <select name="sponsorshipRequirement" required>
+                <option value="">Select…</option>
+                <option value="REQUIRED">Required</option>
+                <option value="NOT_REQUIRED">Not required</option>
+              </select>
+            </label>
+          </VaultForm>
+          <p className="candidate-knowledge-prompt">
+            Record only a jurisdiction you explicitly choose. Candidate
+            location, nationality, and résumé location are not used to select a
+            country.
+          </p>
+        </details>
 
         {snapshot.gapPrompts.map((prompt) => (
           <details key={prompt.theme}>

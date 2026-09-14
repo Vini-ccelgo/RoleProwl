@@ -234,6 +234,116 @@ function packetForResolution(input: {
   });
 }
 
+function packetForDuplicateFirstName() {
+  const questions = [
+    {
+      id: "first_name",
+      source: "GREENHOUSE" as const,
+      group: "STANDARD" as const,
+      label: "First name",
+      required: true,
+      fieldNames: ["first_name"],
+      fieldTypes: ["input_text"],
+      options: [],
+    },
+    {
+      id: "nome",
+      source: "GREENHOUSE" as const,
+      group: "STANDARD" as const,
+      label: "Nome",
+      required: true,
+      fieldNames: ["nome"],
+      fieldTypes: ["input_text"],
+      options: [],
+    },
+  ];
+  return buildApplicationPacket({
+    reviewed: false,
+    source: {
+      accountEmail: "candidate@example.test",
+      profile: null,
+      verifiedResumeFacts: [],
+      experience: [],
+      education: [],
+      credentials: [],
+      skills: [],
+      languages: [],
+      workAuthorization: null,
+      sponsorshipRequired: null,
+      answerMemories: [],
+      selectedResume: null,
+      coverLetter: null,
+      questions,
+      questionResolutions: questions.map((question) => ({
+        questionId: question.id,
+        canonicalConcept: "FIRST_NAME" as const,
+        disposition: "CANDIDATE_REQUIRED" as const,
+        value: null,
+        candidateKnowledgeReferences: [],
+        reasonCode: "CANDIDATE_KNOWLEDGE_MISSING",
+      })),
+      questionInspection: "AVAILABLE",
+      sourceName: "GREENHOUSE",
+      targetRole: "Security Analyst",
+    },
+  });
+}
+
+function packetForIncompatibleEnglishControls() {
+  const questions = [
+    {
+      id: "english_words",
+      source: "GREENHOUSE" as const,
+      group: "STANDARD" as const,
+      label: "English proficiency",
+      required: true,
+      fieldNames: ["english_words"],
+      fieldTypes: ["input_radio"],
+      options: ["Basic", "Fluent"],
+    },
+    {
+      id: "english_cefr",
+      source: "GREENHOUSE" as const,
+      group: "STANDARD" as const,
+      label: "English CEFR level",
+      required: true,
+      fieldNames: ["english_cefr"],
+      fieldTypes: ["multi_value_single_select"],
+      options: ["A1", "A2", "B1", "B2", "C1", "C2"],
+    },
+  ];
+  return buildApplicationPacket({
+    reviewed: false,
+    source: {
+      accountEmail: "candidate@example.test",
+      profile: null,
+      verifiedResumeFacts: [],
+      experience: [],
+      education: [],
+      credentials: [],
+      skills: [],
+      languages: [],
+      workAuthorization: null,
+      sponsorshipRequired: null,
+      answerMemories: [],
+      selectedResume: null,
+      coverLetter: null,
+      questions,
+      questionResolutions: questions.map((question) => ({
+        questionId: question.id,
+        canonicalConcept: "LANGUAGE_PROFICIENCY:english" as const,
+        disposition: "CANDIDATE_REQUIRED" as const,
+        value: null,
+        candidateKnowledgeReferences: [],
+        reasonCode: "CANDIDATE_KNOWLEDGE_MISSING",
+      })),
+      questionInspection: "AVAILABLE",
+      sourceName: "GREENHOUSE",
+      targetRole: "Security Analyst",
+    },
+  });
+}
+
 describe("application packet actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -512,6 +622,7 @@ describe("application packet actions", () => {
         answers: [{ key: "question-42", value: "Yes" }],
       }),
     );
+    expect(saveApplicationOverrides).toHaveBeenCalledOnce();
     expect(saveDirectCandidateKnowledgeBatch).toHaveBeenCalledWith([
       {
         userId: "user-1",
@@ -520,6 +631,57 @@ describe("application packet actions", () => {
         resolvesConflicts: false,
       },
     ]);
+  });
+
+  it("fans one compatible candidate answer to duplicate controls with one memory write", async () => {
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: { packet: packetForDuplicateFirstName() },
+    });
+    const value = form();
+    value.set("answer:first_name", "Avery");
+    await saveApplicationOverridesAction(value);
+    expect(saveApplicationOverrides).toHaveBeenCalledWith(
+      expect.objectContaining({
+        applicationId: "application-1",
+        userId: "user-1",
+        answers: [
+          { key: "first_name", value: "Avery" },
+          { key: "nome", value: "Avery" },
+        ],
+      }),
+    );
+    expect(saveApplicationOverrides).toHaveBeenCalledOnce();
+    expect(saveDirectCandidateKnowledgeBatch).toHaveBeenCalledOnce();
+    expect(saveDirectCandidateKnowledgeBatch).toHaveBeenCalledWith([
+      {
+        userId: "user-1",
+        concept: "FIRST_NAME",
+        answer: { text: "Avery" },
+        resolvesConflicts: false,
+      },
+    ]);
+  });
+
+  it("keeps incompatible values application-scoped instead of overwriting reusable memory", async () => {
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: {
+        packet: packetForIncompatibleEnglishControls(),
+      },
+    });
+    const value = form();
+    value.set("answer:english_words", "Fluent");
+    value.set("answer:english_cefr", "C2");
+    await saveApplicationOverridesAction(value);
+    expect(saveApplicationOverrides).toHaveBeenCalledWith(
+      expect.objectContaining({
+        answers: [
+          { key: "english_words", value: "Fluent" },
+          { key: "english_cefr", value: "C2" },
+        ],
+      }),
+    );
+    expect(saveApplicationOverrides).toHaveBeenCalledOnce();
+    expect(saveDirectCandidateKnowledgeBatch).not.toHaveBeenCalled();
   });
 
   it("does not globalize an employer-specific answer", async () => {

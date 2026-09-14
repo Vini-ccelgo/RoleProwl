@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCandidateKnowledgeCoverage,
+  candidateKnowledgeConflictSourceLabels,
   candidateKnowledgeGapPrompts,
   candidateKnowledgePolicy,
   employerSpecificConsentFromGeneralPreference,
@@ -546,5 +547,289 @@ describe("candidate knowledge coverage", () => {
         now,
       }).status,
     ).toBe("STALE_CONFIRMATION_REQUIRED");
+  });
+
+  it.each([
+    ["EMPLOYMENT_HISTORY", "experiences"],
+    ["EDUCATION_HISTORY", "education"],
+    ["SKILLS", "skills"],
+    ["PROJECTS", "projects"],
+    ["CERTIFICATIONS", "credentials"],
+  ] as const)(
+    "aggregates multiple additive %s records without conflict",
+    (concept, sourceKey) => {
+      const sources = {
+        ...emptySources(),
+        [sourceKey]: [
+          {
+            id: `${sourceKey}-1`,
+            updatedAt: now,
+            title: "First",
+            canonicalName: "Python",
+            name: "First",
+          },
+          {
+            id: `${sourceKey}-2`,
+            updatedAt: now,
+            title: "Second",
+            canonicalName: "SQL",
+            name: "Second",
+          },
+        ],
+      };
+      const result = resolveCandidateKnowledge({
+        concept,
+        evidence: evidenceFromCandidateSources(sources),
+        now,
+      });
+      expect(result).toMatchObject({ status: "AVAILABLE", conflict: false });
+      expect(result.value?.items).toHaveLength(2);
+    },
+  );
+
+  it("retains a genuine conflict for incompatible claims about one semantic collection item", () => {
+    const result = resolveCandidateKnowledge({
+      concept: "SKILLS",
+      now,
+      evidence: [
+        item({
+          concept: "SKILLS",
+          source: "TRUTH_VAULT",
+          sourceId: "skill-python-profile",
+          value: {
+            items: [
+              { identity: "python", name: "Python", proficiency: "Advanced" },
+            ],
+          },
+        }),
+        item({
+          concept: "SKILLS",
+          source: "RESUME",
+          sourceId: "skill-python-resume",
+          value: {
+            items: [
+              { identity: "python", name: "Python", proficiency: "Beginner" },
+            ],
+          },
+        }),
+      ],
+    });
+    expect(result.conflict).toBe(true);
+    expect(result.conflictingEvidence).toHaveLength(1);
+  });
+
+  it("deduplicates candidate-facing conflict source categories", () => {
+    const result = resolveCandidateKnowledge({
+      concept: "CURRENT_LOCATION",
+      now,
+      evidence: [
+        item({
+          source: "PROFILE",
+          sourceId: "profile",
+          value: { text: "São Paulo" },
+        }),
+        item({
+          source: "RESUME",
+          sourceId: "resume-1",
+          value: { text: "Recife" },
+        }),
+        item({
+          source: "RESUME",
+          sourceId: "resume-2",
+          value: { text: "Curitiba" },
+        }),
+      ],
+    });
+    expect(candidateKnowledgeConflictSourceLabels(result)).toEqual([
+      "Verified résumé fact",
+    ]);
+  });
+
+  it("counts collection concepts once regardless of their evidence row count", () => {
+    const coverage = buildCandidateKnowledgeCoverage({
+      concepts: ["SKILLS", "PROJECTS"],
+      evidence: [
+        item({
+          concept: "SKILLS",
+          sourceId: "skill-1",
+          value: { text: "Python" },
+        }),
+        item({
+          concept: "SKILLS",
+          sourceId: "skill-2",
+          value: { text: "SQL" },
+        }),
+        item({
+          concept: "PROJECTS",
+          sourceId: "project-1",
+          value: { text: "Scanner" },
+        }),
+      ],
+      now,
+    });
+    expect(coverage).toHaveLength(2);
+    expect(coverage.filter((entry) => entry.status === "KNOWN")).toHaveLength(
+      2,
+    );
+  });
+
+  it("projects accepted résumé identity and contact facts without inventing absent values", () => {
+    const evidence = evidenceFromCandidateSources({
+      ...emptySources(),
+      verifiedResumeFacts: [
+        {
+          id: "first",
+          factType: "PROFILE_FIRST_NAME",
+          value: { text: "Avery" },
+          updatedAt: now,
+        },
+        {
+          id: "last",
+          factType: "PROFILE_LAST_NAME",
+          value: { text: "Quill" },
+          updatedAt: now,
+        },
+        {
+          id: "phone",
+          factType: "PROFILE_PHONE",
+          value: { text: "+55 31 99999-0000" },
+          updatedAt: now,
+        },
+        {
+          id: "linkedin",
+          factType: "PROFILE_LINKEDIN_URL",
+          value: { text: "https://linkedin.com/in/avery" },
+          updatedAt: now,
+        },
+      ],
+    });
+    for (const concept of [
+      "FIRST_NAME",
+      "LAST_NAME",
+      "PHONE",
+      "LINKEDIN_URL",
+    ] as const)
+      expect(resolveCandidateKnowledge({ concept, evidence, now }).status).toBe(
+        "AVAILABLE",
+      );
+    expect(
+      resolveCandidateKnowledge({ concept: "WEBSITE_URL", evidence, now })
+        .status,
+    ).toBe("MISSING");
+  });
+
+  it("leaves absent résumé phone and LinkedIn values missing", () => {
+    const evidence = evidenceFromCandidateSources({
+      ...emptySources(),
+      verifiedResumeFacts: [
+        {
+          id: "email-only",
+          factType: "PROFILE_EMAIL",
+          value: { text: "candidate@example.test" },
+          updatedAt: now,
+        },
+      ],
+    });
+    expect(
+      resolveCandidateKnowledge({ concept: "PHONE", evidence, now }).status,
+    ).toBe("MISSING");
+    expect(
+      resolveCandidateKnowledge({ concept: "LINKEDIN_URL", evidence, now })
+        .status,
+    ).toBe("MISSING");
+  });
+
+  it("raises a fully explicit résumé fixture from four-like sparse coverage to fourteen semantic concepts", () => {
+    const facts = [
+      ["PROFILE_FIRST_NAME", "Avery"],
+      ["PROFILE_LAST_NAME", "Quill"],
+      ["PROFILE_EMAIL", "avery@example.test"],
+      ["PROFILE_PHONE", "+55 31 99999-0000"],
+      ["PROFILE_LOCATION", "Belo Horizonte, MG"],
+      ["PROFILE_LINKEDIN_URL", "https://linkedin.com/in/avery"],
+      ["PROFILE_WEBSITE_URL", "https://avery.example.test"],
+      ["WORK_EXPERIENCE_TEXT", "Security analyst — Example"],
+      ["EDUCATION_TEXT", "BSc Computer Science"],
+      ["SKILL_TEXT", "Python"],
+      ["CREDENTIAL_TEXT", "Security+"],
+      ["PROJECT_TEXT", "Detection lab"],
+      ["LANGUAGE_TEXT", "English — Professional fluent"],
+    ] as const;
+    const evidence = evidenceFromCandidateSources({
+      ...emptySources(),
+      verifiedResumeFacts: facts.map(([factType, text], index) => ({
+        id: `fact-${index}`,
+        factType,
+        value: { text },
+        updatedAt: now,
+      })),
+    });
+    const coverage = buildCandidateKnowledgeCoverage({ evidence, now });
+    const known = coverage
+      .filter((item) => item.status === "KNOWN")
+      .map((item) => item.concept);
+    expect(known).toHaveLength(14);
+    expect(known).toEqual(
+      expect.arrayContaining([
+        "FIRST_NAME",
+        "LAST_NAME",
+        "APPLICATION_EMAIL",
+        "PHONE",
+        "CURRENT_LOCATION",
+        "LINKEDIN_URL",
+        "WEBSITE_URL",
+        "EMPLOYMENT_HISTORY",
+        "EDUCATION_HISTORY",
+        "SKILLS",
+        "CERTIFICATIONS",
+        "PROJECTS",
+        "LANGUAGE:english",
+        "LANGUAGE_PROFICIENCY:english",
+      ]),
+    );
+  });
+
+  it("omits legacy US aliases from generic gap coverage while preserving explicit aliases", () => {
+    const generic = buildCandidateKnowledgeCoverage({ evidence: [], now });
+    expect(generic.map((item) => item.concept)).not.toContain(
+      "US_WORK_AUTHORIZATION",
+    );
+    expect(generic.map((item) => item.concept)).not.toContain(
+      "US_FUTURE_SPONSORSHIP",
+    );
+    const explicit = buildCandidateKnowledgeCoverage({
+      evidence: [],
+      concepts: ["US_WORK_AUTHORIZATION", "US_FUTURE_SPONSORSHIP"],
+      now,
+    });
+    expect(explicit).toHaveLength(2);
+  });
+
+  it("counts historical US alias evidence through its jurisdiction-scoped concept only", () => {
+    const evidence = evidenceFromCandidateSources({
+      ...emptySources(),
+      memories: [
+        {
+          id: "legacy-us-authorization",
+          concept: "US_WORK_AUTHORIZATION",
+          answer: { text: "Authorized" },
+          autoAnswerAllowed: true,
+          origin: "EXPLICIT",
+          candidateApproved: true,
+          reusable: true,
+          verifiedAt: now,
+        },
+      ],
+    });
+    const coverage = buildCandidateKnowledgeCoverage({ evidence, now });
+    expect(coverage.map((item) => item.concept)).not.toContain(
+      "US_WORK_AUTHORIZATION",
+    );
+    expect(
+      coverage.filter(
+        (item) =>
+          item.concept === "WORK_AUTHORIZATION:US" && item.status === "KNOWN",
+      ),
+    ).toHaveLength(1);
   });
 });

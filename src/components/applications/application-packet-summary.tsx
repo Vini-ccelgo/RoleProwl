@@ -1,6 +1,9 @@
 import {
+  candidateDecisionKey,
   isApplicationPacket,
+  semanticApplicationAnswerGroups,
   type ApplicationPacket,
+  type ApplicationPacketAnswer,
   type ApplicationPacketField,
 } from "@/core/domain/applications/application-packet";
 import { CopyApplicationValue } from "./copy-application-value";
@@ -107,7 +110,7 @@ export function ApplicationPacketSummary({
     );
   const packet: ApplicationPacket = value;
   const answers = packet.answers ?? [];
-  const needsReview = [...packet.identity, ...answers].filter(
+  const rawNeedsReview = [...packet.identity, ...answers].filter(
     (field) =>
       field.status === "UNRESOLVED" ||
       field.status === "CONFLICTING" ||
@@ -119,9 +122,25 @@ export function ApplicationPacketSummary({
   const roleProwlPrepared = [...packet.identity, ...answers].filter(
     (field) => field.status === "RESOLVED",
   );
-  const staleAnswers = answers.filter(
+  const coalesceAnswers = (fields: readonly ApplicationPacketAnswer[]) =>
+    semanticApplicationAnswerGroups(fields).map((group) => group.answers[0]!);
+  const rawAnswerBlockers = rawNeedsReview.filter(
+    (field): field is ApplicationPacketAnswer => "questionId" in field,
+  );
+  const answerBlockers = coalesceAnswers(rawAnswerBlockers);
+  const answerBlockerKeys = new Set(answerBlockers.map(candidateDecisionKey));
+  const identityBlockers = rawNeedsReview.filter(
     (field) =>
-      field.resolutionReasonCode === "CANDIDATE_KNOWLEDGE_STALE" && field.value,
+      !("questionId" in field) &&
+      !answerBlockerKeys.has(candidateDecisionKey(field)),
+  );
+  const needsReview = [...identityBlockers, ...answerBlockers];
+  const staleAnswers = coalesceAnswers(
+    answers.filter(
+      (field) =>
+        field.resolutionReasonCode === "CANDIDATE_KNOWLEDGE_STALE" &&
+        Boolean(field.value),
+    ),
   );
   const editableBlockers = needsReview.filter(
     (field) =>
@@ -131,7 +150,7 @@ export function ApplicationPacketSummary({
         ["DOCUMENT", "PROFILE_FACT"].includes(field.classification)
       ),
   );
-  const applicationSpecific = [...packet.identity, ...answers].filter(
+  const rawApplicationSpecific = [...packet.identity, ...answers].filter(
     (field) =>
       (field.provenance ?? []).some(
         (item) => item.source === "APPLICATION_OVERRIDE",
@@ -142,6 +161,22 @@ export function ApplicationPacketSummary({
         ["DOCUMENT", "PROFILE_FACT"].includes(field.classification)
       ),
   );
+  const applicationSpecificAnswers = coalesceAnswers(
+    rawApplicationSpecific.filter(
+      (field): field is ApplicationPacketAnswer => "questionId" in field,
+    ),
+  );
+  const applicationSpecificAnswerKeys = new Set(
+    applicationSpecificAnswers.map(candidateDecisionKey),
+  );
+  const applicationSpecific = [
+    ...rawApplicationSpecific.filter(
+      (field) =>
+        !("questionId" in field) &&
+        !applicationSpecificAnswerKeys.has(candidateDecisionKey(field)),
+    ),
+    ...applicationSpecificAnswers,
+  ];
   const editableFields = [
     ...new Map(
       [...editableBlockers, ...applicationSpecific].map((field) => [
@@ -191,7 +226,10 @@ export function ApplicationPacketSummary({
         ) : null}
         <div className="grid gap-3 sm:grid-cols-3">
           {[
-            ["Automatically prepared", roleProwlPrepared.length],
+            [
+              "Automatically prepared",
+              new Set(roleProwlPrepared.map(candidateDecisionKey)).size,
+            ],
             ["Needs your answer", needsReview.length],
             [
               "Complete on employer site",
@@ -255,6 +293,7 @@ export function ApplicationPacketSummary({
             </h2>
             <p className="m-0 text-sm text-foreground-muted">
               Recurring answers update candidate memory and this Application.
+              One compatible answer is applied to equivalent employer controls.
               Employer-specific answers remain scoped to this Application.
             </p>
           </div>

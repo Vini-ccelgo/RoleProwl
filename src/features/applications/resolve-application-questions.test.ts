@@ -65,6 +65,58 @@ function fakeAI(resolutions: unknown[]) {
 
 describe("application question resolver", () => {
   it.each([
+    ["First name", "FIRST_NAME"],
+    ["Nome", "FIRST_NAME"],
+    ["Primeiro nome", "FIRST_NAME"],
+    ["Last name", "LAST_NAME"],
+    ["Sobrenome", "LAST_NAME"],
+    ["Phone", "PHONE"],
+    ["Telefone", "PHONE"],
+    ["Telefone celular", "PHONE"],
+    ["Email", "APPLICATION_EMAIL"],
+    ["E-mail", "APPLICATION_EMAIL"],
+  ] as const)(
+    "maps multilingual identity/contact label %s",
+    (label, concept) => {
+      expect(mapApplicationQuestionToCandidateConcept(question(label))).toBe(
+        concept,
+      );
+    },
+  );
+
+  it("does not treat a Portuguese company-name field as the candidate's first name", () => {
+    expect(
+      mapApplicationQuestionToCandidateConcept(question("Nome da empresa")),
+    ).toBeNull();
+  });
+
+  it("resolves equivalent multilingual identity and email controls from one concept each", async () => {
+    const results = await resolveApplicationQuestions({
+      correlationId: "application-duplicates",
+      userId: "candidate-1",
+      questions: [
+        question("First name"),
+        question("Nome"),
+        question("Email"),
+        question("E-mail"),
+      ],
+      knowledge: [
+        knowledge("FIRST_NAME", { text: "Avery" }),
+        knowledge("APPLICATION_EMAIL", { text: "avery@example.test" }),
+      ],
+    });
+    expect(results.map((result) => result.value)).toEqual([
+      "Avery",
+      "Avery",
+      "avery@example.test",
+      "avery@example.test",
+    ]);
+    expect(
+      results.every((result) => result.disposition === "AUTO_RESOLVED"),
+    ).toBe(true);
+  });
+
+  it.each([
     "English proficiency",
     "Qual o seu nível de fluência na língua inglesa?",
     "How comfortable are you working professionally in English?",

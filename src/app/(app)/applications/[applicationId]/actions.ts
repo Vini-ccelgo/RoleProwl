@@ -17,6 +17,7 @@ import {
 } from "@/core/domain/candidate/candidate-knowledge";
 import {
   isApplicationIdentityKey,
+  fanOutCompatibleApplicationAnswers,
   isApplicationPacket,
 } from "@/core/domain/applications/application-packet";
 import {
@@ -352,10 +353,11 @@ export async function saveApplicationOverridesAction(formData: FormData) {
       ? [{ key, value: candidate || null }]
       : [];
   });
-  const answers = [...formData.entries()].flatMap(([name, candidate]) =>
-    name.startsWith("answer:") && typeof candidate === "string"
-      ? [{ key: name.slice("answer:".length), value: candidate || null }]
-      : [],
+  const submittedAnswers = [...formData.entries()].flatMap(
+    ([name, candidate]) =>
+      name.startsWith("answer:") && typeof candidate === "string"
+        ? [{ key: name.slice("answer:".length), value: candidate || null }]
+        : [],
   );
   const application = await databaseClient().application.findFirst({
     where: { id: applicationId, userId: actor.id, submittedAt: null },
@@ -363,6 +365,9 @@ export async function saveApplicationOverridesAction(formData: FormData) {
   });
   const payload = evidenceSnapshot(application?.submissionPayloadSnapshot);
   const packet = isApplicationPacket(payload?.packet) ? payload.packet : null;
+  const answers = packet
+    ? fanOutCompatibleApplicationAnswers(packet.answers, submittedAnswers)
+    : submittedAnswers;
   const reusableAnswers = answers.flatMap((answer) => {
     const packetAnswer = packet?.answers.find(
       (candidate) => candidate.questionId === answer.key,
@@ -389,11 +394,22 @@ export async function saveApplicationOverridesAction(formData: FormData) {
         ]
       : [];
   });
-  const uniqueReusableAnswers = [
-    ...new Map(
-      reusableAnswers.map((answer) => [answer.concept, answer]),
-    ).values(),
-  ];
+  const reusableAnswersByConcept = new Map<
+    (typeof reusableAnswers)[number]["concept"],
+    (typeof reusableAnswers)[number][]
+  >();
+  for (const answer of reusableAnswers)
+    reusableAnswersByConcept.set(answer.concept, [
+      ...(reusableAnswersByConcept.get(answer.concept) ?? []),
+      answer,
+    ]);
+  const uniqueReusableAnswers = [...reusableAnswersByConcept.values()].flatMap(
+    (conceptAnswers) =>
+      new Set(conceptAnswers.map((answer) => JSON.stringify(answer.answer)))
+        .size === 1
+        ? [conceptAnswers[0]!]
+        : [],
+  );
   if (uniqueReusableAnswers.length)
     await saveDirectCandidateKnowledgeBatch(uniqueReusableAnswers);
   await saveApplicationOverrides({

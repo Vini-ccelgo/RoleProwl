@@ -7,7 +7,13 @@ import {
 
 describe("resume proposal destination mapping", () => {
   it.each([
+    ["PROFILE_FIRST_NAME", "candidateFacts.profileFirstNames"],
+    ["PROFILE_LAST_NAME", "candidateFacts.profileLastNames"],
     ["PROFILE_EMAIL", "candidateFacts.profileEmails"],
+    ["PROFILE_PHONE", "candidateFacts.profilePhones"],
+    ["PROFILE_LINKEDIN_URL", "candidateFacts.linkedInUrls"],
+    ["PROFILE_WEBSITE_URL", "candidateFacts.websiteUrls"],
+    ["PROFILE_LOCATION", "candidateFacts.profileLocations"],
     ["SKILL_TEXT", "candidateFacts.skills"],
     ["EDUCATION_TEXT", "candidateFacts.education"],
     ["PROJECT_TEXT", "candidateFacts.projects"],

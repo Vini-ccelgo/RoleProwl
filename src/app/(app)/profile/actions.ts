@@ -33,9 +33,11 @@ import {
   persistCandidateKnowledgeProposals,
   reviewCandidateKnowledgeProposal,
   saveDirectCandidateKnowledge,
+  saveDirectCandidateKnowledgeBatch,
 } from "@/integrations/candidate/prisma-candidate-knowledge";
 import { saveCandidateNarrativeWithOptionalExtraction } from "@/features/candidate/candidate-narrative-workflow";
 import { currentAIProvider } from "@/integrations/ai/provider-factory";
+import { candidateJurisdictionKnowledgeAnswers } from "@/features/candidate/candidate-jurisdiction-knowledge";
 
 function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "");
@@ -551,6 +553,41 @@ export async function saveCandidateKnowledgeAnswer(
     await saveDirectCandidateKnowledge({ userId: actor.id, concept, answer });
     return success(
       "Recurring answer saved and marked as candidate-approved.",
+      actor.id,
+    );
+  } catch (error) {
+    return formError(error);
+  }
+}
+
+export async function saveJurisdictionCandidateKnowledge(
+  _state: CandidateFormState,
+  formData: FormData,
+): Promise<CandidateFormState> {
+  try {
+    const actor = await requireAuthenticatedActor(currentAuthProvider());
+    const countryCode = z
+      .string()
+      .trim()
+      .length(2)
+      .transform((item) => item.toUpperCase())
+      .refine((item) => /^[A-Z]{2}$/u.test(item))
+      .parse(value(formData, "jurisdictionCountryCode"));
+    const authorization = z
+      .enum(["AUTHORIZED", "NOT_AUTHORIZED"])
+      .parse(value(formData, "workAuthorization"));
+    const sponsorship = z
+      .enum(["REQUIRED", "NOT_REQUIRED"])
+      .parse(value(formData, "sponsorshipRequirement"));
+    await saveDirectCandidateKnowledgeBatch(
+      candidateJurisdictionKnowledgeAnswers({
+        countryCode,
+        authorized: authorization === "AUTHORIZED",
+        sponsorshipRequired: sponsorship === "REQUIRED",
+      }).map((item) => ({ ...item, userId: actor.id })),
+    );
+    return success(
+      `Authorization details for ${countryCode} saved as candidate-approved.`,
       actor.id,
     );
   } catch (error) {

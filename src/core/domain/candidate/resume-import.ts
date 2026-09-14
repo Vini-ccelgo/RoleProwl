@@ -183,6 +183,33 @@ export function proposeFactsFromResumeText(
     .split(/\r?\n/)
     .map((line) => line.trim());
   let activeSection: (typeof SECTION_TARGETS)[string] | undefined;
+  let nameCaptured = false;
+
+  const add = (
+    factType: SupportedProposalFactType,
+    value: string,
+    line: string,
+    index: number,
+    confidence: number,
+  ) => {
+    const proposedValue = value.trim();
+    if (!proposedValue) return;
+    const target = proposalTarget(factType);
+    if (
+      proposals.some(
+        (proposal) =>
+          proposal.factType === factType &&
+          proposal.proposedValue.text === proposedValue,
+      )
+    )
+      return;
+    proposals.push({
+      ...target,
+      confidence,
+      proposedValue: { text: proposedValue },
+      sourceRegion: { lineStart: index + 1, lineEnd: index + 1, text: line },
+    });
+  };
 
   lines.forEach((line, index) => {
     if (!line) return;
@@ -192,14 +219,68 @@ export function proposeFactsFromResumeText(
       return;
     }
     const email = line.match(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/u)?.[0];
-    const fact = email ? proposalTarget("PROFILE_EMAIL") : activeSection;
-    if (!fact) return;
-    proposals.push({
-      ...fact,
-      confidence: email ? 0.98 : 0.55,
-      proposedValue: { text: email ?? line },
-      sourceRegion: { lineStart: index + 1, lineEnd: index + 1, text: line },
-    });
+    if (email) add("PROFILE_EMAIL", email, line, index, 0.98);
+
+    if (!activeSection) {
+      const phone = line.match(/(?:\+?\d[\d\s().-]{6,}\d)/u)?.[0];
+      const phoneDigits = phone?.replace(/\D/gu, "") ?? "";
+      if (phone && phoneDigits.length >= 8 && phoneDigits.length <= 15)
+        add("PROFILE_PHONE", phone, line, index, 0.94);
+
+      const linkedIn = line.match(
+        /(?:https?:\/\/)?(?:[a-z]{2,3}\.)?linkedin\.com\/in\/[\w%./-]+/iu,
+      )?.[0];
+      if (linkedIn) add("PROFILE_LINKEDIN_URL", linkedIn, line, index, 0.98);
+
+      const urls = line.match(/(?:https?:\/\/|www\.)[^\s,;]+/giu) ?? [];
+      for (const url of urls)
+        if (!/linkedin\.com/iu.test(url) && !url.includes("@"))
+          add("PROFILE_WEBSITE_URL", url, line, index, 0.94);
+
+      const location = line.match(
+        /^(?:current\s+)?(?:location|localiza[cç][aã]o|cidade|city)\s*:\s*(.+)$/iu,
+      )?.[1];
+      if (location) add("PROFILE_LOCATION", location, line, index, 0.92);
+
+      const labeledName = line.match(
+        /^(?:full\s+name|name|nome)\s*:\s*(.+)$/iu,
+      )?.[1];
+      const candidateName = labeledName ?? (!nameCaptured ? line : null);
+      const normalizedName = candidateName
+        ?.normalize("NFKC")
+        .replace(/\s+/gu, " ")
+        .trim();
+      const nameParts = normalizedName?.split(" ") ?? [];
+      const looksLikeName =
+        nameParts.length >= 2 &&
+        nameParts.length <= 6 &&
+        /^[\p{L}][\p{L}'’-]*(?: [\p{L}][\p{L}'’-]*)+$/u.test(
+          normalizedName ?? "",
+        ) &&
+        !/\b(?:curriculum|resume|résumé|engineer|engineering|developer|analyst|manager|security|consultant|specialist|architect|director)\b/iu.test(
+          normalizedName ?? "",
+        ) &&
+        !/^candidate name$/iu.test(normalizedName ?? "");
+      if (looksLikeName) {
+        add(
+          "PROFILE_FIRST_NAME",
+          nameParts[0]!,
+          line,
+          index,
+          labeledName ? 0.98 : 0.86,
+        );
+        add(
+          "PROFILE_LAST_NAME",
+          nameParts.slice(1).join(" "),
+          line,
+          index,
+          labeledName ? 0.98 : 0.86,
+        );
+        nameCaptured = true;
+      }
+    }
+
+    if (activeSection) add(activeSection.factType, line, line, index, 0.55);
   });
 
   return proposals;
@@ -229,7 +310,7 @@ export function assessResumeInterpretation(
   }
 
   const structuredProposals = proposals.filter(
-    (proposal) => proposal.factType !== "PROFILE_EMAIL",
+    (proposal) => !proposal.factType.startsWith("PROFILE_"),
   );
   if (structuredProposals.length === 0) {
     return {

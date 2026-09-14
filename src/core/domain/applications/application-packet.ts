@@ -79,6 +79,97 @@ export interface ApplicationPacketAnswer extends ApplicationPacketField {
   readonly candidateKnowledgeReferences?: readonly string[];
 }
 
+const IDENTITY_CONCEPTS: Readonly<
+  Partial<Record<ApplicationIdentityKey, CandidateKnowledgeConcept>>
+> = {
+  firstName: "FIRST_NAME",
+  lastName: "LAST_NAME",
+  email: "APPLICATION_EMAIL",
+  phone: "PHONE",
+  location: "CURRENT_LOCATION",
+};
+
+function applicationAnswerCompatibilityKey(answer: ApplicationPacketAnswer) {
+  if (!answer.canonicalConcept) return `question:${answer.questionId}`;
+  const types = answer.fieldTypes
+    .map((type) => type.toLocaleLowerCase("en-US"))
+    .sort();
+  if (
+    answer.options.length === 0 &&
+    types.length > 0 &&
+    types.every((type) =>
+      /(?:input_text|textarea|text_area|input_email|input_tel)/u.test(type),
+    )
+  )
+    return `${answer.canonicalConcept}:TEXT`;
+  if (answer.options.length > 0) {
+    const options = answer.options
+      .map((option) =>
+        option.normalize("NFKC").trim().toLocaleLowerCase("en-US"),
+      )
+      .sort();
+    return `${answer.canonicalConcept}:CHOICE:${JSON.stringify(options)}`;
+  }
+  return `${answer.canonicalConcept}:CONTROL:${JSON.stringify(types)}`;
+}
+
+export interface SemanticApplicationAnswerGroup {
+  readonly key: string;
+  readonly canonicalConcept: CandidateKnowledgeConcept | null;
+  readonly answers: readonly ApplicationPacketAnswer[];
+}
+
+export function semanticApplicationAnswerGroups(
+  answers: readonly ApplicationPacketAnswer[],
+): SemanticApplicationAnswerGroup[] {
+  const groups = new Map<string, ApplicationPacketAnswer[]>();
+  for (const answer of answers) {
+    const key = applicationAnswerCompatibilityKey(answer);
+    groups.set(key, [...(groups.get(key) ?? []), answer]);
+  }
+  return [...groups].map(([key, groupedAnswers]) => ({
+    key,
+    canonicalConcept: groupedAnswers[0]?.canonicalConcept ?? null,
+    answers: groupedAnswers,
+  }));
+}
+
+export function candidateDecisionKey(
+  field: ApplicationPacketField | ApplicationPacketAnswer,
+) {
+  if ("questionId" in field && field.canonicalConcept)
+    return `concept:${field.canonicalConcept}`;
+  if (!("questionId" in field)) {
+    const concept = IDENTITY_CONCEPTS[field.key as ApplicationIdentityKey];
+    if (concept) return `concept:${concept}`;
+  }
+  return `field:${field.key}`;
+}
+
+export function fanOutCompatibleApplicationAnswers(
+  packetAnswers: readonly ApplicationPacketAnswer[],
+  submitted: readonly { readonly key: string; readonly value: string | null }[],
+) {
+  const submittedById = new Map(
+    submitted.map((answer) => [answer.key, answer]),
+  );
+  const expanded = new Map(submitted.map((answer) => [answer.key, answer]));
+  for (const group of semanticApplicationAnswerGroups(packetAnswers)) {
+    const supplied = group.answers.flatMap((answer) => {
+      const candidate = submittedById.get(answer.questionId);
+      return candidate?.value ? [candidate.value] : [];
+    });
+    const values = [...new Set(supplied)];
+    if (values.length !== 1) continue;
+    for (const answer of group.answers)
+      expanded.set(answer.questionId, {
+        key: answer.questionId,
+        value: values[0]!,
+      });
+  }
+  return [...expanded.values()];
+}
+
 export const APPLICATION_IDENTITY_KEYS = [
   "firstName",
   "lastName",

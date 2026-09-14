@@ -157,6 +157,52 @@ describe("resume proposal parsing", () => {
     expect(drafts[1].factType).toBe("SKILL_TEXT");
   });
 
+  it("extracts explicit résumé identity and contact facts into existing proposal review", () => {
+    const drafts = proposeFactsFromResumeText(
+      [
+        "Avery Quill",
+        "avery@example.test | +55 31 99999-0000",
+        "https://linkedin.com/in/avery-quill",
+        "https://avery.example.test",
+        "Location: Belo Horizonte, MG",
+        "SKILLS",
+        "Python",
+      ].join("\n"),
+    );
+    expect(drafts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          factType: "PROFILE_FIRST_NAME",
+          proposedValue: { text: "Avery" },
+        }),
+        expect.objectContaining({
+          factType: "PROFILE_LAST_NAME",
+          proposedValue: { text: "Quill" },
+        }),
+        expect.objectContaining({
+          factType: "PROFILE_EMAIL",
+          proposedValue: { text: "avery@example.test" },
+        }),
+        expect.objectContaining({
+          factType: "PROFILE_PHONE",
+          proposedValue: { text: "+55 31 99999-0000" },
+        }),
+        expect.objectContaining({
+          factType: "PROFILE_LINKEDIN_URL",
+          proposedValue: { text: "https://linkedin.com/in/avery-quill" },
+        }),
+        expect.objectContaining({
+          factType: "PROFILE_WEBSITE_URL",
+          proposedValue: { text: "https://avery.example.test" },
+        }),
+        expect.objectContaining({
+          factType: "PROFILE_LOCATION",
+          proposedValue: { text: "Belo Horizonte, MG" },
+        }),
+      ]),
+    );
+  });
+
   it("does not fuzzy-match prose containing heading words", () => {
     expect(
       proposeFactsFromResumeText(

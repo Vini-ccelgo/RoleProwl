@@ -4,6 +4,7 @@ import type {
   CandidateKnowledgeQueryResult,
 } from "@/core/domain/candidate/candidate-knowledge";
 import {
+  countryCodesExplicitlyNamed,
   jurisdictionCandidateKnowledgeConcept,
   legacyUsCandidateKnowledgeAlias,
   normalizeLanguageKey,
@@ -35,8 +36,8 @@ const CONCEPT_PATTERNS: readonly [
   CandidateKnowledgeConcept,
   readonly RegExp[],
 ][] = [
-  ["FIRST_NAME", [/\bfirst[ _-]?name\b/iu, /\bnome\b/iu]],
-  ["LAST_NAME", [/\blast[ _-]?name\b/iu, /\bsobrenome\b/iu]],
+  ["FIRST_NAME", [/\bfirst[ _-]?name\b/iu]],
+  ["LAST_NAME", [/\blast[ _-]?name\b/iu]],
   ["APPLICATION_EMAIL", [/\be-?mail\b/iu]],
   ["PHONE", [/\b(?:phone|telephone|telefone|celular)\b/iu]],
   ["LINKEDIN_URL", [/\blinked\s*in\b/iu]],
@@ -122,6 +123,25 @@ const CONCEPT_PATTERNS: readonly [
   ],
 ];
 
+const EXACT_IDENTITY_LABELS: Readonly<
+  Record<string, CandidateKnowledgeConcept>
+> = {
+  nome: "FIRST_NAME",
+  "primeiro nome": "FIRST_NAME",
+  primeiro_nome: "FIRST_NAME",
+  "primeiro-nome": "FIRST_NAME",
+  sobrenome: "LAST_NAME",
+};
+
+function exactIdentityConcept(question: PublicApplicationQuestion) {
+  for (const candidate of [question.label, ...question.fieldNames]) {
+    const concept =
+      EXACT_IDENTITY_LABELS[normalized(candidate).toLocaleLowerCase("en-US")];
+    if (concept) return concept;
+  }
+  return null;
+}
+
 type JurisdictionSensitiveFamily =
   "WORK_AUTHORIZATION" | "SPONSORSHIP_REQUIREMENT";
 
@@ -155,15 +175,7 @@ function jurisdictionSensitiveFamily(
 }
 
 function explicitCountryCode(value: string) {
-  const normalizedValue = normalized(value).toLocaleLowerCase("en-US");
-  const found = new Set<string>();
-  if (/\b(?:brazil|brasil)\b/iu.test(normalizedValue)) found.add("BR");
-  if (
-    /\b(?:united states(?: of america)?|u\.s(?:\.a)?\.?|usa|estados unidos)(?=\W|$)/iu.test(
-      normalizedValue,
-    )
-  )
-    found.add("US");
+  const found = new Set(countryCodesExplicitlyNamed(value));
   return found.size === 0
     ? undefined
     : found.size === 1
@@ -295,6 +307,8 @@ export function mapApplicationQuestionToCandidateConcept(
   context?: ApplicationJurisdictionContext,
 ): CandidateKnowledgeConcept | null {
   const value = searchable(question);
+  const exactIdentity = exactIdentityConcept(question);
+  if (exactIdentity) return exactIdentity;
   const family = jurisdictionSensitiveFamily(question);
   if (family) {
     const countryCode = applicationJurisdictionCountryCode({
@@ -328,6 +342,20 @@ export function candidateKnowledgeDisplayValue(
   value: Readonly<Record<string, unknown>> | null,
 ) {
   if (!value) return null;
+  if (Array.isArray(value.items)) {
+    const items = value.items.flatMap((item) => {
+      if (typeof item === "string" && item.trim()) return [item.trim()];
+      if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+      const record = item as Record<string, unknown>;
+      for (const key of ["text", "name", "value"]) {
+        const candidate = record[key];
+        if (typeof candidate === "string" && candidate.trim())
+          return [candidate.trim()];
+      }
+      return [];
+    });
+    return items.length ? [...new Set(items)].join(", ") : null;
+  }
   const proficiency = value.proficiency;
   if (typeof proficiency === "string" && proficiency.trim())
     return proficiency.trim();

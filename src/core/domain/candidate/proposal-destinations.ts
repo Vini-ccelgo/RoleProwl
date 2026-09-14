@@ -1,8 +1,44 @@
 export const PROPOSAL_DESTINATIONS = {
+  PROFILE_FIRST_NAME: {
+    canonicalPath: "candidateFacts.profileFirstNames",
+    legacyPaths: [],
+    label: "First name",
+    cardinality: "MULTIPLE",
+  },
+  PROFILE_LAST_NAME: {
+    canonicalPath: "candidateFacts.profileLastNames",
+    legacyPaths: [],
+    label: "Last name",
+    cardinality: "MULTIPLE",
+  },
   PROFILE_EMAIL: {
     canonicalPath: "candidateFacts.profileEmails",
     legacyPaths: ["candidateProfile.email"],
     label: "Profile email",
+    cardinality: "MULTIPLE",
+  },
+  PROFILE_PHONE: {
+    canonicalPath: "candidateFacts.profilePhones",
+    legacyPaths: [],
+    label: "Phone",
+    cardinality: "MULTIPLE",
+  },
+  PROFILE_LINKEDIN_URL: {
+    canonicalPath: "candidateFacts.linkedInUrls",
+    legacyPaths: [],
+    label: "LinkedIn URL",
+    cardinality: "MULTIPLE",
+  },
+  PROFILE_WEBSITE_URL: {
+    canonicalPath: "candidateFacts.websiteUrls",
+    legacyPaths: [],
+    label: "Website URL",
+    cardinality: "MULTIPLE",
+  },
+  PROFILE_LOCATION: {
+    canonicalPath: "candidateFacts.profileLocations",
+    legacyPaths: [],
+    label: "Current location",
     cardinality: "MULTIPLE",
   },
   WORK_EXPERIENCE_TEXT: {

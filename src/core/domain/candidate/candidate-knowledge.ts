@@ -53,6 +53,21 @@ export type CandidateKnowledgeConcept =
   | `WORK_AUTHORIZATION:${string}`
   | `SPONSORSHIP_REQUIREMENT:${string}`;
 
+export const COLLECTION_CANDIDATE_KNOWLEDGE_CONCEPTS = [
+  "EMPLOYMENT_HISTORY",
+  "EDUCATION_HISTORY",
+  "CERTIFICATIONS",
+  "SKILLS",
+  "PROJECTS",
+] as const satisfies readonly CandidateKnowledgeConcept[];
+
+export const DEFAULT_CANDIDATE_KNOWLEDGE_CONCEPTS =
+  STATIC_CANDIDATE_KNOWLEDGE_CONCEPTS.filter(
+    (concept) =>
+      concept !== "US_WORK_AUTHORIZATION" &&
+      concept !== "US_FUTURE_SPONSORSHIP",
+  );
+
 export interface CandidateKnowledgePolicy {
   readonly class: CandidateKnowledgeClass;
   readonly candidateInputOptional: boolean;
@@ -196,6 +211,53 @@ export function legacyUsCandidateKnowledgeAlias(
   return null;
 }
 
+export function countryCodesExplicitlyNamed(value: string) {
+  const normalized = value.normalize("NFKC").toLocaleLowerCase("en-US");
+  const countryCodes = new Set<string>();
+  if (/\b(?:brazil|brasil)\b/iu.test(normalized)) countryCodes.add("BR");
+  if (
+    /\b(?:united states(?: of america)?|u\.s(?:\.a)?\.?|usa|estados unidos)(?=\W|$)/iu.test(
+      normalized,
+    )
+  )
+    countryCodes.add("US");
+  return [...countryCodes];
+}
+
+export function jurisdictionConceptsExplicitlyNamed(
+  value: string,
+): CandidateKnowledgeConcept[] {
+  const concepts = new Set<CandidateKnowledgeConcept>();
+  const segments = value
+    .normalize("NFKC")
+    .split(/[.!?\n]+/u)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  for (const segment of segments) {
+    const countryCodes = countryCodesExplicitlyNamed(segment);
+    if (!countryCodes.length) continue;
+    const authorization =
+      /\b(?:authorized|authorization|eligible|permitted).{0,30}(?:work|employment)|\b(?:work|employment).{0,30}(?:authorized|authorization|eligible|permitted)|\bautoriza[cç][aã]o.{0,30}trabalh|\bautorizad[oa].{0,30}trabalh/iu.test(
+        segment,
+      );
+    const sponsorship =
+      /\b(?:sponsor|sponsorship|visa)|\bpatroc[ií]nio.{0,20}visto/iu.test(
+        segment,
+      );
+    for (const countryCode of countryCodes) {
+      if (authorization)
+        concepts.add(
+          `WORK_AUTHORIZATION:${countryCode}` as CandidateKnowledgeConcept,
+        );
+      if (sponsorship)
+        concepts.add(
+          `SPONSORSHIP_REQUIREMENT:${countryCode}` as CandidateKnowledgeConcept,
+        );
+    }
+  }
+  return [...concepts];
+}
+
 export interface CandidateKnowledgeEvidence {
   readonly autoAnswerAllowed: boolean;
   readonly candidateApproved: boolean;
@@ -238,23 +300,169 @@ export interface CandidateKnowledgeQueryResult {
   readonly value: Readonly<Record<string, unknown>> | null;
 }
 
+export function candidateKnowledgeSourceLabel(
+  source: CandidateKnowledgeSource,
+) {
+  const labels: Readonly<Record<CandidateKnowledgeSource, string>> = {
+    PROFILE: "Career profile",
+    TRUTH_VAULT: "Career profile",
+    RESUME: "Verified résumé fact",
+    ANSWER_MEMORY: "Candidate answer",
+    CANDIDATE_DIRECT: "Career profile",
+    CANDIDATE_NARRATIVE: "Candidate narrative",
+  };
+  return labels[source];
+}
+
+export function candidateKnowledgeConflictSourceLabels(
+  result: CandidateKnowledgeQueryResult,
+) {
+  return [
+    ...new Set(
+      result.conflictingEvidence.map((evidence) =>
+        candidateKnowledgeSourceLabel(evidence.provenance.source),
+      ),
+    ),
+  ].slice(0, 4);
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+        .map(([key, child]) => [key, canonicalize(child)]),
+    );
+  return value;
+}
+
 function sameValue(
   left: Readonly<Record<string, unknown>>,
   right: Readonly<Record<string, unknown>>,
 ) {
-  const canonicalize = (value: unknown): unknown => {
-    if (Array.isArray(value)) return value.map(canonicalize);
-    if (value && typeof value === "object")
-      return Object.fromEntries(
-        Object.entries(value as Record<string, unknown>)
-          .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
-          .map(([key, child]) => [key, canonicalize(child)]),
-      );
-    return value;
-  };
   return (
     JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right))
   );
+}
+
+function isCollectionConcept(concept: CandidateKnowledgeConcept) {
+  return COLLECTION_CANDIDATE_KNOWLEDGE_CONCEPTS.includes(
+    concept as (typeof COLLECTION_CANDIDATE_KNOWLEDGE_CONCEPTS)[number],
+  );
+}
+
+interface CollectionEvidenceItem {
+  readonly evidence: CandidateKnowledgeEvidence;
+  readonly identity: string;
+  readonly value: unknown;
+}
+
+function collectionItemIdentity(value: unknown, fallback: string) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const item = value as Record<string, unknown>;
+    for (const key of ["identity", "semanticId", "key", "normalizedName"]) {
+      const candidate = item[key];
+      if (typeof candidate === "string" && candidate.trim())
+        return `${key}:${candidate.normalize("NFKC").trim().toLocaleLowerCase("en-US")}`;
+    }
+    if (typeof item.name === "string" && item.name.trim())
+      return `name:${item.name.normalize("NFKC").trim().toLocaleLowerCase("en-US")}`;
+    if (typeof item.text === "string" && item.text.trim())
+      return `text:${item.text.normalize("NFKC").replace(/\s+/gu, " ").trim().toLocaleLowerCase("en-US")}`;
+  }
+  if (typeof value === "string" && value.trim())
+    return `text:${value.normalize("NFKC").replace(/\s+/gu, " ").trim().toLocaleLowerCase("en-US")}`;
+  return fallback;
+}
+
+function collectionEvidenceItems(
+  evidence: CandidateKnowledgeEvidence,
+): CollectionEvidenceItem[] {
+  const items = Array.isArray(evidence.value.items)
+    ? evidence.value.items
+    : Array.isArray(evidence.value.recordIds)
+      ? evidence.value.recordIds
+      : [evidence.value];
+  return items.map((value, index) => ({
+    evidence,
+    identity: collectionItemIdentity(
+      value,
+      `${evidence.source}:${evidence.sourceId ?? "NONE"}:${index}`,
+    ),
+    value,
+  }));
+}
+
+function resolveCollectionKnowledge(input: {
+  readonly concept: CandidateKnowledgeConcept;
+  readonly policy: CandidateKnowledgePolicy;
+  readonly ranked: readonly CandidateKnowledgeEvidence[];
+  readonly now: Date;
+}): CandidateKnowledgeQueryResult {
+  const selected = input.ranked[0]!;
+  const entries = input.ranked.flatMap(collectionEvidenceItems);
+  const uniqueItems = [
+    ...new Map(
+      entries.map((entry) => [
+        `${entry.identity}:${JSON.stringify(canonicalize(entry.value))}`,
+        entry.value,
+      ]),
+    ).values(),
+  ];
+  const byIdentity = new Map<string, CollectionEvidenceItem[]>();
+  for (const entry of entries)
+    byIdentity.set(entry.identity, [
+      ...(byIdentity.get(entry.identity) ?? []),
+      entry,
+    ]);
+  const conflictingGroups = [...byIdentity.values()].filter(
+    (items) =>
+      new Set(items.map((item) => JSON.stringify(canonicalize(item.value))))
+        .size > 1,
+  );
+  const conflictingEntries = conflictingGroups.flat();
+  const alternativeEntries = conflictingEntries.filter(
+    (item) => item.evidence !== selected,
+  );
+  const conflictingEvidence = [
+    ...new Map(
+      (alternativeEntries.length ? alternativeEntries : conflictingEntries).map(
+        (item) => [
+          `${item.evidence.source}:${item.evidence.sourceId ?? "NONE"}`,
+          {
+            confirmedAt: item.evidence.confirmedAt,
+            origin: item.evidence.origin as Exclude<
+              CandidateKnowledgeOrigin,
+              "INFERRED"
+            >,
+            provenance: {
+              source: item.evidence.source,
+              sourceId: item.evidence.sourceId,
+            },
+            value: item.evidence.value,
+          },
+        ],
+      ),
+    ).values(),
+  ];
+  const isStale = stale(selected, input.policy, input.now);
+  return {
+    concept: input.concept,
+    applicationUse: "REUSABLE_ANSWER",
+    autoAnswerAllowed:
+      selected.autoAnswerAllowed && input.policy.reusableForEmployerQuestions,
+    status: isStale ? "STALE_CONFIRMATION_REQUIRED" : "AVAILABLE",
+    value: { items: uniqueItems },
+    provenance: { source: selected.source, sourceId: selected.sourceId },
+    origin: selected.origin as Exclude<CandidateKnowledgeOrigin, "INFERRED">,
+    candidateApproved: selected.candidateApproved,
+    reusable: selected.reusable,
+    freshness: isStale ? "STALE" : "NOT_APPLICABLE",
+    confirmedAt: selected.confirmedAt,
+    conflict: conflictingGroups.length > 0,
+    conflictingEvidence,
+  };
 }
 
 function stale(
@@ -316,6 +524,13 @@ export function resolveCandidateKnowledge(input: {
       conflictingEvidence: [],
     };
   }
+  if (isCollectionConcept(input.concept))
+    return resolveCollectionKnowledge({
+      concept: input.concept,
+      policy,
+      ranked,
+      now: input.now ?? new Date(),
+    });
   const isStale = stale(selected, policy, input.now ?? new Date());
   const conflictingEvidence = ranked
     .slice(1)
@@ -365,10 +580,19 @@ export function buildCandidateKnowledgeCoverage(input: {
   readonly concepts?: readonly CandidateKnowledgeConcept[];
   readonly now?: Date;
 }): CandidateKnowledgeCoverageItem[] {
+  const usingDefaultConcepts = input.concepts === undefined;
   const concepts = new Set<CandidateKnowledgeConcept>(
-    input.concepts ?? STATIC_CANDIDATE_KNOWLEDGE_CONCEPTS,
+    input.concepts ?? DEFAULT_CANDIDATE_KNOWLEDGE_CONCEPTS,
   );
-  for (const evidence of input.evidence) concepts.add(evidence.concept);
+  for (const evidence of input.evidence) {
+    if (
+      usingDefaultConcepts &&
+      (evidence.concept === "US_WORK_AUTHORIZATION" ||
+        evidence.concept === "US_FUTURE_SPONSORSHIP")
+    )
+      continue;
+    concepts.add(evidence.concept);
+  }
   for (const concept of [...concepts]) {
     if (concept.startsWith("LANGUAGE:")) {
       concepts.add(`LANGUAGE_PROFICIENCY:${concept.slice("LANGUAGE:".length)}`);
