@@ -3,7 +3,7 @@ import type {
   AIProviderName,
   StructuredAIRequest,
 } from "@/core/contracts/ai-provider";
-import { ConfigurationError } from "@/core/errors/application-errors";
+import { AIDataPolicyError } from "@/core/errors/application-errors";
 import { resolveDeploymentEnvironment } from "@/lib/env/deployment";
 
 export type AIDataClassification = "REAL_CANDIDATE" | "SYNTHETIC";
@@ -20,21 +20,21 @@ export function assertAIDataPolicy(input: {
     return;
   const deployment = resolveDeploymentEnvironment(input.environment);
   if (deployment === "production")
-    throw new ConfigurationError(
+    throw new AIDataPolicyError(
       "Real candidate AI processing is disabled in Production.",
     );
   if (
     deployment !== "preview" ||
     input.environment.ROLEPROWL_PRIVATE_BETA_REAL_DATA_AI_ENABLED !== "true"
   )
-    throw new ConfigurationError(
+    throw new AIDataPolicyError(
       "Real candidate AI processing requires an explicit private-beta Preview policy.",
     );
   if (
     input.provider === "gemini" &&
     input.environment.ROLEPROWL_GEMINI_SYNTHETIC_ONLY !== "false"
   )
-    throw new ConfigurationError(
+    throw new AIDataPolicyError(
       "Gemini remains synthetic-only until its provider policy explicitly permits real candidate data.",
     );
 }

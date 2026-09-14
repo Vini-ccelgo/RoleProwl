@@ -356,7 +356,9 @@ export function applicationQuestionControlDisposition(
     question.fieldTypes.includes("input_file") ||
     question.fieldTypes.includes("multi_value_multi_select") ||
     question.fieldTypes.includes("external_consent") ||
-    /\b(?:consent|privacy|terms|attest|signature)\b/iu.test(searchable)
+    /\b(?:consent|privacy|terms|attest|signature|cpf|social security|national identification|national id|tax identification|tax id)\b/iu.test(
+      searchable,
+    )
   )
     return "CANDIDATE_REQUIRED_EXTERNAL";
   if (

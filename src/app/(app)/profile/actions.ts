@@ -37,7 +37,10 @@ import {
   saveDirectCandidateKnowledge,
   saveDirectCandidateKnowledgeBatch,
 } from "@/integrations/candidate/prisma-candidate-knowledge";
-import { saveCandidateNarrativeWithOptionalExtraction } from "@/features/candidate/candidate-narrative-workflow";
+import {
+  candidateNarrativeOutcomeMessage,
+  saveCandidateNarrativeWithOptionalExtraction,
+} from "@/features/candidate/candidate-narrative-workflow";
 import { currentAIProvider } from "@/integrations/ai/provider-factory";
 import { candidateJurisdictionKnowledgeAnswers } from "@/features/candidate/candidate-jurisdiction-knowledge";
 
@@ -655,6 +658,9 @@ export async function submitCandidateNarrative(
       allowedConcepts,
       content,
       correlationId: randomUUID(),
+      knownConcepts: snapshot.coverage
+        .filter((item) => item.status === "KNOWN")
+        .map((item) => item.concept),
       repository: {
         create: createCandidateNarrative,
         persistProposals: persistCandidateKnowledgeProposals,
@@ -662,19 +668,10 @@ export async function submitCandidateNarrative(
       theme,
       userId: actor.id,
     });
-    if (result.extraction === "FAILED_NON_BLOCKING") {
-      revalidatePath("/profile");
-      return {
-        status: "success",
-        message:
-          "Your answer is saved. Automatic organization is unavailable, so you can continue with the structured fields.",
-      };
-    }
     revalidatePath("/profile");
     return {
       status: "success",
-      message:
-        "Your answer is saved. Review any suggested reusable details below before they are used.",
+      message: candidateNarrativeOutcomeMessage(result),
     };
   } catch (error) {
     return formError(error);

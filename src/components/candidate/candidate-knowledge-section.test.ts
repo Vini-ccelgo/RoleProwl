@@ -34,6 +34,7 @@ function renderSnapshot(input: {
   currentDetails?: ReturnType<typeof buildCandidateKnowledgeCoverage>;
   jurisdictions?: readonly unknown[];
   narratives?: readonly unknown[];
+  proposals?: readonly unknown[];
 }) {
   return renderToStaticMarkup(
     createElement(CandidateKnowledgeSection, {
@@ -43,7 +44,7 @@ function renderSnapshot(input: {
         jurisdictions: input.jurisdictions ?? [],
         gapPrompts: [],
         narratives: input.narratives ?? [],
-        proposals: [],
+        proposals: input.proposals ?? [],
         counts: {
           known: input.coverage.filter((item) => item.status === "KNOWN")
             .length,
@@ -191,5 +192,38 @@ describe("candidate knowledge profile gaps", () => {
     expect(markup).toContain(
       "Updating an answer does not approve suggestions or remove previously approved reusable details.",
     );
+  });
+
+  it("renders pending proposals produced for an updated narrative", () => {
+    const coverage = buildCandidateKnowledgeCoverage({
+      evidence: [],
+      now: confirmedAt,
+    });
+    const markup = renderSnapshot({
+      coverage,
+      narratives: [
+        {
+          id: "narrative-updated",
+          theme: "PROFESSIONAL_CONTEXT",
+          content: "I now want product security roles.",
+          createdAt: confirmedAt,
+          updatedAt: confirmedAt,
+        },
+      ],
+      proposals: [
+        {
+          id: "proposal-1",
+          concept: "TARGET_ROLE",
+          proposedValue: { text: "Product security roles" },
+          supportingText: "product security roles",
+          narrative: { theme: "PROFESSIONAL_CONTEXT" },
+        },
+      ],
+    });
+    expect(markup).toContain("Review suggested reusable details");
+    expect(markup).toContain("Product security roles");
+    expect(markup).toContain("Approve");
+    expect(markup).toContain("Save correction");
+    expect(markup).toContain("Decline");
   });
 });

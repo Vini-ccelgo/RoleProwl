@@ -51,6 +51,7 @@ export class ConfigurationError extends ApplicationError {
     super(message, "CONFIGURATION");
   }
 }
+export class AIDataPolicyError extends ConfigurationError {}
 export class ExtractionUnsupportedError extends ApplicationError {
   constructor(message: string, cause?: unknown) {
     super(message, "EXTRACTION_UNSUPPORTED", cause);

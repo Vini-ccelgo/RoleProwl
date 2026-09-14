@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { AIProvider } from "@/core/contracts/ai-provider";
-import { ConfigurationError } from "@/core/errors/application-errors";
+import { AIDataPolicyError } from "@/core/errors/application-errors";
 import { PolicyEnforcedAIProvider } from "./real-data-policy";
 
 const request = {
@@ -34,7 +34,7 @@ describe("real candidate AI policy", () => {
       ROLEPROWL_GEMINI_SYNTHETIC_ONLY: "false",
     });
     expect(() => provider.generateStructured(request)).toThrow(
-      ConfigurationError,
+      AIDataPolicyError,
     );
     expect(generateStructured).not.toHaveBeenCalled();
   });
@@ -46,7 +46,7 @@ describe("real candidate AI policy", () => {
       ROLEPROWL_PRIVATE_BETA_REAL_DATA_AI_ENABLED: "true",
     });
     expect(() => provider.generateStructured(request)).toThrow(
-      "Gemini remains synthetic-only",
+      AIDataPolicyError,
     );
     expect(generateStructured).not.toHaveBeenCalled();
   });
@@ -80,7 +80,7 @@ describe("real candidate AI policy", () => {
       ROLEPROWL_PRIVATE_BETA_REAL_DATA_AI_ENABLED: "true",
     });
     expect(() => provider.generateStructured(request)).toThrow(
-      "disabled in Production",
+      AIDataPolicyError,
     );
     expect(generateStructured).not.toHaveBeenCalled();
   });

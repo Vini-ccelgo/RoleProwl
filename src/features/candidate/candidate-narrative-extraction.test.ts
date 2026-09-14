@@ -19,6 +19,25 @@ function provider(output: unknown) {
 }
 
 describe("candidate narrative extraction", () => {
+  it("makes explicitly described language proficiency eligible without prior language evidence", async () => {
+    const narrative =
+      "I have professional fluency in English and intermediate Spanish.";
+    const fake = provider({ proposals: [] });
+    await extractCandidateNarrativeProposals({
+      ai: fake.ai,
+      allowedConcepts: [],
+      correlationId: "correlation-languages",
+      narrative,
+      userId: "candidate-a",
+    });
+    expect(fake.generateStructured.mock.calls[0][0].input).toMatchObject({
+      allowedConcepts: [
+        "LANGUAGE_PROFICIENCY:english",
+        "LANGUAGE_PROFICIENCY:spanish",
+      ],
+    });
+  });
+
   it("accepts only an allowed concept with exact candidate-authored support", async () => {
     const fake = provider({
       proposals: [
@@ -39,8 +58,8 @@ describe("candidate narrative extraction", () => {
       narrative: "I want security engineering roles in product teams.",
       userId: "candidate-a",
     });
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({
+    expect(result.proposals).toHaveLength(1);
+    expect(result.proposals[0]).toMatchObject({
       concept: "TARGET_ROLE",
       proposedValue: { text: "Security engineering roles" },
     });
@@ -82,12 +101,15 @@ describe("candidate narrative extraction", () => {
         narrative: "I want engineering work.",
         userId: "candidate-a",
       }),
-    ).resolves.toEqual([
-      expect.objectContaining({
-        concept: "TARGET_ROLE",
-        supportingText: "I want engineering",
-      }),
-    ]);
+    ).resolves.toMatchObject({
+      generatedCount: 2,
+      proposals: [
+        expect.objectContaining({
+          concept: "TARGET_ROLE",
+          supportingText: "I want engineering",
+        }),
+      ],
+    });
   });
 
   it("bounds candidate-authored input before making a provider call", async () => {
@@ -124,7 +146,7 @@ describe("candidate narrative extraction", () => {
       narrative: "I live in Brazil. I do not need sponsorship.",
       userId: "candidate-a",
     });
-    expect(result).toEqual([]);
+    expect(result.proposals).toEqual([]);
     expect(fake.generateStructured.mock.calls[0][0].input).toEqual({
       candidateNarrative: "I live in Brazil. I do not need sponsorship.",
       allowedConcepts: [],
@@ -161,7 +183,7 @@ describe("candidate narrative extraction", () => {
       narrative,
       userId: "candidate-a",
     });
-    expect(result.map((proposal) => proposal.concept)).toEqual([
+    expect(result.proposals.map((proposal) => proposal.concept)).toEqual([
       "WORK_AUTHORIZATION:BR",
       "SPONSORSHIP_REQUIREMENT:BR",
     ]);

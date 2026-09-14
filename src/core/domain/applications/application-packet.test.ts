@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applicationPacketCanBeReviewed,
+  applicationQuestionControlDisposition,
   applicationTransferStatus,
   buildApplicationPacket,
   fanOutCompatibleApplicationAnswers,
@@ -37,6 +38,25 @@ function source(
 }
 
 describe("application packet", () => {
+  it("keeps CPF and national identifiers outside RoleProwl resolution", () => {
+    const disposition = (label: string) =>
+      applicationQuestionControlDisposition({
+        id: `question:${label}`,
+        source: "GREENHOUSE",
+        group: "STANDARD",
+        label,
+        required: true,
+        fieldNames: [label],
+        fieldTypes: ["input_text"],
+        options: [],
+      });
+
+    expect(disposition("CPF")).toBe("CANDIDATE_REQUIRED_EXTERNAL");
+    expect(disposition("National identification number")).toBe(
+      "CANDIDATE_REQUIRED_EXTERNAL",
+    );
+  });
+
   it("keeps a sparse candidate unresolved and not ready", () => {
     const packet = buildApplicationPacket({ source: source(), reviewed: true });
     expect(packet.completeness.readyForSubmissionHandoff).toBe(false);

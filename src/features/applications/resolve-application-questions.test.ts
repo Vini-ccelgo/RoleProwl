@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AIProvider } from "@/core/contracts/ai-provider";
+import {
+  AIDataPolicyError,
+  AIInvalidOutputError,
+} from "@/core/errors/application-errors";
+import type { Logger } from "@/lib/logging/logger";
 import type {
   CandidateKnowledgeConcept,
   CandidateKnowledgeQueryResult,
@@ -60,6 +65,12 @@ function fakeAI(resolutions: unknown[]) {
   return {
     ai: { generateStructured } as unknown as AIProvider,
     generateStructured,
+  };
+}
+
+function safeLog() {
+  return { log: vi.fn() } as unknown as Logger & {
+    log: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -817,6 +828,260 @@ describe("application question resolver", () => {
     });
     expect(generateStructured).toHaveBeenCalledOnce();
     expect(result.disposition).toBe("CANDIDATE_REQUIRED");
+  });
+
+  it("emits a bounded successful AI task outcome without candidate values", async () => {
+    const candidateQuestion = question(
+      "Describe how you communicate technical findings",
+    );
+    const reference = "REUSABLE_SELF_DESCRIPTION:ANSWER_MEMORY:memory-1";
+    const fake = fakeAI([
+      {
+        questionId: candidateQuestion.id,
+        canonicalConcept: "REUSABLE_SELF_DESCRIPTION",
+        proposedValue: "I communicate technical findings to engineering teams.",
+        candidateKnowledgeReferences: [reference],
+        confidence: 0.9,
+      },
+    ]);
+    const logger = safeLog();
+    await resolveApplicationQuestions({
+      ai: fake.ai,
+      correlationId: "application-observable",
+      userId: "candidate-1",
+      questions: [candidateQuestion],
+      knowledge: [
+        knowledge("REUSABLE_SELF_DESCRIPTION", {
+          text: "Presented technical findings to engineering teams.",
+        }),
+      ],
+      log: logger,
+    });
+    expect(logger.log).toHaveBeenCalledWith(
+      "info",
+      "ai_task_outcome",
+      expect.objectContaining({
+        task: "APPLICATION_QUESTION_RESOLUTION",
+        status: "RESULTS_PROPOSED",
+        reason: "GROUNDED_RESULTS_PROPOSED",
+        questionCount: 1,
+        resultCount: 1,
+        latencyMs: expect.any(Number),
+        retryCount: 0,
+      }),
+    );
+    const serialized = JSON.stringify(logger.log.mock.calls);
+    expect(serialized).not.toContain("Presented technical findings");
+    expect(serialized).not.toContain("engineering teams");
+  });
+
+  it.each([
+    [
+      "POLICY_BLOCKED",
+      new AIDataPolicyError("private Preview policy disabled"),
+    ],
+    ["INVALID_PROVIDER_OUTPUT", new AIInvalidOutputError("invalid schema")],
+    ["PROVIDER_FAILED", new Error("timeout")],
+  ] as const)(
+    "preserves deterministic fallback and emits %s",
+    async (status, failure) => {
+      const logger = safeLog();
+      const generateStructured = vi.fn(async () => {
+        throw failure;
+      });
+      const [result] = await resolveApplicationQuestions({
+        ai: { generateStructured } as unknown as AIProvider,
+        correlationId: "application-failure",
+        userId: "candidate-1",
+        questions: [question("Tell us about communicating findings")],
+        knowledge: [
+          knowledge("REUSABLE_SELF_DESCRIPTION", {
+            text: "Technical writing",
+          }),
+        ],
+        log: logger,
+      });
+      expect(result).toMatchObject({
+        disposition: "CANDIDATE_REQUIRED",
+        reasonCode: "NO_GROUNDED_CANDIDATE_KNOWLEDGE",
+      });
+      expect(logger.log).toHaveBeenCalledWith(
+        "warn",
+        "ai_task_outcome",
+        expect.objectContaining({ status, questionCount: 1, resultCount: 0 }),
+      );
+    },
+  );
+
+  it("emits an explicit skip when no safe candidate knowledge can support AI", async () => {
+    const logger = safeLog();
+    const fake = fakeAI([]);
+    await resolveApplicationQuestions({
+      ai: fake.ai,
+      correlationId: "application-no-evidence",
+      userId: "candidate-1",
+      questions: [question("Describe another relevant capability")],
+      knowledge: [],
+      log: logger,
+    });
+    expect(fake.generateStructured).not.toHaveBeenCalled();
+    expect(logger.log).toHaveBeenCalledWith(
+      "info",
+      "ai_task_outcome",
+      expect.objectContaining({
+        status: "NO_ELIGIBLE_QUESTIONS",
+        reason: "NO_SAFE_SUPPORTED_CANDIDATE_KNOWLEDGE",
+      }),
+    );
+  });
+
+  it.each([
+    [
+      "returns no provider",
+      (): AIProvider | undefined => undefined,
+      "PROVIDER_CONFIGURATION_UNAVAILABLE",
+    ],
+    [
+      "throws during construction",
+      (): AIProvider | undefined => {
+        throw new Error("provider bootstrap failed");
+      },
+      "PROVIDER_CONSTRUCTION_FAILED",
+    ],
+  ] as const)(
+    "emits a terminal outcome when the provider factory %s",
+    async (_case, aiFactory, reason) => {
+      const logger = safeLog();
+      await resolveApplicationQuestions({
+        aiFactory,
+        correlationId: "application-provider-construction",
+        userId: "candidate-1",
+        questions: [question("Describe another relevant capability")],
+        knowledge: [
+          knowledge("REUSABLE_SELF_DESCRIPTION", {
+            text: "Technical writing",
+          }),
+        ],
+        log: logger,
+      });
+      expect(logger.log).toHaveBeenCalledTimes(1);
+      expect(logger.log).toHaveBeenCalledWith(
+        "warn",
+        "ai_task_outcome",
+        expect.objectContaining({
+          status:
+            reason === "PROVIDER_CONFIGURATION_UNAVAILABLE"
+              ? "PROVIDER_DISABLED"
+              : "PROVIDER_FAILED",
+          reason,
+          questionCount: 1,
+          resultCount: 0,
+          latencyMs: expect.any(Number),
+          retryCount: 0,
+        }),
+      );
+    },
+  );
+
+  it("reports provider results that are all discarded as unsupported", async () => {
+    const candidateQuestion = question(
+      "Describe how you communicate technical findings",
+    );
+    const fake = fakeAI([
+      {
+        questionId: candidateQuestion.id,
+        canonicalConcept: "REUSABLE_SELF_DESCRIPTION",
+        proposedValue: "Invented leadership claim",
+        candidateKnowledgeReferences: [
+          "REUSABLE_SELF_DESCRIPTION:ANSWER_MEMORY:memory-1",
+        ],
+        confidence: 0.9,
+      },
+    ]);
+    const logger = safeLog();
+    const [result] = await resolveApplicationQuestions({
+      ai: fake.ai,
+      correlationId: "application-discarded-output",
+      userId: "candidate-1",
+      questions: [candidateQuestion],
+      knowledge: [
+        knowledge("REUSABLE_SELF_DESCRIPTION", {
+          text: "Technical writing",
+        }),
+      ],
+      log: logger,
+    });
+    expect(result.disposition).toBe("CANDIDATE_REQUIRED");
+    expect(logger.log).toHaveBeenCalledWith(
+      "info",
+      "ai_task_outcome",
+      expect.objectContaining({
+        status: "NO_SUPPORTED_RESULTS",
+        reason: "ALL_RESULTS_REJECTED",
+        questionCount: 1,
+        resultCount: 0,
+      }),
+    );
+  });
+
+  it("classifies the ten observed Inter residuals as candidate-controlled rather than AI-eligible", async () => {
+    const external = {
+      controlDisposition: "CANDIDATE_REQUIRED_EXTERNAL",
+    } as const;
+    const questions = [
+      question("CPF", external),
+      question("Você trabalha atualmente no Inter?"),
+      question("Se você trabalha no Inter, informe seu nome completo"),
+      question(
+        "Concordo que os dados pessoais serão coletados conforme a política do Inter",
+        external,
+      ),
+      question("Você possui curso superior completo?"),
+      question("Qual é a sua remuneração atual?"),
+      question("Quais são seus benefícios atuais?"),
+      question(
+        "Concordo com entrevista por IA e processamento de dados",
+        external,
+      ),
+      question("Qual o seu nível de fluência na língua inglesa?"),
+      question("Qual o seu nível de fluência na língua espanhola?"),
+    ];
+    const fake = fakeAI([]);
+    const logger = safeLog();
+    const results = await resolveApplicationQuestions({
+      ai: fake.ai,
+      correlationId: "inter-residual-fixture",
+      userId: "candidate-1",
+      questions,
+      knowledge: [
+        knowledge("REUSABLE_SELF_DESCRIPTION", {
+          text: "I communicate security findings to engineering teams.",
+        }),
+      ],
+      jurisdictionContext: { jobLocations: ["São Paulo, SP"] },
+      log: logger,
+    });
+    expect(fake.generateStructured).not.toHaveBeenCalled();
+    expect(results.map((result) => result.reasonCode)).toEqual([
+      "EXTERNAL_OR_SENSITIVE_CONTROL",
+      "EMPLOYER_SPECIFIC_ANSWER",
+      "EMPLOYER_SPECIFIC_ANSWER",
+      "EXTERNAL_OR_SENSITIVE_CONTROL",
+      "EDUCATION_COMPLETION_NOT_ESTABLISHED",
+      "CANDIDATE_KNOWLEDGE_MISSING",
+      "UNKNOWN_CONSEQUENTIAL_QUESTION",
+      "EXTERNAL_OR_SENSITIVE_CONTROL",
+      "CANDIDATE_KNOWLEDGE_MISSING",
+      "CANDIDATE_KNOWLEDGE_MISSING",
+    ]);
+    expect(logger.log).toHaveBeenCalledWith(
+      "info",
+      "ai_task_outcome",
+      expect.objectContaining({
+        status: "NO_ELIGIBLE_QUESTIONS",
+        reason: "ALL_QUESTIONS_DETERMINISTICALLY_CLASSIFIED",
+      }),
+    );
   });
 
   it("reduces a six-question deterministic fixture to one candidate answer", async () => {

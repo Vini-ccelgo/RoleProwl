@@ -21,6 +21,7 @@ import {
   selectApplicationResume,
 } from "@/core/domain/applications/application-resume";
 import { databaseClient } from "@/lib/db/client";
+import { logger } from "@/lib/logging/logger";
 import { queryCandidateKnowledgeBatch } from "@/integrations/candidate/prisma-candidate-knowledge";
 import { currentAIProvider } from "@/integrations/ai/provider-factory";
 import {
@@ -229,14 +230,8 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
     const phone = currentValue("PHONE");
     const location = currentValue("CURRENT_LOCATION");
     const professionalTitle = currentValue("TARGET_ROLE");
-    let ai: AIProvider | undefined;
-    try {
-      ai = this.aiProvider();
-    } catch {
-      // Provider selection and real-data policy are optional for Apply.
-    }
     const questionResolutions = await resolveApplicationQuestions({
-      ai,
+      aiFactory: this.aiProvider,
       correlationId: application.id,
       knowledge: candidateKnowledge,
       jurisdictionContext: {
@@ -251,6 +246,7 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
         controlDisposition: applicationQuestionControlDisposition(question),
       })),
       userId: input.userId,
+      log: logger,
     });
     const sponsorship = knowledgeByConcept.get("US_FUTURE_SPONSORSHIP")?.value
       ?.required;

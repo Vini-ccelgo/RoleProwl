@@ -1,4 +1,9 @@
 import type { AIProvider } from "@/core/contracts/ai-provider";
+import {
+  AIDataPolicyError,
+  AIInvalidOutputError,
+  ConfigurationError,
+} from "@/core/errors/application-errors";
 import type {
   CandidateKnowledgeConcept,
   CandidateKnowledgeQueryResult,
@@ -15,6 +20,7 @@ import type {
 } from "@/core/domain/applications/application-question-resolution";
 import type { PublicApplicationQuestion } from "@/core/domain/applications/public-application-question";
 import { aiTaskDefinitions } from "@/features/ai/task-definitions";
+import type { Logger } from "@/lib/logging/logger";
 
 export type {
   ApplicationAnswerResolutionDisposition,
@@ -444,7 +450,13 @@ function adaptToField(
 const EMPLOYER_SPECIFIC =
   /\b(?:why (?:do you want to (?:work|join)|are you interested)|por que.{0,30}(?:empresa|companhia)|why .{1,40}\?)\b/iu;
 const UNKNOWN_CONSEQUENTIAL =
-  /\b(?:salary|compensation|pay|authorized|authorization|sponsor|sponsorship|visa|clearance|criminal|legal|background check|relocat|travel|remunera[cç][aã]o|sal[aá]rio|visto|patroc[ií]nio)\b/iu;
+  /\b(?:salary|compensation|pay|benefits?|authorized|authorization|sponsor|sponsorship|visa|clearance|criminal|legal|background check|relocat|travel|remunera[cç][aã]o|sal[aá]rio|benef[ií]cios?|visto|patroc[ií]nio)\b/iu;
+const SENSITIVE_IDENTIFIER =
+  /\b(?:cpf|social security|national identification|national id|tax identification|tax id)\b/iu;
+const EMPLOYER_RELATIONSHIP =
+  /\b(?:currently|atualmente).{0,30}(?:work|employed|employee|trabalh|funcion[aá]ri[oa]).{0,40}(?:at|for|no|na|do|da)\b|\b(?:employee|funcion[aá]ri[oa]).{0,30}(?:name|nome|id|identifier|matr[ií]cula)\b|\b(?:if|se).{0,50}(?:work|employed|trabalh|funcion[aá]ri[oa]).{0,50}(?:name|nome|id|matr[ií]cula)\b/iu;
+const EDUCATION_COMPLETION =
+  /\b(?:completed|complete|graduated).{0,30}(?:college|university|degree|higher education)|\b(?:curso superior|gradua[cç][aã]o).{0,20}(?:complet[oa]|conclu[ií]d[oa])\b/iu;
 
 const AI_REFRAME_CONCEPTS = new Set<CandidateKnowledgeConcept>([
   "EMPLOYMENT_HISTORY",
@@ -497,6 +509,33 @@ function deterministicResolution(
   const concept = mapApplicationQuestionToCandidateConcept(question, context);
   if (!concept) {
     const value = searchable(question);
+    if (SENSITIVE_IDENTIFIER.test(value))
+      return {
+        questionId: question.id,
+        canonicalConcept: null,
+        disposition: "CANDIDATE_REQUIRED",
+        value: null,
+        candidateKnowledgeReferences: [],
+        reasonCode: "SENSITIVE_IDENTIFIER_REQUIRED",
+      };
+    if (EMPLOYER_RELATIONSHIP.test(value))
+      return {
+        questionId: question.id,
+        canonicalConcept: null,
+        disposition: "CANDIDATE_REQUIRED",
+        value: null,
+        candidateKnowledgeReferences: [],
+        reasonCode: "EMPLOYER_SPECIFIC_ANSWER",
+      };
+    if (EDUCATION_COMPLETION.test(value))
+      return {
+        questionId: question.id,
+        canonicalConcept: null,
+        disposition: "CANDIDATE_REQUIRED",
+        value: null,
+        candidateKnowledgeReferences: [],
+        reasonCode: "EDUCATION_COMPLETION_NOT_ESTABLISHED",
+      };
     if (jurisdictionSensitiveFamily(question))
       return {
         questionId: question.id,
@@ -695,12 +734,44 @@ function groundedProposal(input: {
 
 export async function resolveApplicationQuestions(input: {
   readonly ai?: AIProvider;
+  readonly aiFactory?: () => AIProvider | undefined;
   readonly correlationId: string;
   readonly knowledge: readonly CandidateKnowledgeQueryResult[];
   readonly jurisdictionContext?: ApplicationJurisdictionContext;
   readonly questions: readonly ResolvableApplicationQuestion[];
   readonly userId: string;
+  readonly log?: Logger;
 }) {
+  const startedAt = Date.now();
+  const emit = (details: {
+    status: string;
+    reason: string;
+    questionCount: number;
+    resultCount?: number;
+    provider?: string;
+    model?: string;
+    retryCount?: number;
+  }) =>
+    input.log?.log(
+      details.status === "RESULTS_PROPOSED" ||
+        details.status === "NO_ELIGIBLE_QUESTIONS" ||
+        details.status === "NO_SUPPORTED_RESULTS"
+        ? "info"
+        : "warn",
+      "ai_task_outcome",
+      {
+        task: "APPLICATION_QUESTION_RESOLUTION",
+        correlationId: input.correlationId,
+        status: details.status,
+        reason: details.reason,
+        questionCount: details.questionCount,
+        resultCount: details.resultCount ?? 0,
+        provider: details.provider,
+        model: details.model,
+        latencyMs: Date.now() - startedAt,
+        retryCount: details.retryCount ?? 0,
+      },
+    );
   const knowledge = new Map<
     CandidateKnowledgeConcept,
     CandidateKnowledgeQueryResult
@@ -721,7 +792,13 @@ export async function resolveApplicationQuestions(input: {
     if (resolution) results.set(question.id, resolution);
     else unknown.push(question);
   }
-  if (input.ai && unknown.length) {
+  if (!unknown.length) {
+    emit({
+      status: "NO_ELIGIBLE_QUESTIONS",
+      reason: "ALL_QUESTIONS_DETERMINISTICALLY_CLASSIFIED",
+      questionCount: 0,
+    });
+  } else {
     const suppliedKnowledge = input.knowledge.flatMap((item) => {
       const value = candidateKnowledgeDisplayValue(item.value);
       return item.status === "AVAILABLE" &&
@@ -733,73 +810,136 @@ export async function resolveApplicationQuestions(input: {
         ? [{ referenceId: referenceId(item), concept: item.concept, value }]
         : [];
     });
-    if (suppliedKnowledge.length) {
+    if (!suppliedKnowledge.length) {
+      emit({
+        status: "NO_ELIGIBLE_QUESTIONS",
+        reason: "NO_SAFE_SUPPORTED_CANDIDATE_KNOWLEDGE",
+        questionCount: unknown.length,
+      });
+    } else {
+      let ai = input.ai;
+      let providerConstructionFailed = false;
       try {
-        const definition = aiTaskDefinitions.APPLICATION_QUESTION_RESOLUTION;
-        const generated = await input.ai.generateStructured({
-          ...definition,
-          task: "APPLICATION_QUESTION_RESOLUTION",
-          dataClassification: "REAL_CANDIDATE",
-          correlationId: input.correlationId,
-          rateLimitSubject: input.userId,
-          input: {
-            questions: unknown.map((question) => ({
-              id: question.id,
-              label: question.label,
-              fieldTypes: question.fieldTypes,
-              options: question.options,
-            })),
-            candidateKnowledge: suppliedKnowledge,
-            allowedConcepts: suppliedKnowledge.map((item) => item.concept),
-          },
+        ai ??= input.aiFactory?.();
+      } catch (error) {
+        providerConstructionFailed = true;
+        emit({
+          status:
+            error instanceof ConfigurationError
+              ? "PROVIDER_DISABLED"
+              : "PROVIDER_FAILED",
+          reason:
+            error instanceof ConfigurationError
+              ? "PROVIDER_CONFIGURATION_UNAVAILABLE"
+              : "PROVIDER_CONSTRUCTION_FAILED",
+          questionCount: unknown.length,
         });
-        const byReference = new Map(
-          suppliedKnowledge.map((item) => [item.referenceId, item]),
-        );
-        for (const proposal of generated.data.resolutions) {
-          const question = unknown.find(
-            (item) => item.id === proposal.questionId,
-          );
-          if (!question || results.has(question.id)) continue;
-          const references = proposal.candidateKnowledgeReferences.flatMap(
-            (id) => {
-              const item = byReference.get(id);
-              return item ? [item] : [];
-            },
-          );
-          const conceptAllowed =
-            proposal.canonicalConcept != null &&
-            references.length > 0 &&
-            references.length ===
-              proposal.candidateKnowledgeReferences.length &&
-            references.every(
-              (item) => item.concept === proposal.canonicalConcept,
-            );
-          const grounded =
-            proposal.proposedValue != null &&
-            groundedProposal({
-              proposed: proposal.proposedValue,
-              question: question.label,
-              referencedValues: references.map((item) => item.value),
-              options: question.options,
-            });
-          if (conceptAllowed && grounded) {
-            results.set(question.id, {
-              questionId: question.id,
-              canonicalConcept:
-                proposal.canonicalConcept as CandidateKnowledgeConcept,
-              disposition: "PROPOSED_FOR_CANDIDATE",
-              value: proposal.proposedValue,
-              candidateKnowledgeReferences: references.map(
-                (item) => item.referenceId,
-              ),
-              reasonCode: "AI_GROUNDED_REFRAME_APPROVAL_REQUIRED",
-            });
-          }
-        }
-      } catch {
-        // AI is optional. Deterministic preparation and handoff remain available.
       }
+      if (!ai) {
+        if (!providerConstructionFailed)
+          emit({
+            status: "PROVIDER_DISABLED",
+            reason: input.aiFactory
+              ? "PROVIDER_CONFIGURATION_UNAVAILABLE"
+              : "NO_PROVIDER_CONFIGURED",
+            questionCount: unknown.length,
+          });
+      } else
+        try {
+          const definition = aiTaskDefinitions.APPLICATION_QUESTION_RESOLUTION;
+          const generated = await ai.generateStructured({
+            ...definition,
+            task: "APPLICATION_QUESTION_RESOLUTION",
+            dataClassification: "REAL_CANDIDATE",
+            correlationId: input.correlationId,
+            rateLimitSubject: input.userId,
+            input: {
+              questions: unknown.map((question) => ({
+                id: question.id,
+                label: question.label,
+                fieldTypes: question.fieldTypes,
+                options: question.options,
+              })),
+              candidateKnowledge: suppliedKnowledge,
+              allowedConcepts: suppliedKnowledge.map((item) => item.concept),
+            },
+          });
+          const byReference = new Map(
+            suppliedKnowledge.map((item) => [item.referenceId, item]),
+          );
+          let accepted = 0;
+          for (const proposal of generated.data.resolutions) {
+            const question = unknown.find(
+              (item) => item.id === proposal.questionId,
+            );
+            if (!question || results.has(question.id)) continue;
+            const references = proposal.candidateKnowledgeReferences.flatMap(
+              (id) => {
+                const item = byReference.get(id);
+                return item ? [item] : [];
+              },
+            );
+            const conceptAllowed =
+              proposal.canonicalConcept != null &&
+              references.length > 0 &&
+              references.length ===
+                proposal.candidateKnowledgeReferences.length &&
+              references.every(
+                (item) => item.concept === proposal.canonicalConcept,
+              );
+            const grounded =
+              proposal.proposedValue != null &&
+              groundedProposal({
+                proposed: proposal.proposedValue,
+                question: question.label,
+                referencedValues: references.map((item) => item.value),
+                options: question.options,
+              });
+            if (conceptAllowed && grounded) {
+              accepted += 1;
+              results.set(question.id, {
+                questionId: question.id,
+                canonicalConcept:
+                  proposal.canonicalConcept as CandidateKnowledgeConcept,
+                disposition: "PROPOSED_FOR_CANDIDATE",
+                value: proposal.proposedValue,
+                candidateKnowledgeReferences: references.map(
+                  (item) => item.referenceId,
+                ),
+                reasonCode: "AI_GROUNDED_REFRAME_APPROVAL_REQUIRED",
+              });
+            }
+          }
+          emit({
+            status: accepted ? "RESULTS_PROPOSED" : "NO_SUPPORTED_RESULTS",
+            reason: accepted
+              ? "GROUNDED_RESULTS_PROPOSED"
+              : generated.data.resolutions.length
+                ? "ALL_RESULTS_REJECTED"
+                : "PROVIDER_RETURNED_NO_RESULTS",
+            questionCount: unknown.length,
+            resultCount: accepted,
+            provider: generated.metadata.provider,
+            model: generated.metadata.model,
+            retryCount: generated.metadata.retryCount,
+          });
+        } catch (error) {
+          emit({
+            status:
+              error instanceof AIDataPolicyError
+                ? "POLICY_BLOCKED"
+                : error instanceof AIInvalidOutputError
+                  ? "INVALID_PROVIDER_OUTPUT"
+                  : "PROVIDER_FAILED",
+            reason:
+              error instanceof AIDataPolicyError
+                ? "REAL_CANDIDATE_DATA_POLICY_BLOCKED"
+                : error instanceof AIInvalidOutputError
+                  ? "STRUCTURED_OUTPUT_INVALID"
+                  : "PROVIDER_REQUEST_FAILED",
+            questionCount: unknown.length,
+          });
+        }
     }
   }
   for (const question of unknown)
