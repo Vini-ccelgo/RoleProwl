@@ -345,14 +345,16 @@ export async function saveApplicationOverridesAction(formData: FormData) {
   const actor = await requireAuthenticatedActor(currentAuthProvider());
   const applicationId = String(formData.get("applicationId") ?? "");
   if (!applicationId) return;
-  const identity = [...formData.entries()].flatMap(([name, candidate]) => {
-    if (!name.startsWith("identity:") || typeof candidate !== "string")
-      return [];
-    const key = name.slice("identity:".length);
-    return isApplicationIdentityKey(key)
-      ? [{ key, value: candidate || null }]
-      : [];
-  });
+  const submittedIdentity = [...formData.entries()].flatMap(
+    ([name, candidate]) => {
+      if (!name.startsWith("identity:") || typeof candidate !== "string")
+        return [];
+      const key = name.slice("identity:".length);
+      return isApplicationIdentityKey(key)
+        ? [{ key, value: candidate || null }]
+        : [];
+    },
+  );
   const submittedAnswers = [...formData.entries()].flatMap(
     ([name, candidate]) =>
       name.startsWith("answer:") && typeof candidate === "string"
@@ -365,9 +367,29 @@ export async function saveApplicationOverridesAction(formData: FormData) {
   });
   const payload = evidenceSnapshot(application?.submissionPayloadSnapshot);
   const packet = isApplicationPacket(payload?.packet) ? payload.packet : null;
-  const answers = packet
+  const expandedAnswers = packet
     ? fanOutCompatibleApplicationAnswers(packet.answers, submittedAnswers)
     : submittedAnswers;
+  const identity = submittedIdentity.filter((answer) => {
+    const packetIdentity = packet?.identity.find(
+      (candidate) => candidate.key === answer.key,
+    );
+    return !(
+      packetIdentity?.status === "RESOLVED" &&
+      (packetIdentity.value?.normalize("NFKC").trim() || null) ===
+        (answer.value?.normalize("NFKC").trim() || null)
+    );
+  });
+  const answers = expandedAnswers.filter((answer) => {
+    const packetAnswer = packet?.answers.find(
+      (candidate) => candidate.questionId === answer.key,
+    );
+    return !(
+      packetAnswer?.status === "RESOLVED" &&
+      (packetAnswer.value?.normalize("NFKC").trim() || null) ===
+        (answer.value?.normalize("NFKC").trim() || null)
+    );
+  });
   const reusableAnswers = answers.flatMap((answer) => {
     const packetAnswer = packet?.answers.find(
       (candidate) => candidate.questionId === answer.key,
@@ -381,6 +403,7 @@ export async function saveApplicationOverridesAction(formData: FormData) {
       concept &&
       policy?.reusableForEmployerQuestions &&
       packetAnswer?.resolutionReasonCode !== "EMPLOYER_SPECIFIC_ANSWER" &&
+      packetAnswer?.resolutionDisposition !== "AUTO_RESOLVED" &&
       packetAnswer?.resolutionDisposition !== "HUMAN_REQUIRED"
       ? [
           {
@@ -412,13 +435,29 @@ export async function saveApplicationOverridesAction(formData: FormData) {
   );
   if (uniqueReusableAnswers.length)
     await saveDirectCandidateKnowledgeBatch(uniqueReusableAnswers);
-  await saveApplicationOverrides({
-    applicationId,
-    userId: actor.id,
-    identity,
-    answers,
-    repository: new PrismaApplicationOverrideRepository(),
+  const reusableConcepts = new Set(
+    uniqueReusableAnswers.map((answer) => answer.concept),
+  );
+  const applicationAnswers = answers.filter((answer) => {
+    const concept = packet?.answers.find(
+      (candidate) => candidate.questionId === answer.key,
+    )?.canonicalConcept;
+    return !concept || !reusableConcepts.has(concept);
   });
+  if (identity.length || applicationAnswers.length)
+    await saveApplicationOverrides({
+      applicationId,
+      userId: actor.id,
+      identity,
+      answers: applicationAnswers,
+      repository: new PrismaApplicationOverrideRepository(),
+    });
+  else if (uniqueReusableAnswers.length)
+    await refreshApplicationPacket({
+      applicationId,
+      repository: new PrismaApplicationPacketRepository(),
+      userId: actor.id,
+    });
   revalidatePath("/applications");
   revalidatePath(`/applications/${applicationId}`);
   revalidatePath("/dashboard");

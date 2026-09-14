@@ -65,6 +65,151 @@ function fakeAI(resolutions: unknown[]) {
 
 describe("application question resolver", () => {
   it.each([
+    ["FIRST_NAME", "First name", { text: "Maya" }],
+    ["LAST_NAME", "Last name", { text: "Chen" }],
+    ["APPLICATION_EMAIL", "Email", { text: "maya@example.test" }],
+    ["PHONE", "Phone", { text: "+1 555 0142" }],
+    ["LINKEDIN_URL", "LinkedIn profile", { text: "linkedin.com/in/maya" }],
+    ["WEBSITE_URL", "Portfolio website", { text: "maya.example.test" }],
+  ] as const)(
+    "auto-uses candidate-approved stable %s knowledge",
+    async (concept, label, value) => {
+      const [result] = await resolveApplicationQuestions({
+        correlationId: "application-stable-profile",
+        userId: "candidate-1",
+        questions: [question(label)],
+        knowledge: [
+          knowledge(concept, value, {
+            freshness: "NOT_APPLICABLE",
+            provenance: { source: "CANDIDATE_DIRECT", sourceId: "profile-1" },
+          }),
+        ],
+      });
+      expect(result).toMatchObject({
+        canonicalConcept: concept,
+        disposition: "AUTO_RESOLVED",
+        reasonCode: "APPROVED_REUSABLE_KNOWLEDGE",
+      });
+    },
+  );
+
+  it("auto-uses an accepted résumé phone but not unapproved résumé evidence", async () => {
+    const accepted = knowledge(
+      "PHONE",
+      { text: "+55 11 99999-0000" },
+      {
+        freshness: "NOT_APPLICABLE",
+        origin: "DERIVED",
+        provenance: { source: "RESUME", sourceId: "accepted-phone" },
+      },
+    );
+    const [approved, unapproved] = await Promise.all([
+      resolveApplicationQuestions({
+        correlationId: "accepted-resume-phone",
+        userId: "candidate-1",
+        questions: [question("Phone")],
+        knowledge: [accepted],
+      }),
+      resolveApplicationQuestions({
+        correlationId: "unapproved-resume-phone",
+        userId: "candidate-1",
+        questions: [question("Phone")],
+        knowledge: [{ ...accepted, candidateApproved: false }],
+      }),
+    ]);
+    expect(approved[0]?.disposition).toBe("AUTO_RESOLVED");
+    expect(unapproved[0]?.disposition).toBe("PROPOSED_FOR_CANDIDATE");
+  });
+
+  it("does not use a pending narrative proposal absent from approved knowledge", async () => {
+    const [result] = await resolveApplicationQuestions({
+      correlationId: "pending-narrative",
+      userId: "candidate-1",
+      questions: [question("What is your notice period?")],
+      knowledge: [],
+    });
+    expect(result).toMatchObject({
+      disposition: "CANDIDATE_REQUIRED",
+      reasonCode: "CANDIDATE_KNOWLEDGE_MISSING",
+    });
+  });
+
+  it("auto-uses an approved narrative-derived notice period until it is stale", async () => {
+    const approved = knowledge(
+      "NOTICE_PERIOD",
+      { text: "30 days" },
+      {
+        origin: "DERIVED",
+        provenance: { source: "ANSWER_MEMORY", sourceId: "approved-1" },
+      },
+    );
+    const [current, stale] = await Promise.all([
+      resolveApplicationQuestions({
+        correlationId: "approved-narrative",
+        userId: "candidate-1",
+        questions: [question("What is your notice period?")],
+        knowledge: [approved],
+      }),
+      resolveApplicationQuestions({
+        correlationId: "stale-approved-narrative",
+        userId: "candidate-1",
+        questions: [question("What is your notice period?")],
+        knowledge: [
+          {
+            ...approved,
+            status: "STALE_CONFIRMATION_REQUIRED",
+            freshness: "STALE",
+          },
+        ],
+      }),
+    ]);
+    expect(current[0]).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: "30 days",
+    });
+    expect(stale[0]).toMatchObject({
+      disposition: "CANDIDATE_REQUIRED",
+      reasonCode: "CANDIDATE_KNOWLEDGE_STALE",
+    });
+  });
+
+  it("auto-uses current explicit compensation but requires stale compensation confirmation", async () => {
+    const current = knowledge("CURRENT_COMPENSATION", {
+      amount: 10_000,
+      currency: "BRL",
+      period: "monthly",
+    });
+    const results = await Promise.all([
+      resolveApplicationQuestions({
+        correlationId: "current-compensation",
+        userId: "candidate-1",
+        questions: [question("Current compensation")],
+        knowledge: [current],
+      }),
+      resolveApplicationQuestions({
+        correlationId: "stale-compensation",
+        userId: "candidate-1",
+        questions: [question("Current compensation")],
+        knowledge: [
+          {
+            ...current,
+            status: "STALE_CONFIRMATION_REQUIRED",
+            freshness: "STALE",
+          },
+        ],
+      }),
+    ]);
+    expect(results[0]?.[0]).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: "BRL 10000 monthly",
+    });
+    expect(results[1]?.[0]).toMatchObject({
+      disposition: "CANDIDATE_REQUIRED",
+      reasonCode: "CANDIDATE_KNOWLEDGE_STALE",
+    });
+  });
+
+  it.each([
     ["First name", "FIRST_NAME"],
     ["Nome", "FIRST_NAME"],
     ["Primeiro nome", "FIRST_NAME"],
@@ -101,8 +246,16 @@ describe("application question resolver", () => {
         question("E-mail"),
       ],
       knowledge: [
-        knowledge("FIRST_NAME", { text: "Avery" }),
-        knowledge("APPLICATION_EMAIL", { text: "avery@example.test" }),
+        knowledge(
+          "FIRST_NAME",
+          { text: "Avery" },
+          { freshness: "NOT_APPLICABLE" },
+        ),
+        knowledge(
+          "APPLICATION_EMAIL",
+          { text: "avery@example.test" },
+          { freshness: "NOT_APPLICABLE" },
+        ),
       ],
     });
     expect(results.map((result) => result.value)).toEqual([
@@ -173,7 +326,7 @@ describe("application question resolver", () => {
     ).toBe("LANGUAGE:portuguese");
   });
 
-  it("resolves approved current reusable knowledge without AI", async () => {
+  it("resolves approved reusable proficiency without a freshness clock or AI", async () => {
     const fake = fakeAI([]);
     const [result] = await resolveApplicationQuestions({
       ai: fake.ai,
@@ -181,9 +334,11 @@ describe("application question resolver", () => {
       userId: "candidate-1",
       questions: [question("English proficiency")],
       knowledge: [
-        knowledge("LANGUAGE_PROFICIENCY:english", {
-          proficiency: "Professional fluent",
-        }),
+        knowledge(
+          "LANGUAGE_PROFICIENCY:english",
+          { proficiency: "Professional fluent" },
+          { freshness: "NOT_APPLICABLE" },
+        ),
       ],
     });
     expect(result).toMatchObject({
@@ -519,6 +674,14 @@ describe("application question resolver", () => {
       userId: "candidate-1",
       knowledge: [
         knowledge(
+          "GENERAL_DATA_USE_PREFERENCE",
+          { text: "Prefer minimal data use" },
+          {
+            applicationUse: "PREFERENCE_CONTEXT_ONLY",
+            autoAnswerAllowed: false,
+          },
+        ),
+        knowledge(
           "AI_HIRING_PROCESS_PREFERENCE",
           { text: "Prefer no AI interview transcription" },
           {
@@ -528,7 +691,14 @@ describe("application question resolver", () => {
         ),
       ],
       questions: [
+        question(
+          "Concordo que os dados pessoais serão coletados conforme a política do Inter",
+          { controlDisposition: "CANDIDATE_REQUIRED_EXTERNAL" },
+        ),
         question("AI interview consent", {
+          controlDisposition: "CANDIDATE_REQUIRED_EXTERNAL",
+        }),
+        question("I legally attest that all information is accurate", {
           controlDisposition: "CANDIDATE_REQUIRED_EXTERNAL",
         }),
         question("Upload résumé", {
@@ -539,6 +709,8 @@ describe("application question resolver", () => {
       ],
     });
     expect(results.map((result) => result.disposition)).toEqual([
+      "HUMAN_REQUIRED",
+      "HUMAN_REQUIRED",
       "HUMAN_REQUIRED",
       "HUMAN_REQUIRED",
       "UNSUPPORTED",

@@ -177,7 +177,8 @@ function packetForResolution(input: {
     | "SPONSORSHIP_REQUIREMENT:BR"
     | "WORK_AUTHORIZATION:US"
     | null;
-  readonly disposition: "CANDIDATE_REQUIRED" | "PROPOSED_FOR_CANDIDATE";
+  readonly disposition:
+    "AUTO_RESOLVED" | "CANDIDATE_REQUIRED" | "PROPOSED_FOR_CANDIDATE";
   readonly reasonCode: string;
   readonly value: string | null;
 }) {
@@ -619,7 +620,7 @@ describe("application packet actions", () => {
         applicationId: "application-1",
         userId: "user-1",
         identity: [{ key: "phone", value: "+55 51 5555 0100" }],
-        answers: [{ key: "question-42", value: "Yes" }],
+        answers: [],
       }),
     );
     expect(saveApplicationOverrides).toHaveBeenCalledOnce();
@@ -640,17 +641,14 @@ describe("application packet actions", () => {
     const value = form();
     value.set("answer:first_name", "Avery");
     await saveApplicationOverridesAction(value);
-    expect(saveApplicationOverrides).toHaveBeenCalledWith(
+    expect(saveApplicationOverrides).not.toHaveBeenCalled();
+    expect(refreshApplicationPacket).toHaveBeenCalledOnce();
+    expect(refreshApplicationPacket).toHaveBeenCalledWith(
       expect.objectContaining({
         applicationId: "application-1",
         userId: "user-1",
-        answers: [
-          { key: "first_name", value: "Avery" },
-          { key: "nome", value: "Avery" },
-        ],
       }),
     );
-    expect(saveApplicationOverrides).toHaveBeenCalledOnce();
     expect(saveDirectCandidateKnowledgeBatch).toHaveBeenCalledOnce();
     expect(saveDirectCandidateKnowledgeBatch).toHaveBeenCalledWith([
       {
@@ -660,6 +658,47 @@ describe("application packet actions", () => {
         resolvesConflicts: false,
       },
     ]);
+  });
+
+  it("keeps an edit to auto-resolved memory application-specific", async () => {
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: {
+        packet: packetForResolution({
+          concept: "LANGUAGE_PROFICIENCY:english",
+          disposition: "AUTO_RESOLVED",
+          reasonCode: "APPROVED_REUSABLE_KNOWLEDGE",
+          value: "Professional fluent",
+        }),
+      },
+    });
+    const value = form();
+    value.set("answer:question-42", "Advanced");
+    await saveApplicationOverridesAction(value);
+    expect(saveApplicationOverrides).toHaveBeenCalledWith(
+      expect.objectContaining({
+        answers: [{ key: "question-42", value: "Advanced" }],
+      }),
+    );
+    expect(saveDirectCandidateKnowledgeBatch).not.toHaveBeenCalled();
+  });
+
+  it("ignores unchanged auto-resolved values submitted beside another edit", async () => {
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: {
+        packet: packetForResolution({
+          concept: "LANGUAGE_PROFICIENCY:english",
+          disposition: "AUTO_RESOLVED",
+          reasonCode: "APPROVED_REUSABLE_KNOWLEDGE",
+          value: "Professional fluent",
+        }),
+      },
+    });
+    const value = form();
+    value.set("answer:question-42", "Professional fluent");
+    await saveApplicationOverridesAction(value);
+    expect(saveApplicationOverrides).not.toHaveBeenCalled();
+    expect(saveDirectCandidateKnowledgeBatch).not.toHaveBeenCalled();
+    expect(refreshApplicationPacket).not.toHaveBeenCalled();
   });
 
   it("keeps incompatible values application-scoped instead of overwriting reusable memory", async () => {

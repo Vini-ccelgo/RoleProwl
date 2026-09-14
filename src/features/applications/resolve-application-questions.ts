@@ -606,7 +606,7 @@ function deterministicResolution(
     !candidate.reusable ||
     !candidate.autoAnswerAllowed ||
     candidate.applicationUse !== "REUSABLE_ANSWER" ||
-    candidate.freshness !== "CURRENT"
+    candidate.freshness === "STALE"
   )
     return {
       questionId: question.id,

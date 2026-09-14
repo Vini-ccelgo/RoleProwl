@@ -5,6 +5,83 @@ import { buildApplicationPacket } from "@/core/domain/applications/application-p
 import { ApplicationPacketSummary } from "./application-packet-summary";
 
 describe("application packet summary", () => {
+  it("moves five approved Inter identity decisions into editable automatic preparation", () => {
+    const concepts = [
+      ["first_name", "Nome", "FIRST_NAME", "MAYA"],
+      ["last_name", "Sobrenome", "LAST_NAME", "CHEN"],
+      ["email", "E-mail", "APPLICATION_EMAIL", "maya.chen.test@example.com"],
+      ["phone", "Telefone", "PHONE", "+1 (555) 014-2738"],
+      [
+        "linkedin",
+        "LinkedIn Profile",
+        "LINKEDIN_URL",
+        "linkedin.com/in/maya-chen-test",
+      ],
+    ] as const;
+    const questions = concepts.map(([id, label]) => ({
+      id,
+      source: "GREENHOUSE" as const,
+      group: "STANDARD" as const,
+      label,
+      required: true,
+      fieldNames: [id],
+      fieldTypes: ["input_text"],
+      options: [],
+    }));
+    const packet = buildApplicationPacket({
+      reviewed: false,
+      source: {
+        accountEmail: "maya.chen.test@example.com",
+        profile: {
+          firstName: "MAYA",
+          lastName: "CHEN",
+          applicationEmail: "maya.chen.test@example.com",
+          phone: "+1 (555) 014-2738",
+          location: null,
+          countryCode: null,
+          professionalTitle: null,
+        },
+        verifiedResumeFacts: [],
+        experience: [],
+        education: [],
+        credentials: [],
+        skills: [],
+        languages: [],
+        workAuthorization: null,
+        sponsorshipRequired: null,
+        answerMemories: [],
+        selectedResume: null,
+        coverLetter: null,
+        questions,
+        questionResolutions: concepts.map(([id, , concept, value]) => ({
+          questionId: id,
+          canonicalConcept: concept,
+          disposition: "AUTO_RESOLVED" as const,
+          value,
+          candidateKnowledgeReferences: [`${concept}:profile`],
+          reasonCode: "APPROVED_REUSABLE_KNOWLEDGE",
+        })),
+        questionInspection: "AVAILABLE",
+        sourceName: "GREENHOUSE",
+        targetRole: "Security Analyst",
+      },
+    });
+    const markup = renderToStaticMarkup(
+      createElement(ApplicationPacketSummary, {
+        applicationId: "application-1",
+        packet,
+        saveAction: async () => undefined,
+      }),
+    );
+    expect(markup).toMatch(/>5<\/strong><p[^>]*>Automatically prepared<\/p>/u);
+    expect(markup).toMatch(/>0<\/strong><p[^>]*>Needs your answer<\/p>/u);
+    expect(markup).toContain("Inspect or change prepared values");
+    expect(markup).toContain('name="answer:first_name"');
+    expect(markup).toContain('value="MAYA"');
+    expect(markup).toContain('name="answer:linkedin"');
+    expect(markup).toContain("without changing Career Profile");
+  });
+
   it("shows functional fields and download access without private storage keys", () => {
     const packet = buildApplicationPacket({
       reviewed: true,

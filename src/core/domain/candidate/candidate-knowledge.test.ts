@@ -46,6 +46,44 @@ function emptySources() {
 }
 
 describe("candidate knowledge coverage", () => {
+  it.each([
+    ["FIRST_NAME", "Maya"],
+    ["LAST_NAME", "Chen"],
+    ["APPLICATION_EMAIL", "maya@example.test"],
+    ["PHONE", "+1 555 0142"],
+    ["LINKEDIN_URL", "https://linkedin.com/in/maya"],
+    ["WEBSITE_URL", "https://maya.example.test"],
+  ] as const)(
+    "projects candidate-saved %s with reusable auto-answer authority",
+    (concept, expectedValue) => {
+      const evidence = evidenceFromCandidateSources({
+        ...emptySources(),
+        profile: {
+          id: "profile-1",
+          updatedAt: now,
+          firstName: "Maya",
+          lastName: "Chen",
+          applicationEmail: "maya@example.test",
+          phone: "+1 555 0142",
+          location: null,
+          linkedInUrl: "https://linkedin.com/in/maya",
+          websiteUrl: "https://maya.example.test",
+        },
+      });
+      expect(
+        resolveCandidateKnowledge({ concept, evidence, now }),
+      ).toMatchObject({
+        applicationUse: "REUSABLE_ANSWER",
+        autoAnswerAllowed: true,
+        candidateApproved: true,
+        freshness: "NOT_APPLICABLE",
+        reusable: true,
+        status: "AVAILABLE",
+        value: { text: expectedValue },
+      });
+    },
+  );
+
   it("allows explicit and faithful derived evidence to satisfy coverage", () => {
     expect(
       resolveCandidateKnowledge({
@@ -709,9 +747,16 @@ describe("candidate knowledge coverage", () => {
       "PHONE",
       "LINKEDIN_URL",
     ] as const)
-      expect(resolveCandidateKnowledge({ concept, evidence, now }).status).toBe(
-        "AVAILABLE",
-      );
+      expect(
+        resolveCandidateKnowledge({ concept, evidence, now }),
+      ).toMatchObject({
+        applicationUse: "REUSABLE_ANSWER",
+        autoAnswerAllowed: true,
+        candidateApproved: true,
+        freshness: "NOT_APPLICABLE",
+        reusable: true,
+        status: "AVAILABLE",
+      });
     expect(
       resolveCandidateKnowledge({ concept: "WEBSITE_URL", evidence, now })
         .status,

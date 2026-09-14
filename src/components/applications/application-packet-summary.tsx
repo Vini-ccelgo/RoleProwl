@@ -177,12 +177,37 @@ export function ApplicationPacketSummary({
     ),
     ...applicationSpecificAnswers,
   ];
+  const editablePreparedAnswers = coalesceAnswers(
+    roleProwlPrepared.filter((field): field is ApplicationPacketAnswer => {
+      if (!("questionId" in field)) return false;
+      const answer = field as ApplicationPacketAnswer;
+      return (
+        answer.resolutionDisposition === "AUTO_RESOLVED" &&
+        answer.classification === "CANDIDATE_KNOWLEDGE"
+      );
+    }),
+  );
+  const representedAnswerKeys = new Set(
+    [
+      ...answerBlockers,
+      ...applicationSpecificAnswers,
+      ...editablePreparedAnswers,
+    ].map(candidateDecisionKey),
+  );
+  const editablePrepared = [
+    ...roleProwlPrepared.filter(
+      (field) =>
+        !("questionId" in field) &&
+        field.required &&
+        !representedAnswerKeys.has(candidateDecisionKey(field)),
+    ),
+    ...editablePreparedAnswers,
+  ];
   const editableFields = [
     ...new Map(
-      [...editableBlockers, ...applicationSpecific].map((field) => [
-        field.key,
-        field,
-      ]),
+      [...editablePrepared, ...applicationSpecific, ...editableBlockers].map(
+        (field) => [field.key, field],
+      ),
     ).values(),
   ];
   const unresolvedResume = packet.documents.find(
@@ -289,12 +314,15 @@ export function ApplicationPacketSummary({
             <h2 className="text-base font-semibold">
               {editableBlockers.length > 0
                 ? "Needs your input"
-                : "Application-specific values"}
+                : applicationSpecific.length > 0
+                  ? "Application-specific values"
+                  : "Inspect or change prepared values"}
             </h2>
             <p className="m-0 text-sm text-foreground-muted">
-              Recurring answers update candidate memory and this Application.
-              One compatible answer is applied to equivalent employer controls.
-              Employer-specific answers remain scoped to this Application.
+              Answers to unresolved recurring questions update candidate memory.
+              Prepared values can be changed for this Application without
+              changing Career Profile. One compatible answer is applied to
+              equivalent employer controls.
             </p>
           </div>
           {editableFields.length > 0 ? (
