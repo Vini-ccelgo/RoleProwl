@@ -7,6 +7,7 @@ import type {
   ApplicationPacketField,
 } from "@/core/domain/applications/application-packet";
 import {
+  applicationAnswerCardinality,
   applicationAnswerValues,
   encodedApplicationAnswer,
 } from "@/core/domain/applications/application-packet";
@@ -33,7 +34,19 @@ export function applicationOverridesAreDirty(
 
 export function normalizeEditableValue(value: unknown) {
   if (value == null) return "";
-  return String(value).replace(/\r\n?/gu, "\n");
+  const normalized = String(value).replace(/\r\n?/gu, "\n");
+  try {
+    const parsed: unknown = JSON.parse(normalized);
+    if (Array.isArray(parsed))
+      return encodedApplicationAnswer(
+        parsed.flatMap((candidate) =>
+          typeof candidate === "string" ? [candidate] : [],
+        ),
+      );
+  } catch {
+    // Plain scalar and text answers are compared as entered.
+  }
+  return normalized;
 }
 
 function fieldName(field: EditableField) {
@@ -52,6 +65,73 @@ function answerChoices(answer: ApplicationPacketAnswer) {
     : answer.options.map((option) => ({ label: option, value: option }));
 }
 
+function MultiChoiceInput({
+  answer,
+  label,
+  mismatch,
+  name,
+  selectedValues,
+}: {
+  readonly answer: ApplicationPacketAnswer;
+  readonly label: string;
+  readonly mismatch: boolean;
+  readonly name: string;
+  readonly selectedValues: readonly string[];
+}) {
+  const choices = answerChoices(answer);
+  const [selected, setSelected] = useState(() => new Set(selectedValues));
+
+  return (
+    <fieldset
+      className="field max-w-full min-w-0 md:col-span-2"
+      data-choice-cardinality="multiple"
+    >
+      <legend className="max-w-full break-words">{label}</legend>
+      <input name={name} type="hidden" value="" />
+      {mismatch ? (
+        <small>
+          The employer changed its choices. Select the intended values again
+          explicitly.
+        </small>
+      ) : null}
+      <div
+        className="border-border grid max-h-64 gap-1 overflow-y-auto rounded-lg border p-2"
+        data-bounded-choice-list="true"
+      >
+        {choices.map((option, index) => (
+          <label
+            className="flex min-w-0 items-start gap-2 rounded px-1 py-1 text-sm"
+            key={option.value}
+          >
+            <input
+              className="application-choice-input"
+              checked={selected.has(option.value)}
+              name={name}
+              onChange={(event) => {
+                const next = new Set(selected);
+                if (event.currentTarget.checked) next.add(option.value);
+                else next.delete(option.value);
+                setSelected(next);
+              }}
+              required={
+                (answer.required || mismatch) &&
+                selected.size === 0 &&
+                index === 0
+              }
+              type="checkbox"
+              value={option.value}
+            />
+            <span className="min-w-0 break-words">{option.label}</span>
+          </label>
+        ))}
+      </div>
+      {answer.required || mismatch ? (
+        <small>Select at least one option.</small>
+      ) : null}
+    </fieldset>
+  );
+}
+
 function OverrideInput({ field }: { readonly field: EditableField }) {
   const answer = "questionId" in field ? field : null;
   const name = fieldName(field);
@@ -61,35 +141,16 @@ function OverrideInput({ field }: { readonly field: EditableField }) {
     const mismatch = requiresChoiceReview(field);
     const choices = answerChoices(answer!);
     const selectedValues = mismatch ? [] : applicationAnswerValues(field.value);
-    const useMultiple = (answer?.fieldTypes ?? []).includes(
-      "multi_value_multi_select",
-    );
+    const useMultiple = applicationAnswerCardinality(answer!) === "MULTIPLE";
     if (useMultiple)
       return (
-        <fieldset className="field max-w-full min-w-0">
-          <legend className="max-w-full break-words">{label}</legend>
-          <input name={name} type="hidden" value="" />
-          {mismatch ? (
-            <small>
-              The employer changed its choices. Select the intended values again
-              explicitly.
-            </small>
-          ) : null}
-          {choices.map((option) => (
-            <label
-              className="flex min-w-0 items-center gap-2"
-              key={option.value}
-            >
-              <input
-                defaultChecked={selectedValues.includes(option.value)}
-                name={name}
-                type="checkbox"
-                value={option.value}
-              />
-              <span className="min-w-0 break-words">{option.label}</span>
-            </label>
-          ))}
-        </fieldset>
+        <MultiChoiceInput
+          answer={answer!}
+          label={label}
+          mismatch={mismatch}
+          name={name}
+          selectedValues={selectedValues}
+        />
       );
     const useRadio = (answer?.fieldTypes ?? []).some((type) =>
       type.toLocaleLowerCase("en-US").includes("radio"),
@@ -111,6 +172,7 @@ function OverrideInput({ field }: { readonly field: EditableField }) {
               key={option.value}
             >
               <input
+                className="application-choice-input"
                 defaultChecked={selectedValues.includes(option.value)}
                 name={name}
                 required={field.required || mismatch}
@@ -134,6 +196,7 @@ function OverrideInput({ field }: { readonly field: EditableField }) {
         ) : null}
         <select
           className="max-w-full min-w-0"
+          data-choice-cardinality="single"
           defaultValue={mismatch ? "" : (selectedValues[0] ?? "")}
           name={name}
           required={field.required || mismatch}

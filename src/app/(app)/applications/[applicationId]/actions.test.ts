@@ -804,6 +804,80 @@ describe("application packet actions", () => {
     expect(saveDirectCandidateKnowledgeBatch).not.toHaveBeenCalled();
   });
 
+  it("rejects multiple values for a Greenhouse single-select", async () => {
+    const base = packetForResolution({
+      concept: null,
+      disposition: "CANDIDATE_REQUIRED",
+      reasonCode: "EMPLOYER_SPECIFIC_ANSWER",
+      value: null,
+    });
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: {
+        packet: {
+          ...base,
+          answers: [
+            {
+              ...base.answers[0]!,
+              fieldTypes: ["multi_value_single_select"],
+              options: ["Yes", "No"],
+              optionIdentities: [
+                { label: "Yes", value: "100" },
+                { label: "No", value: "200" },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    const value = form();
+    value.append("answer:question-42", "100");
+    value.append("answer:question-42", "200");
+
+    await expect(saveApplicationOverridesAction(value)).rejects.toThrow(
+      "Choose only one answer",
+    );
+    expect(saveApplicationOverrides).not.toHaveBeenCalled();
+  });
+
+  it("rejects empty required multi-selects and forged option identities", async () => {
+    const base = packetForResolution({
+      concept: null,
+      disposition: "CANDIDATE_REQUIRED",
+      reasonCode: "EMPLOYER_SPECIFIC_ANSWER",
+      value: null,
+    });
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: {
+        packet: {
+          ...base,
+          answers: [
+            {
+              ...base.answers[0]!,
+              fieldTypes: ["multi_value_multi_select"],
+              options: ["Day", "Night"],
+              optionIdentities: [
+                { label: "Day", value: "100" },
+                { label: "Night", value: "200" },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    const empty = form();
+    empty.append("answer:question-42", "");
+    await expect(saveApplicationOverridesAction(empty)).rejects.toThrow(
+      "Select or enter an answer",
+    );
+
+    const forged = form();
+    forged.append("answer:question-42", "not-an-employer-option");
+    await expect(saveApplicationOverridesAction(forged)).rejects.toThrow(
+      "no longer available",
+    );
+    expect(saveApplicationOverrides).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["WORK_AUTHORIZATION:BR", "Yes"],
     ["SPONSORSHIP_REQUIREMENT:BR", "No"],

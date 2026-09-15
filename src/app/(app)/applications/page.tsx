@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { PageHeader } from "@/components/ui/page-header";
+import { LocalDateTime } from "@/components/ui/local-date-time";
 import {
   APPLICATION_OUTCOME_POLICY_COPY,
   applicationOverviewCounts,
@@ -116,11 +117,13 @@ export default async function ApplicationsPage() {
                       : application.submittedAt
                         ? "Submitted"
                         : "Updated"}{" "}
-                    {(
-                      application.externalConfirmedAt ??
-                      application.submittedAt ??
-                      application.updatedAt
-                    ).toLocaleString()}
+                    <LocalDateTime
+                      value={
+                        application.externalConfirmedAt ??
+                        application.submittedAt ??
+                        application.updatedAt
+                      }
+                    />
                   </p>
                   <p className="m-0">
                     {application._count.events} history event

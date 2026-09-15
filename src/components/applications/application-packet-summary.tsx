@@ -9,6 +9,7 @@ import {
 } from "@/core/domain/applications/application-packet";
 import { CopyApplicationValue } from "./copy-application-value";
 import { ApplicationOverridesForm } from "./application-overrides-form";
+import { LocalDateTime } from "@/components/ui/local-date-time";
 
 function Status({ value }: { readonly value: string }) {
   return (
@@ -241,10 +242,14 @@ export function ApplicationPacketSummary({
           <div>
             <h2 className="text-base font-semibold">Application packet</h2>
             <p className="m-0 text-sm text-foreground-muted">
-              Built {new Date(packet.builtAt).toLocaleString()} ·{" "}
-              {packet.reviewedAt
-                ? `Reviewed ${new Date(packet.reviewedAt).toLocaleString()}`
-                : "Candidate review required"}
+              Built <LocalDateTime value={packet.builtAt} /> ·{" "}
+              {packet.reviewedAt ? (
+                <>
+                  Reviewed <LocalDateTime value={packet.reviewedAt} />
+                </>
+              ) : (
+                "Candidate review required"
+              )}
             </p>
           </div>
           <Status

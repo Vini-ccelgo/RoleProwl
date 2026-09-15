@@ -1162,6 +1162,14 @@ p {
   font: inherit;
   font-size: 0.82rem;
 }
+.field .application-choice-input {
+  width: 1rem;
+  height: 1rem;
+  min-height: 1rem;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+  padding: 0;
+}
 .field textarea {
   resize: vertical;
 }

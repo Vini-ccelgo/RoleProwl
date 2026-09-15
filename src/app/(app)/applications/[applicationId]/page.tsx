@@ -7,6 +7,7 @@ import { ApplicationDocuments } from "@/components/applications/application-docu
 import { CoverLetterDraft } from "@/components/applications/cover-letter-draft";
 import { GreenhouseAssistedApply } from "@/components/applications/greenhouse-assisted-apply";
 import { PageHeader } from "@/components/ui/page-header";
+import { LocalDateTime } from "@/components/ui/local-date-time";
 import { ResumeVersionSummary } from "@/components/applications/resume-version-summary";
 import {
   applicationTransitionsFrom,
@@ -236,23 +237,33 @@ export default async function ApplicationDetailPage({
           <dl className="grid gap-2 text-sm">
             <div>
               <dt className="font-semibold">Created</dt>
-              <dd className="m-0">{application.createdAt.toLocaleString()}</dd>
+              <dd className="m-0">
+                <LocalDateTime value={application.createdAt} />
+              </dd>
             </div>
             <div>
               <dt className="font-semibold">Last updated</dt>
-              <dd className="m-0">{application.updatedAt.toLocaleString()}</dd>
+              <dd className="m-0">
+                <LocalDateTime value={application.updatedAt} />
+              </dd>
             </div>
             <div>
               <dt className="font-semibold">Submitted</dt>
               <dd className="m-0">
-                <Unknown>{application.submittedAt?.toLocaleString()}</Unknown>
+                <Unknown>
+                  {application.submittedAt ? (
+                    <LocalDateTime value={application.submittedAt} />
+                  ) : null}
+                </Unknown>
               </dd>
             </div>
             <div>
               <dt className="font-semibold">Candidate external confirmation</dt>
               <dd className="m-0">
                 <Unknown>
-                  {application.externalConfirmedAt?.toLocaleString()}
+                  {application.externalConfirmedAt ? (
+                    <LocalDateTime value={application.externalConfirmedAt} />
+                  ) : null}
                 </Unknown>
               </dd>
             </div>
@@ -458,7 +469,7 @@ export default async function ApplicationDetailPage({
                 <strong>
                   {applicationEventLabel(event.type, event.detail)}
                 </strong>{" "}
-                · {event.createdAt.toLocaleString()}
+                · <LocalDateTime value={event.createdAt} />
                 <br />
                 <span className="text-foreground-muted">
                   {event.fromState

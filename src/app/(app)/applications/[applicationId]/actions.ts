@@ -17,9 +17,9 @@ import {
 } from "@/core/domain/candidate/candidate-knowledge";
 import {
   isApplicationIdentityKey,
-  encodedApplicationAnswer,
   fanOutCompatibleApplicationAnswers,
   isApplicationPacket,
+  validatedApplicationAnswerValue,
 } from "@/core/domain/applications/application-packet";
 import {
   AIInvalidOutputError,
@@ -27,6 +27,7 @@ import {
   ApplicationError,
   ConflictError,
   RateLimitExceededError,
+  ValidationError,
 } from "@/core/errors/application-errors";
 import { readableJobDescription } from "@/core/domain/jobs/job-description";
 import { requireAuthenticatedActor } from "@/features/accounts/require-authenticated-actor";
@@ -359,22 +360,33 @@ export async function saveApplicationOverridesAction(formData: FormData) {
   const submittedAnswerNames = new Set(
     [...formData.keys()].filter((name) => name.startsWith("answer:")),
   );
-  const submittedAnswers = [...submittedAnswerNames].map((name) => ({
-    key: name.slice("answer:".length),
-    value: encodedApplicationAnswer(
-      formData
-        .getAll(name)
-        .flatMap((candidate) =>
-          typeof candidate === "string" && candidate ? [candidate] : [],
-        ),
-    ),
-  }));
   const application = await databaseClient().application.findFirst({
     where: { id: applicationId, userId: actor.id, submittedAt: null },
     select: { submissionPayloadSnapshot: true },
   });
   const payload = evidenceSnapshot(application?.submissionPayloadSnapshot);
   const packet = isApplicationPacket(payload?.packet) ? payload.packet : null;
+  const submittedAnswers = [...submittedAnswerNames].map((name) => {
+    const key = name.slice("answer:".length);
+    const packetAnswer = packet?.answers.find(
+      (candidate) => candidate.questionId === key,
+    );
+    if (!packetAnswer)
+      throw new ValidationError(
+        "An application question is no longer available. Refresh and try again.",
+      );
+    return {
+      key,
+      value: validatedApplicationAnswerValue(
+        packetAnswer,
+        formData
+          .getAll(name)
+          .flatMap((candidate) =>
+            typeof candidate === "string" ? [candidate] : [],
+          ),
+      ),
+    };
+  });
   const expandedAnswers = packet
     ? fanOutCompatibleApplicationAnswers(packet.answers, submittedAnswers)
     : submittedAnswers;

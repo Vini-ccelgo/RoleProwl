@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applicationPacketCanBeReviewed,
+  applicationAnswerCardinality,
   applicationQuestionHandoffClass,
   applicationQuestionControlDisposition,
   applicationTransferStatus,
@@ -9,9 +10,54 @@ import {
   materialRequiredQuestionSchemaChanged,
   reconcileApplicationQuestionOverrides,
   semanticApplicationAnswerGroups,
+  validatedApplicationAnswerValue,
   type ApplicationPacketAnswer,
   type ApplicationPacketSource,
 } from "./application-packet";
+
+describe("application answer cardinality", () => {
+  const single = {
+    label: "Preferred shift",
+    required: true,
+    fieldTypes: ["multi_value_single_select"],
+    options: ["Day", "Night"],
+    optionIdentities: [
+      { label: "Day", value: "100" },
+      { label: "Night", value: "200" },
+    ],
+  };
+  const multiple = {
+    ...single,
+    label: "Preferred offices",
+    fieldTypes: ["multi_value_multi_select"],
+  };
+
+  it("keeps single-select scalar and accepts unique label compatibility", () => {
+    expect(applicationAnswerCardinality(single)).toBe("SINGLE");
+    expect(validatedApplicationAnswerValue(single, ["100"])).toBe("100");
+    expect(validatedApplicationAnswerValue(single, ["Night"])).toBe("200");
+    expect(() =>
+      validatedApplicationAnswerValue(single, ["100", "200"]),
+    ).toThrow("Choose only one answer");
+  });
+
+  it("keeps multi-select as one canonical array and requires one, not all", () => {
+    expect(applicationAnswerCardinality(multiple)).toBe("MULTIPLE");
+    expect(validatedApplicationAnswerValue(multiple, ["100"])).toBe('["100"]');
+    expect(validatedApplicationAnswerValue(multiple, ["100", "200"])).toBe(
+      '["100","200"]',
+    );
+    expect(() => validatedApplicationAnswerValue(multiple, [])).toThrow(
+      "Select or enter an answer",
+    );
+  });
+
+  it("rejects option identities absent from the employer schema", () => {
+    expect(() => validatedApplicationAnswerValue(single, ["forged"])).toThrow(
+      "no longer available",
+    );
+  });
+});
 
 function source(
   overrides: Partial<ApplicationPacketSource> = {},

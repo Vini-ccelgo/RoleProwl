@@ -107,10 +107,50 @@ describe("application override dirty state", () => {
     expect(markup).toContain("Inter privacy consent (required)");
     expect(markup).toContain('value="true"');
     expect(markup).toContain('value="false"');
+    expect(markup).toContain('data-choice-cardinality="single"');
     expect(markup).toContain('name="answer:locations"');
+    expect(markup).toContain('data-choice-cardinality="multiple"');
+    expect(markup).toContain('data-bounded-choice-list="true"');
+    expect(markup).toContain('class="application-choice-input"');
     expect(markup).toMatch(/checked="" value="100"/u);
     expect(markup).toMatch(/checked="" value="300"/u);
     expect(markup).not.toMatch(/checked="" value="200"/u);
+  });
+
+  it("requires one checkbox in an empty multi-select group, not every option", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ApplicationOverridesForm, {
+        applicationId: "application-1",
+        saveAction: async () => undefined,
+        fields: [
+          {
+            key: "question:course",
+            questionId: "course",
+            questionGroup: "STANDARD",
+            label: "Degree course",
+            required: true,
+            status: "UNRESOLVED",
+            value: null,
+            provenance: [],
+            classification: "APPLICATION_SPECIFIC",
+            fieldNames: ["course[]"],
+            fieldTypes: ["multi_value_multi_select"],
+            options: ["NA", "Computer Science", "Engineering"],
+            optionIdentities: [
+              { label: "NA", value: "100" },
+              { label: "Computer Science", value: "200" },
+              { label: "Engineering", value: "300" },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(markup).toContain("Select at least one option.");
+    expect(markup.match(/type="checkbox"/gu)).toHaveLength(3);
+    expect(markup.match(/required=""/gu)).toHaveLength(1);
+    expect(markup).toContain("max-h-64");
+    expect(markup).toContain("overflow-y-auto");
   });
 
   it("compares repeated selections as one canonical application answer", () => {

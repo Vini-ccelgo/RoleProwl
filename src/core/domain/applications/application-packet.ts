@@ -7,6 +7,7 @@ import type {
   ApplicationQuestionResolution,
 } from "./application-question-resolution";
 import type { CandidateKnowledgeConcept } from "@/core/domain/candidate/candidate-knowledge";
+import { ValidationError } from "@/core/errors/application-errors";
 
 export const APPLICATION_PACKET_VERSION = "application-packet-v1";
 
@@ -230,6 +231,55 @@ export function encodedApplicationAnswer(values: readonly string[]) {
   return normalized.length > 1
     ? JSON.stringify(normalized)
     : (normalized[0] ?? null);
+}
+
+export type ApplicationAnswerCardinality = "TEXT" | "SINGLE" | "MULTIPLE";
+
+export function applicationAnswerCardinality(
+  answer: Pick<ApplicationPacketAnswer, "fieldTypes" | "options">,
+): ApplicationAnswerCardinality {
+  if (!answer.options.length) return "TEXT";
+  return answer.fieldTypes.includes("multi_value_multi_select")
+    ? "MULTIPLE"
+    : "SINGLE";
+}
+
+export function validatedApplicationAnswerValue(
+  answer: Pick<
+    ApplicationPacketAnswer,
+    "fieldTypes" | "label" | "optionIdentities" | "options" | "required"
+  >,
+  submitted: readonly string[],
+) {
+  const values = [
+    ...new Set(
+      submitted.map((value) => value.normalize("NFKC").trim()).filter(Boolean),
+    ),
+  ];
+  const cardinality = applicationAnswerCardinality(answer);
+  if (answer.required && values.length === 0)
+    throw new ValidationError(
+      `Select or enter an answer for “${answer.label}”.`,
+    );
+  if (cardinality !== "MULTIPLE" && values.length > 1)
+    throw new ValidationError(`Choose only one answer for “${answer.label}”.`);
+  if (cardinality === "TEXT") return values[0] ?? null;
+
+  const options = answer.optionIdentities?.length
+    ? answer.optionIdentities
+    : answer.options.map((option) => ({ label: option, value: option }));
+  const canonical = values.map((value) => {
+    const identityMatches = options.filter((option) => option.value === value);
+    if (identityMatches.length === 1) return identityMatches[0]!.value;
+    const labelMatches = options.filter((option) => option.label === value);
+    if (labelMatches.length === 1) return labelMatches[0]!.value;
+    throw new ValidationError(
+      `An option selected for “${answer.label}” is no longer available.`,
+    );
+  });
+  return cardinality === "MULTIPLE" && canonical.length
+    ? JSON.stringify(canonical)
+    : encodedApplicationAnswer(canonical);
 }
 
 export function parseApplicationPacketOverrides(
@@ -723,7 +773,9 @@ function packetFieldForQuestion(
         canonicalSuppliedValues.length !== suppliedValues.length);
     const canonicalApplicationSpecific =
       optionIdentities.length > 0 && !optionMismatch
-        ? encodedApplicationAnswer(canonicalSuppliedValues)
+        ? multiple
+          ? JSON.stringify(canonicalSuppliedValues)
+          : encodedApplicationAnswer(canonicalSuppliedValues)
         : applicationSpecific;
     return {
       key: `question:${question.id}`,

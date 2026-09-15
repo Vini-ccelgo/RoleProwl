@@ -159,4 +159,58 @@ describe("Greenhouse application inspector", () => {
       }),
     );
   });
+
+  it("preserves authoritative cardinality for Inter-style controls", () => {
+    const questions = parseGreenhouseApplicationQuestions({
+      questions: [
+        {
+          required: true,
+          label: "Você conhece alguém que trabalha no Inter?",
+          fields: [
+            {
+              name: "question_1[]",
+              type: "multi_value_multi_select",
+              values: [
+                { label: "Não conheço", value: 100 },
+                { label: "Sim, um amigo", value: 200 },
+              ],
+            },
+          ],
+        },
+        {
+          required: true,
+          label: "Em qual curso você se formou?",
+          fields: [
+            {
+              name: "question_2[]",
+              type: "multi_value_multi_select",
+              values: [
+                { label: "NA", value: 300 },
+                { label: "Ciência da Computação", value: 400 },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(questions).toEqual([
+      expect.objectContaining({
+        fieldNames: ["question_1[]"],
+        fieldTypes: ["multi_value_multi_select"],
+        optionIdentities: [
+          { label: "Não conheço", value: "100" },
+          { label: "Sim, um amigo", value: "200" },
+        ],
+      }),
+      expect.objectContaining({
+        fieldNames: ["question_2[]"],
+        fieldTypes: ["multi_value_multi_select"],
+        optionIdentities: [
+          { label: "NA", value: "300" },
+          { label: "Ciência da Computação", value: "400" },
+        ],
+      }),
+    ]);
+  });
 });
