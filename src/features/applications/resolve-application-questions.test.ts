@@ -728,6 +728,52 @@ describe("application question resolver", () => {
     ]);
   });
 
+  it.each([
+    "Inter privacy and data-processing consent",
+    "AI interview transcription consent",
+  ])(
+    "requires an explicit application-scoped decision for %s even when a generic preference exists",
+    async (label) => {
+      const [result] = await resolveApplicationQuestions({
+        correlationId: "application-1",
+        userId: "candidate-1",
+        knowledge: [
+          knowledge(
+            "GENERAL_DATA_USE_PREFERENCE",
+            { text: "Prefer minimal data use" },
+            {
+              applicationUse: "PREFERENCE_CONTEXT_ONLY",
+              autoAnswerAllowed: false,
+            },
+          ),
+          knowledge(
+            "AI_HIRING_PROCESS_PREFERENCE",
+            { text: "Prefer no AI interview transcription" },
+            {
+              applicationUse: "PREFERENCE_CONTEXT_ONLY",
+              autoAnswerAllowed: false,
+            },
+          ),
+        ],
+        questions: [
+          question(label, {
+            group: "COMPLIANCE",
+            fieldTypes: ["external_consent"],
+            options: ["Yes", "No"],
+            controlDisposition: "ROLEPROWL_RESOLVED",
+          }),
+        ],
+      });
+      expect(result).toMatchObject({
+        canonicalConcept: null,
+        disposition: "CANDIDATE_REQUIRED",
+        value: null,
+        candidateKnowledgeReferences: [],
+        reasonCode: "EXPLICIT_APPLICATION_DECISION_REQUIRED",
+      });
+    },
+  );
+
   it("uses one bounded AI call and accepts only grounded mappings to supplied concepts", async () => {
     const first = question("Describe how you communicate technical findings");
     const second = question("How do you explain complex issues?");

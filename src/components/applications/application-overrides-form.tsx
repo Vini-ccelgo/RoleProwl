@@ -6,6 +6,10 @@ import type {
   ApplicationPacketAnswer,
   ApplicationPacketField,
 } from "@/core/domain/applications/application-packet";
+import {
+  applicationAnswerValues,
+  encodedApplicationAnswer,
+} from "@/core/domain/applications/application-packet";
 
 type EditableField = ApplicationPacketField | ApplicationPacketAnswer;
 
@@ -15,8 +19,15 @@ export function applicationOverridesAreDirty(
 ) {
   return Object.entries(initial).some(
     ([name, value]) =>
-      normalizeEditableValue(current.get(name)) !==
-      normalizeEditableValue(value),
+      normalizeEditableValue(
+        encodedApplicationAnswer(
+          current
+            .getAll(name)
+            .flatMap((candidate) =>
+              typeof candidate === "string" && candidate ? [candidate] : [],
+            ),
+        ),
+      ) !== normalizeEditableValue(value),
   );
 }
 
@@ -32,13 +43,13 @@ function fieldName(field: EditableField) {
 }
 
 function requiresChoiceReview(field: EditableField) {
-  return (
-    "questionId" in field &&
-    field.status === "CONFLICTING" &&
-    (field.options ?? []).length > 0 &&
-    Boolean(field.value) &&
-    !field.options.includes(field.value!)
-  );
+  return "questionId" in field && field.status === "CONFLICTING";
+}
+
+function answerChoices(answer: ApplicationPacketAnswer) {
+  return answer.optionIdentities?.length
+    ? answer.optionIdentities
+    : answer.options.map((option) => ({ label: option, value: option }));
 }
 
 function OverrideInput({ field }: { readonly field: EditableField }) {
@@ -48,6 +59,38 @@ function OverrideInput({ field }: { readonly field: EditableField }) {
   const answerOptions = answer?.options ?? [];
   if (answerOptions.length) {
     const mismatch = requiresChoiceReview(field);
+    const choices = answerChoices(answer!);
+    const selectedValues = mismatch ? [] : applicationAnswerValues(field.value);
+    const useMultiple = (answer?.fieldTypes ?? []).includes(
+      "multi_value_multi_select",
+    );
+    if (useMultiple)
+      return (
+        <fieldset className="field max-w-full min-w-0">
+          <legend className="max-w-full break-words">{label}</legend>
+          <input name={name} type="hidden" value="" />
+          {mismatch ? (
+            <small>
+              The employer changed its choices. Select the intended values again
+              explicitly.
+            </small>
+          ) : null}
+          {choices.map((option) => (
+            <label
+              className="flex min-w-0 items-center gap-2"
+              key={option.value}
+            >
+              <input
+                defaultChecked={selectedValues.includes(option.value)}
+                name={name}
+                type="checkbox"
+                value={option.value}
+              />
+              <span className="min-w-0 break-words">{option.label}</span>
+            </label>
+          ))}
+        </fieldset>
+      );
     const useRadio = (answer?.fieldTypes ?? []).some((type) =>
       type.toLocaleLowerCase("en-US").includes("radio"),
     );
@@ -62,16 +105,19 @@ function OverrideInput({ field }: { readonly field: EditableField }) {
               Choose a replacement explicitly.
             </small>
           ) : null}
-          {answerOptions.map((option) => (
-            <label className="flex min-w-0 items-center gap-2" key={option}>
+          {choices.map((option) => (
+            <label
+              className="flex min-w-0 items-center gap-2"
+              key={option.value}
+            >
               <input
-                defaultChecked={!mismatch && field.value === option}
+                defaultChecked={selectedValues.includes(option.value)}
                 name={name}
                 required={field.required || mismatch}
                 type="radio"
-                value={option}
+                value={option.value}
               />
-              <span className="min-w-0 break-words">{option}</span>
+              <span className="min-w-0 break-words">{option.label}</span>
             </label>
           ))}
         </fieldset>
@@ -88,14 +134,14 @@ function OverrideInput({ field }: { readonly field: EditableField }) {
         ) : null}
         <select
           className="max-w-full min-w-0"
-          defaultValue={mismatch ? "" : (field.value ?? "")}
+          defaultValue={mismatch ? "" : (selectedValues[0] ?? "")}
           name={name}
           required={field.required || mismatch}
         >
           <option value="">Choose an answer</option>
-          {answerOptions.map((option) => (
-            <option key={option} value={option}>
-              {option}
+          {choices.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
             </option>
           ))}
         </select>

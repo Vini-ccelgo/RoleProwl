@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applicationPacketCanBeReviewed,
+  applicationQuestionHandoffClass,
   applicationQuestionControlDisposition,
   applicationTransferStatus,
   buildApplicationPacket,
@@ -488,13 +489,17 @@ describe("application packet", () => {
             fieldNames: ["question_42"],
             fieldTypes: ["multi_value_single_select"],
             options: ["Option A", "Option B"],
+            optionIdentities: [
+              { label: "Option A", value: "option-a-id" },
+              { label: "Option B", value: "option-b-id" },
+            ],
           },
         ],
       }),
     });
     expect(packet.answers[0]).toMatchObject({
       status: "RESOLVED",
-      value: "Option B",
+      value: "option-b-id",
     });
   });
 
@@ -534,7 +539,7 @@ describe("application packet", () => {
     });
     expect(packet.documents[0]).toMatchObject({
       status: "RESOLVED",
-      externalTransferStatus: "HUMAN_REQUIRED",
+      externalTransferStatus: "NOT_ATTEMPTED",
     });
     expect(packet.answers[0]).toMatchObject({
       status: "CANDIDATE_REQUIRED_EXTERNAL",
@@ -578,14 +583,30 @@ describe("application packet", () => {
     },
   );
 
-  it("keeps plural multi-select external while preserving text and single-select behavior", () => {
+  it("supports stable multi-select while preserving text and single-select behavior", () => {
     const packet = buildApplicationPacket({
       reviewed: true,
       source: source({
+        accountEmail: "avery@example.test",
+        profile: {
+          firstName: "Avery",
+          lastName: "Quill",
+          applicationEmail: null,
+          phone: null,
+          location: null,
+          countryCode: null,
+          professionalTitle: null,
+        },
+        selectedResume: {
+          fileName: "resume.pdf",
+          contentType: "application/pdf",
+          storageKey: "candidate-documents/private",
+          tailored: false,
+        },
         applicationOverrides: {
           identity: {},
           answers: {
-            "standard:multi": "One",
+            "standard:multi": '["One","Two"]',
             "standard:single": "Two",
             "standard:text": "Prepared answer",
           },
@@ -638,8 +659,8 @@ describe("application packet", () => {
       expect.arrayContaining([
         expect.objectContaining({
           questionId: "standard:multi",
-          status: "CANDIDATE_REQUIRED_EXTERNAL",
-          value: null,
+          status: "RESOLVED",
+          value: '["One","Two"]',
         }),
         expect.objectContaining({
           questionId: "standard:single",
@@ -658,10 +679,30 @@ describe("application packet", () => {
     );
   });
 
-  it("requires external consent but blocks an unsupported dynamic control", () => {
+  it("collects exact consent in RoleProwl while leaving dynamic controls external", () => {
     const packet = buildApplicationPacket({
       reviewed: true,
       source: source({
+        accountEmail: "avery@example.test",
+        profile: {
+          firstName: "Avery",
+          lastName: "Quill",
+          applicationEmail: null,
+          phone: null,
+          location: null,
+          countryCode: null,
+          professionalTitle: null,
+        },
+        selectedResume: {
+          fileName: "resume.pdf",
+          contentType: "application/pdf",
+          storageKey: "candidate-documents/private",
+          tailored: false,
+        },
+        applicationOverrides: {
+          identity: {},
+          answers: { "compliance:consent": "false" },
+        },
         questions: [
           {
             id: "compliance:consent",
@@ -671,7 +712,11 @@ describe("application packet", () => {
             required: true,
             fieldNames: ["data_compliance[gdpr_consent_given]"],
             fieldTypes: ["external_consent"],
-            options: [],
+            options: ["Yes", "No"],
+            optionIdentities: [
+              { label: "Yes", value: "true" },
+              { label: "No", value: "false" },
+            ],
           },
           {
             id: "standard:widget",
@@ -686,10 +731,189 @@ describe("application packet", () => {
         ],
       }),
     });
-    expect(packet.answers[0]?.status).toBe("CANDIDATE_REQUIRED_EXTERNAL");
-    expect(packet.answers[1]?.status).toBe("UNSUPPORTED");
-    expect(packet.completeness.readyForSubmissionHandoff).toBe(false);
-    expect(applicationPacketCanBeReviewed(packet)).toBe(false);
+    expect(packet.answers[0]).toMatchObject({
+      status: "RESOLVED",
+      value: "false",
+    });
+    expect(packet.answers[0]).not.toHaveProperty("canonicalConcept");
+    expect(applicationQuestionHandoffClass(packet.answers[0]!)).toBe(
+      "CANDIDATE_DECIDES_THEN_ROLEPROWL_TRANSFERS",
+    );
+    expect(packet.answers[1]?.status).toBe("CANDIDATE_REQUIRED_EXTERNAL");
+    expect(applicationQuestionHandoffClass(packet.answers[1]!)).toBe(
+      "IRREDUCIBLE_EMPLOYER_SITE_STEP",
+    );
+    expect(packet.completeness.readyForSubmissionHandoff).toBe(true);
+    expect(applicationPacketCanBeReviewed(packet)).toBe(true);
+  });
+
+  it("classifies every Inter-style beta control and reduces employer-site work to irreducible steps", () => {
+    const questions = [
+      ["first", "First name", "first_name", "input_text", []],
+      ["last", "Last name", "last_name", "input_text", []],
+      ["email", "Email", "email", "input_text", []],
+      ["phone", "Phone", "phone", "input_text", []],
+      ["linkedin", "LinkedIn", "linkedin", "input_text", []],
+      ["cpf", "CPF", "cpf", "input_text", []],
+      [
+        "current-employer",
+        "Do you currently work at Inter?",
+        "current_employer",
+        "input_radio",
+        ["Yes", "No"],
+      ],
+      [
+        "employee-name",
+        "If yes, what is the employee's full name?",
+        "employee_name",
+        "input_text",
+        [],
+      ],
+      [
+        "english",
+        "English proficiency",
+        "english",
+        "multi_value_single_select",
+        ["Basic", "Fluent"],
+      ],
+      [
+        "spanish",
+        "Spanish proficiency",
+        "spanish",
+        "multi_value_single_select",
+        ["Basic", "Advanced"],
+      ],
+      [
+        "education",
+        "Have you completed higher education?",
+        "education",
+        "input_radio",
+        ["Yes", "No"],
+      ],
+      ["salary", "Current salary", "salary", "input_text", []],
+      ["benefits", "Current benefits", "benefits", "textarea", []],
+      [
+        "privacy",
+        "Inter privacy consent",
+        "privacy_consent",
+        "external_consent",
+        ["Yes", "No"],
+      ],
+      [
+        "ai-consent",
+        "AI interview transcription consent",
+        "ai_consent",
+        "external_consent",
+        ["Yes", "No"],
+      ],
+      ["resume", "Résumé/CV", "resume", "input_file", []],
+      [
+        "location-widget",
+        "Location autocomplete",
+        "location_widget",
+        "dynamic_widget",
+        [],
+      ],
+    ].map(([id, label, fieldName, fieldType, options]) => ({
+      id: String(id),
+      source: "GREENHOUSE" as const,
+      group:
+        id === "privacy" || id === "ai-consent"
+          ? ("COMPLIANCE" as const)
+          : id === "location-widget"
+            ? ("LOCATION" as const)
+            : ("STANDARD" as const),
+      label: String(label),
+      required: id !== "employee-name",
+      fieldNames: [String(fieldName)],
+      fieldTypes: [String(fieldType)],
+      options: options as string[],
+    }));
+    const packet = buildApplicationPacket({
+      reviewed: true,
+      source: source({
+        accountEmail: "avery@example.test",
+        profile: {
+          firstName: "Avery",
+          lastName: "Quill",
+          applicationEmail: null,
+          phone: "+55 11 5555-0100",
+          location: "São Paulo",
+          countryCode: "BR",
+          professionalTitle: null,
+        },
+        selectedResume: {
+          fileName: "avery-resume.pdf",
+          contentType: "application/pdf",
+          storageKey: "candidate-documents/private",
+          tailored: false,
+        },
+        questions,
+        questionResolutions: [
+          {
+            questionId: "linkedin",
+            canonicalConcept: "LINKEDIN_URL",
+            disposition: "AUTO_RESOLVED",
+            value: "https://linkedin.example/avery",
+            candidateKnowledgeReferences: ["profile:linkedin"],
+            reasonCode: "APPROVED_REUSABLE_KNOWLEDGE",
+          },
+          {
+            questionId: "english",
+            canonicalConcept: "LANGUAGE_PROFICIENCY:english",
+            disposition: "AUTO_RESOLVED",
+            value: "Fluent",
+            candidateKnowledgeReferences: ["language:english"],
+            reasonCode: "APPROVED_REUSABLE_KNOWLEDGE",
+          },
+        ],
+        applicationOverrides: {
+          identity: {},
+          answers: {
+            "current-employer": "No",
+            spanish: "Advanced",
+            education: "Yes",
+            salary: "R$ 12.000",
+            benefits: "Health and meal allowance",
+            privacy: "No",
+            "ai-consent": "No",
+          },
+        },
+      }),
+    });
+    const classified = Object.fromEntries(
+      packet.answers.map((answer) => [
+        answer.label,
+        applicationQuestionHandoffClass(answer),
+      ]),
+    );
+    expect(classified).toMatchObject({
+      "First name": "ROLEPROWL_CAN_COMPLETE",
+      "Last name": "ROLEPROWL_CAN_COMPLETE",
+      Email: "ROLEPROWL_CAN_COMPLETE",
+      Phone: "ROLEPROWL_CAN_COMPLETE",
+      LinkedIn: "ROLEPROWL_CAN_COMPLETE",
+      "Do you currently work at Inter?":
+        "CANDIDATE_DECIDES_THEN_ROLEPROWL_TRANSFERS",
+      "Spanish proficiency": "CANDIDATE_DECIDES_THEN_ROLEPROWL_TRANSFERS",
+      "Current salary": "CANDIDATE_DECIDES_THEN_ROLEPROWL_TRANSFERS",
+      "Current benefits": "CANDIDATE_DECIDES_THEN_ROLEPROWL_TRANSFERS",
+      "Inter privacy consent": "CANDIDATE_DECIDES_THEN_ROLEPROWL_TRANSFERS",
+      "AI interview transcription consent":
+        "CANDIDATE_DECIDES_THEN_ROLEPROWL_TRANSFERS",
+      "Résumé/CV": "ROLEPROWL_CAN_COMPLETE",
+      CPF: "IRREDUCIBLE_EMPLOYER_SITE_STEP",
+      "Location autocomplete": "IRREDUCIBLE_EMPLOYER_SITE_STEP",
+    });
+    expect(
+      Object.values(classified).filter(
+        (classification) => classification === "IRREDUCIBLE_EMPLOYER_SITE_STEP",
+      ),
+    ).toHaveLength(2);
+    expect(packet.completeness).toMatchObject({
+      needsReview: 0,
+      readyForSubmissionHandoff: true,
+    });
   });
 
   it("blocks Greenhouse readiness when current question inspection is unavailable", () => {
@@ -746,6 +970,33 @@ describe("application packet", () => {
         questions: [{ ...question, options: ["Day", "Night", "Flexible"] }],
       }),
     ).toBe(true);
+    expect(
+      materialRequiredQuestionSchemaChanged({
+        previousAnswers: buildApplicationPacket({
+          reviewed: false,
+          source: source({
+            questions: [
+              {
+                ...question,
+                optionIdentities: [
+                  { label: "Day", value: "day-v1" },
+                  { label: "Night", value: "night-v1" },
+                ],
+              },
+            ],
+          }),
+        }).answers,
+        questions: [
+          {
+            ...question,
+            optionIdentities: [
+              { label: "Day", value: "day-v2" },
+              { label: "Night", value: "night-v1" },
+            ],
+          },
+        ],
+      }),
+    ).toBe(true);
   });
 });
 
@@ -794,6 +1045,24 @@ describe("semantic employer question groups", () => {
         canonicalConcept: "LANGUAGE_PROFICIENCY:english",
         fieldTypes: ["multi_value_single_select"],
         options: ["A1", "A2", "B1", "B2", "C1", "C2"],
+      }),
+    ]);
+    expect(groups).toHaveLength(2);
+  });
+
+  it("does not fan out choices whose labels match but raw employer identities differ", () => {
+    const groups = semanticApplicationAnswerGroups([
+      answer("choice_a", {
+        canonicalConcept: "LANGUAGE_PROFICIENCY:english",
+        fieldTypes: ["multi_value_single_select"],
+        options: ["Fluent"],
+        optionIdentities: [{ label: "Fluent", value: "100" }],
+      }),
+      answer("choice_b", {
+        canonicalConcept: "LANGUAGE_PROFICIENCY:english",
+        fieldTypes: ["multi_value_single_select"],
+        options: ["Fluent"],
+        optionIdentities: [{ label: "Fluent", value: "200" }],
       }),
     ]);
     expect(groups).toHaveLength(2);

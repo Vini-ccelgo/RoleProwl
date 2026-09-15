@@ -13,6 +13,11 @@ export interface PublicApplicationQuestionReference {
 export type PublicApplicationQuestionGroup =
   "STANDARD" | "LOCATION" | "COMPLIANCE" | "DEMOGRAPHIC";
 
+export interface PublicApplicationQuestionOption {
+  readonly label: string;
+  readonly value: string;
+}
+
 export interface PublicApplicationQuestion {
   readonly id: string;
   readonly source: "GREENHOUSE";
@@ -22,6 +27,7 @@ export interface PublicApplicationQuestion {
   readonly fieldNames: readonly string[];
   readonly fieldTypes: readonly string[];
   readonly options: readonly string[];
+  readonly optionIdentities?: readonly PublicApplicationQuestionOption[];
 }
 
 export interface CandidateQuestionEvidence {

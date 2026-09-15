@@ -5,6 +5,7 @@
   const AUTHORIZATION_KEY = "roleprowlTransferAuthorization";
   const RESULT_KEY = "roleprowlTransferResult";
   const VERSION = "greenhouse-assisted-v1";
+  const MAX_RESUME_BASE64_LENGTH = Math.ceil((4 * 1024 * 1024 * 4) / 3) + 4;
   const ALLOWED_HOSTS = new Set([
     "boards.greenhouse.io",
     "job-boards.greenhouse.io",
@@ -12,6 +13,7 @@
   const ALLOWED_STATUSES = new Set([
     "VERIFIED",
     "TRANSFERRED",
+    "CANDIDATE_ACTION_REQUIRED",
     "HUMAN_REQUIRED",
     "UNSUPPORTED",
     "FAILED",
@@ -44,6 +46,18 @@
   }
 
   function validPacket(packet) {
+    const resumeFile = packet?.resumeFile;
+    const resumeValid =
+      resumeFile == null ||
+      (typeof resumeFile.fileName === "string" &&
+        resumeFile.fileName.length > 0 &&
+        resumeFile.fileName.length <= 255 &&
+        typeof resumeFile.contentType === "string" &&
+        resumeFile.contentType.length > 0 &&
+        resumeFile.contentType.length <= 200 &&
+        typeof resumeFile.base64 === "string" &&
+        resumeFile.base64.length <= MAX_RESUME_BASE64_LENGTH &&
+        /^[A-Za-z0-9+/]*={0,2}$/u.test(resumeFile.base64));
     return Boolean(
       packet &&
       packet.version === VERSION &&
@@ -53,6 +67,7 @@
       typeof packet.destination === "string" &&
       greenhouseJob(packet.destination) &&
       Array.isArray(packet.fields) &&
+      resumeValid &&
       Number.isFinite(Date.parse(packet.expiresAt)) &&
       Date.parse(packet.expiresAt) > Date.now(),
     );
@@ -68,14 +83,18 @@
     const fields = value.fields.slice(0, 100).flatMap((field) => {
       if (
         !field ||
+        typeof field.id !== "string" ||
         typeof field.label !== "string" ||
-        !ALLOWED_STATUSES.has(field.status)
+        !ALLOWED_STATUSES.has(field.status) ||
+        typeof field.reason !== "string"
       )
         return [];
       return [
         {
+          id: field.id.normalize("NFKC").trim().slice(0, 200),
           label: field.label.normalize("NFKC").trim().slice(0, 200),
           status: field.status,
+          reason: field.reason.normalize("NFKC").trim().slice(0, 120),
         },
       ];
     });
@@ -85,10 +104,12 @@
       transferId,
       verified: count("VERIFIED"),
       transferred: count("TRANSFERRED"),
+      candidateActionRequired: count("CANDIDATE_ACTION_REQUIRED"),
       humanRequired: count("HUMAN_REQUIRED"),
       unsupported: count("UNSUPPORTED"),
       failed: count("FAILED"),
       fields,
+      phases: value.phases === 2 ? 2 : 1,
     };
   }
 

@@ -34,20 +34,31 @@ interface GreenhouseDemographicQuestion {
   readonly answer_options?: unknown;
 }
 
-function parseOptions(fields: readonly GreenhouseField[]) {
+function parseOptionIdentities(fields: readonly GreenhouseField[]) {
   return fields.flatMap((field) =>
     Array.isArray(field.values)
       ? field.values.flatMap((value) => {
-          if (typeof value === "string" && value.trim()) return [value.trim()];
+          if (typeof value === "string" && value.trim())
+            return [{ label: value.trim(), value: value.trim() }];
           if (!value || typeof value !== "object") return [];
           const option = value as Record<string, unknown>;
           const label =
             typeof option.label === "string" && option.label.trim()
               ? option.label
-              : typeof option.value === "string" && option.value.trim()
-                ? option.value
+              : (typeof option.value === "string" ||
+                    typeof option.value === "number") &&
+                  String(option.value).trim()
+                ? String(option.value)
                 : null;
-          return label ? [label.trim()] : [];
+          const identity =
+            (typeof option.value === "string" ||
+              typeof option.value === "number") &&
+            String(option.value).trim()
+              ? String(option.value).trim()
+              : label?.trim();
+          return label && identity
+            ? [{ label: label.trim(), value: identity }]
+            : [];
         })
       : [],
   );
@@ -77,6 +88,7 @@ function parseQuestionGroup(
         ? [field.name.trim()]
         : [],
     );
+    const optionIdentities = parseOptionIdentities(fields);
     return [
       {
         id: `${prefix}:${fieldNames.join(",") || index + 1}`,
@@ -86,7 +98,8 @@ function parseQuestionGroup(
         required: question.required === true,
         fieldNames,
         fieldTypes,
-        options: [...new Set(parseOptions(fields))],
+        options: [...new Set(optionIdentities.map((option) => option.label))],
+        optionIdentities,
       },
     ];
   });
@@ -104,12 +117,16 @@ function parseDemographicQuestions(value: unknown) {
       !question.type.trim()
     )
       return [];
-    const options = Array.isArray(question.answer_options)
+    const optionIdentities = Array.isArray(question.answer_options)
       ? question.answer_options.flatMap((candidate) => {
           if (!candidate || typeof candidate !== "object") return [];
-          const label = (candidate as Record<string, unknown>).label;
-          return typeof label === "string" && label.trim()
-            ? [label.trim()]
+          const option = candidate as Record<string, unknown>;
+          const label = option.label;
+          const identity = option.id ?? option.value ?? label;
+          return typeof label === "string" &&
+            label.trim() &&
+            (typeof identity === "string" || typeof identity === "number")
+            ? [{ label: label.trim(), value: String(identity) }]
             : [];
         })
       : [];
@@ -126,7 +143,8 @@ function parseDemographicQuestions(value: unknown) {
         required: question.required === true,
         fieldNames: [`demographic_answers[${id}]`],
         fieldTypes: [question.type.trim()],
-        options: [...new Set(options)],
+        options: [...new Set(optionIdentities.map((option) => option.label))],
+        optionIdentities,
       },
     ];
   });
@@ -166,7 +184,11 @@ function parseDataCompliance(value: unknown) {
               required: true,
               fieldNames: [`data_compliance[${name}]`],
               fieldTypes: ["external_consent"],
-              options: [],
+              options: ["Yes", "No"],
+              optionIdentities: [
+                { label: "Yes", value: "true" },
+                { label: "No", value: "false" },
+              ],
             },
           ]
         : [],

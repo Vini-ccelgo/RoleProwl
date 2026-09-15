@@ -3,7 +3,70 @@
 import { useState } from "react";
 import type { GreenhouseTransferDraft } from "@/core/domain/applications/greenhouse-transfer";
 
-export const GREENHOUSE_TRANSFER_TTL_MS = 30 * 60_000;
+export const GREENHOUSE_TRANSFER_TTL_MS = 5 * 60_000;
+export const MAX_RESUME_TRANSFER_BYTES = 4 * 1024 * 1024;
+
+function bytesToBase64(bytes: Uint8Array) {
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 32_768)
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
+  return btoa(binary);
+}
+
+export async function prepareGreenhouseTransferPayload(input: {
+  readonly draft: GreenhouseTransferDraft;
+  readonly fetcher?: typeof fetch;
+  readonly now?: number;
+  readonly resumeDownloadUrl: string | null;
+  readonly transferId?: string;
+}) {
+  const now = input.now ?? Date.now();
+  let resumeFile:
+    | {
+        readonly base64: string;
+        readonly contentType: string;
+        readonly fileName: string;
+      }
+    | undefined;
+  let resumeStatus:
+    "INCLUDED" | "NOT_SELECTED" | "DOWNLOAD_UNAVAILABLE" | "TOO_LARGE" = input
+    .draft.resumeFileName
+    ? "DOWNLOAD_UNAVAILABLE"
+    : "NOT_SELECTED";
+  if (input.draft.resumeFileName && input.resumeDownloadUrl) {
+    try {
+      const response = await (input.fetcher ?? fetch)(input.resumeDownloadUrl, {
+        credentials: "same-origin",
+      });
+      if (response.ok) {
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.byteLength <= MAX_RESUME_TRANSFER_BYTES) {
+          resumeFile = {
+            base64: bytesToBase64(bytes),
+            contentType:
+              input.draft.resumeContentType ||
+              response.headers.get("content-type") ||
+              "application/octet-stream",
+            fileName: input.draft.resumeFileName,
+          };
+          resumeStatus = "INCLUDED";
+        } else resumeStatus = "TOO_LARGE";
+      }
+    } catch {
+      // The scalar handoff remains available; the résumé stays a manual step.
+    }
+  }
+  return {
+    payload: JSON.stringify({
+      ...input.draft,
+      transferId: input.transferId ?? crypto.randomUUID(),
+      issuedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + GREENHOUSE_TRANSFER_TTL_MS).toISOString(),
+      ...(resumeFile ? { resumeFile } : {}),
+    }),
+    resumeStatus,
+  };
+}
 
 export function AssistedTransferPreparedState() {
   return (
@@ -33,6 +96,10 @@ export function GreenhouseAssistedApply({
 }) {
   const [mode, setMode] = useState<"INTRO" | "SETUP" | "USE">("INTRO");
   const [payload, setPayload] = useState<string>();
+  const [preparing, setPreparing] = useState(false);
+  const [resumeStatus, setResumeStatus] = useState<
+    "INCLUDED" | "NOT_SELECTED" | "DOWNLOAD_UNAVAILABLE" | "TOO_LARGE"
+  >();
   return (
     <section className="card grid gap-3 border-brand p-5">
       <h2 className="text-base font-semibold">Greenhouse assisted apply</h2>
@@ -129,22 +196,22 @@ export function GreenhouseAssistedApply({
           <div className="flex flex-wrap gap-2">
             <button
               className="button button-primary"
+              disabled={preparing}
               type="button"
-              onClick={() => {
-                const now = Date.now();
-                setPayload(
-                  JSON.stringify({
-                    ...draft,
-                    transferId: crypto.randomUUID(),
-                    issuedAt: new Date(now).toISOString(),
-                    expiresAt: new Date(
-                      now + GREENHOUSE_TRANSFER_TTL_MS,
-                    ).toISOString(),
-                  }),
-                );
+              onClick={async () => {
+                setPreparing(true);
+                const prepared = await prepareGreenhouseTransferPayload({
+                  draft,
+                  resumeDownloadUrl,
+                });
+                setPayload(prepared.payload);
+                setResumeStatus(prepared.resumeStatus);
+                setPreparing(false);
               }}
             >
-              Prepare assisted transfer
+              {preparing
+                ? "Preparing secure handoff…"
+                : "Continue with RoleProwl Helper"}
             </button>
             {resumeDownloadUrl ? (
               <a className="button button-secondary" href={resumeDownloadUrl}>
@@ -155,6 +222,19 @@ export function GreenhouseAssistedApply({
           {payload ? (
             <div className="grid gap-2" role="status">
               <AssistedTransferPreparedState />
+              {resumeStatus === "INCLUDED" ? (
+                <p className="m-0 text-sm">
+                  The selected résumé is included only in this short-lived,
+                  one-use helper packet.
+                </p>
+              ) : resumeStatus === "DOWNLOAD_UNAVAILABLE" ||
+                resumeStatus === "TOO_LARGE" ? (
+                <p className="m-0 text-sm">
+                  The selected résumé could not be included safely. Download and
+                  attach it manually; the remaining prepared fields can still
+                  transfer.
+                </p>
+              ) : null}
               <textarea
                 aria-hidden="true"
                 className="hidden"

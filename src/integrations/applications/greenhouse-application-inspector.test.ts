@@ -93,6 +93,10 @@ describe("Greenhouse application inspector", () => {
           id: "standard:question_42",
           fieldTypes: ["multi_value_single_select"],
           options: ["Day", "Night"],
+          optionIdentities: [
+            { label: "Day", value: "Day" },
+            { label: "Night", value: "Night" },
+          ],
         }),
         expect.objectContaining({
           id: "standard:question_43",
@@ -104,12 +108,20 @@ describe("Greenhouse application inspector", () => {
           group: "DEMOGRAPHIC",
           fieldTypes: ["multi_value_multi_select"],
           options: ["Red", "Blue"],
+          optionIdentities: [
+            { label: "Red", value: "100" },
+            { label: "Blue", value: "101" },
+          ],
         }),
         expect.objectContaining({
           id: "data-compliance:1:gdpr_processing_consent_given",
           group: "COMPLIANCE",
           required: true,
           fieldTypes: ["external_consent"],
+          optionIdentities: [
+            { label: "Yes", value: "true" },
+            { label: "No", value: "false" },
+          ],
         }),
       ]),
     );

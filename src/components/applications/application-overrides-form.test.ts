@@ -1,5 +1,8 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
+  ApplicationOverridesForm,
   applicationOverridesAreDirty,
   normalizeEditableValue,
 } from "./application-overrides-form";
@@ -48,5 +51,78 @@ describe("application override dirty state", () => {
     expect(applicationOverridesAreDirty(initial, current)).toBe(true);
     current.set("answer:resolved-choice", "Day");
     expect(applicationOverridesAreDirty(initial, current)).toBe(false);
+  });
+
+  it("renders stable raw identities for exact consent and multi-select decisions", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ApplicationOverridesForm, {
+        applicationId: "application-1",
+        saveAction: async () => undefined,
+        fields: [
+          {
+            key: "question:privacy",
+            questionId: "privacy",
+            questionGroup: "COMPLIANCE",
+            label: "Inter privacy consent",
+            required: true,
+            status: "UNRESOLVED",
+            value: null,
+            provenance: [],
+            classification: "APPLICATION_SPECIFIC",
+            fieldNames: ["privacy_consent"],
+            fieldTypes: ["external_consent"],
+            options: ["Yes", "No"],
+            optionIdentities: [
+              { label: "Yes", value: "true" },
+              { label: "No", value: "false" },
+            ],
+          },
+          {
+            key: "question:locations",
+            questionId: "locations",
+            questionGroup: "STANDARD",
+            label: "Preferred offices",
+            required: true,
+            status: "RESOLVED",
+            value: '["100","300"]',
+            provenance: [
+              {
+                source: "APPLICATION_OVERRIDE",
+                label: "Application-specific candidate answer",
+              },
+            ],
+            classification: "APPLICATION_SPECIFIC",
+            fieldNames: ["locations[]"],
+            fieldTypes: ["multi_value_multi_select"],
+            options: ["São Paulo", "Recife", "Curitiba"],
+            optionIdentities: [
+              { label: "São Paulo", value: "100" },
+              { label: "Recife", value: "200" },
+              { label: "Curitiba", value: "300" },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(markup).toContain("Inter privacy consent (required)");
+    expect(markup).toContain('value="true"');
+    expect(markup).toContain('value="false"');
+    expect(markup).toContain('name="answer:locations"');
+    expect(markup).toMatch(/checked="" value="100"/u);
+    expect(markup).toMatch(/checked="" value="300"/u);
+    expect(markup).not.toMatch(/checked="" value="200"/u);
+  });
+
+  it("compares repeated selections as one canonical application answer", () => {
+    const current = new FormData();
+    current.append("answer:locations", "");
+    current.append("answer:locations", "100");
+    current.append("answer:locations", "300");
+    expect(
+      applicationOverridesAreDirty(
+        { "answer:locations": '["100","300"]' },
+        current,
+      ),
+    ).toBe(false);
   });
 });

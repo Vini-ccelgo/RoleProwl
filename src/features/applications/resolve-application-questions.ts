@@ -457,6 +457,8 @@ const EMPLOYER_RELATIONSHIP =
   /\b(?:currently|atualmente).{0,30}(?:work|employed|employee|trabalh|funcion[aá]ri[oa]).{0,40}(?:at|for|no|na|do|da)\b|\b(?:employee|funcion[aá]ri[oa]).{0,30}(?:name|nome|id|identifier|matr[ií]cula)\b|\b(?:if|se).{0,50}(?:work|employed|trabalh|funcion[aá]ri[oa]).{0,50}(?:name|nome|id|matr[ií]cula)\b/iu;
 const EDUCATION_COMPLETION =
   /\b(?:completed|complete|graduated).{0,30}(?:college|university|degree|higher education)|\b(?:curso superior|gradua[cç][aã]o).{0,20}(?:complet[oa]|conclu[ií]d[oa])\b/iu;
+const EXPLICIT_APPLICATION_DECISION =
+  /\b(?:consent|privacy|data processing|retention|transcription|acknowledg|concordo|consentimento|privacidade|processamento de dados|reten[cç][aã]o|transcri[cç][aã]o)\b/iu;
 
 const AI_REFRAME_CONCEPTS = new Set<CandidateKnowledgeConcept>([
   "EMPLOYMENT_HISTORY",
@@ -505,6 +507,18 @@ function deterministicResolution(
       value: null,
       candidateKnowledgeReferences: [],
       reasonCode: "UNSUPPORTED_CONTROL",
+    };
+  if (
+    ["COMPLIANCE", "DEMOGRAPHIC"].includes(question.group) ||
+    EXPLICIT_APPLICATION_DECISION.test(searchable(question))
+  )
+    return {
+      questionId: question.id,
+      canonicalConcept: null,
+      disposition: "CANDIDATE_REQUIRED",
+      value: null,
+      candidateKnowledgeReferences: [],
+      reasonCode: "EXPLICIT_APPLICATION_DECISION_REQUIRED",
     };
   const concept = mapApplicationQuestionToCandidateConcept(question, context);
   if (!concept) {

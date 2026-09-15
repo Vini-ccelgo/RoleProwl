@@ -36,8 +36,9 @@
     ]);
     const result = stored.roleprowlTransferResult;
     if (result) {
+      const phases = result.phases ?? 1;
       message(
-        `Transfer completed.\nVerified: ${result.verified}\nTransferred: ${result.transferred}\nHuman required: ${result.humanRequired}\nUnsupported: ${result.unsupported}\nFailed: ${result.failed}`,
+        `Transfer completed in ${phases} phase${phases === 1 ? "" : "s"}.\nVerified: ${result.verified}\nTransferred: ${result.transferred}\nNeeds your action: ${result.candidateActionRequired ?? 0}\nHuman required: ${result.humanRequired}\nUnsupported: ${result.unsupported}\nFailed: ${result.failed}`,
       );
       return;
     }

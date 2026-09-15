@@ -17,6 +17,7 @@ import {
 } from "@/core/domain/candidate/candidate-knowledge";
 import {
   isApplicationIdentityKey,
+  encodedApplicationAnswer,
   fanOutCompatibleApplicationAnswers,
   isApplicationPacket,
 } from "@/core/domain/applications/application-packet";
@@ -355,12 +356,19 @@ export async function saveApplicationOverridesAction(formData: FormData) {
         : [];
     },
   );
-  const submittedAnswers = [...formData.entries()].flatMap(
-    ([name, candidate]) =>
-      name.startsWith("answer:") && typeof candidate === "string"
-        ? [{ key: name.slice("answer:".length), value: candidate || null }]
-        : [],
+  const submittedAnswerNames = new Set(
+    [...formData.keys()].filter((name) => name.startsWith("answer:")),
   );
+  const submittedAnswers = [...submittedAnswerNames].map((name) => ({
+    key: name.slice("answer:".length),
+    value: encodedApplicationAnswer(
+      formData
+        .getAll(name)
+        .flatMap((candidate) =>
+          typeof candidate === "string" && candidate ? [candidate] : [],
+        ),
+    ),
+  }));
   const application = await databaseClient().application.findFirst({
     where: { id: applicationId, userId: actor.id, submittedAt: null },
     select: { submissionPayloadSnapshot: true },

@@ -36,12 +36,16 @@ describe("RoleProwl Greenhouse browser helper security contract", () => {
     expect(content).toContain("MutationObserver");
     expect(content).toContain("FORM_READINESS_TIMEOUT");
     expect(content).toContain("waitForFormReadiness");
+    expect(content).toContain("transferInPhases");
+    expect(content).toContain("DataTransfer");
     expect(content).toContain('type: "REQUEST_TRANSFER_PACKET"');
     expect(content).toContain('type: "STORE_TRANSFER_RESULT"');
     expect(background).toContain("storage.session");
     expect(background).toContain("sender?.tab?.url");
     expect(background).toContain("roleprowlTransferPacket");
     expect(background).toContain("roleprowlTransferResult");
+    expect(background).not.toContain("storage.local");
+    expect(background).not.toContain("storage.sync");
     expect(content).not.toMatch(/\.submit\s*\(/u);
     expect(content).not.toMatch(/querySelector\([^)]*submit/iu);
     expect(content).not.toMatch(/document\.cookie|\.cookies?\b/iu);

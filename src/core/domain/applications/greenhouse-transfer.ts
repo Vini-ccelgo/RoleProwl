@@ -1,4 +1,7 @@
-import type { ApplicationPacket } from "./application-packet";
+import {
+  applicationAnswerValues,
+  type ApplicationPacket,
+} from "./application-packet";
 import { ValidationError } from "@/core/errors/application-errors";
 
 export const GREENHOUSE_TRANSFER_VERSION = "greenhouse-assisted-v1";
@@ -6,10 +9,14 @@ export const GREENHOUSE_TRANSFER_VERSION = "greenhouse-assisted-v1";
 export interface GreenhouseTransferField {
   readonly id: string;
   readonly label: string;
-  readonly value: string;
+  readonly value: string | readonly string[];
   readonly fieldNames: readonly string[];
   readonly fieldTypes: readonly string[];
   readonly options: readonly string[];
+  readonly optionIdentities?: readonly {
+    readonly label: string;
+    readonly value: string;
+  }[];
   readonly kind: "TEXT" | "CHOICE" | "DOCUMENT" | "HUMAN_REQUIRED";
 }
 
@@ -17,6 +24,7 @@ export interface GreenhouseTransferDraft {
   readonly version: typeof GREENHOUSE_TRANSFER_VERSION;
   readonly destination: string;
   readonly fields: readonly GreenhouseTransferField[];
+  readonly resumeContentType: string | null;
   readonly resumeFileName: string | null;
 }
 
@@ -102,6 +110,23 @@ export function buildGreenhouseTransferDraft(input: {
     (answer): GreenhouseTransferField[] => {
       if (
         answer.status === "CANDIDATE_REQUIRED_EXTERNAL" &&
+        answer.classification === "DOCUMENT" &&
+        answer.value
+      )
+        return [
+          {
+            id: `answer:${answer.questionId}`,
+            label: answer.label,
+            value: answer.value,
+            fieldNames: answer.fieldNames,
+            fieldTypes: answer.fieldTypes,
+            options: answer.options,
+            optionIdentities: answer.optionIdentities,
+            kind: "DOCUMENT",
+          },
+        ];
+      if (
+        answer.status === "CANDIDATE_REQUIRED_EXTERNAL" &&
         answer.classification !== "DOCUMENT"
       )
         return [
@@ -112,6 +137,7 @@ export function buildGreenhouseTransferDraft(input: {
             fieldNames: answer.fieldNames,
             fieldTypes: answer.fieldTypes,
             options: answer.options,
+            optionIdentities: answer.optionIdentities,
             kind: "HUMAN_REQUIRED",
           },
         ];
@@ -128,15 +154,18 @@ export function buildGreenhouseTransferDraft(input: {
         {
           id: `answer:${answer.questionId}`,
           label: answer.label,
-          value: answer.value,
           fieldNames: answer.fieldNames,
           fieldTypes: answer.fieldTypes,
           options: answer.options,
+          optionIdentities: answer.optionIdentities,
           kind: answer.fieldTypes.some((type) => type === "input_file")
             ? "DOCUMENT"
             : answer.options.length
               ? "CHOICE"
               : "TEXT",
+          value: answer.fieldTypes.includes("multi_value_multi_select")
+            ? applicationAnswerValues(answer.value)
+            : answer.value,
         },
       ];
     },
@@ -148,6 +177,7 @@ export function buildGreenhouseTransferDraft(input: {
     version: GREENHOUSE_TRANSFER_VERSION,
     destination: greenhouseDestination(input.destination),
     fields: [...identity, ...answers],
+    resumeContentType: resume?.contentType ?? null,
     resumeFileName: resume?.fileName ?? null,
   };
 }

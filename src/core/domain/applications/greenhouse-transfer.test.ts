@@ -74,6 +74,16 @@ function readyPacket() {
           options: [],
         },
         {
+          id: "standard:resume",
+          source: "GREENHOUSE",
+          group: "STANDARD",
+          label: "Résumé/CV",
+          required: true,
+          fieldNames: ["resume"],
+          fieldTypes: ["input_file"],
+          options: [],
+        },
+        {
           id: "location:candidate-location",
           source: "GREENHOUSE",
           group: "LOCATION",
@@ -93,10 +103,84 @@ function readyPacket() {
           fieldTypes: ["input_text"],
           options: [],
         },
+        {
+          id: "standard:salary",
+          source: "GREENHOUSE",
+          group: "STANDARD",
+          label: "Current salary range",
+          required: true,
+          fieldNames: ["salary"],
+          fieldTypes: ["multi_value_single_select"],
+          options: ["R$ 5k–10k", "R$ 10k–15k"],
+          optionIdentities: [
+            { label: "R$ 5k–10k", value: "salary-1" },
+            { label: "R$ 10k–15k", value: "salary-2" },
+          ],
+        },
+        {
+          id: "standard:benefits",
+          source: "GREENHOUSE",
+          group: "STANDARD",
+          label: "Current benefits",
+          required: true,
+          fieldNames: ["benefits"],
+          fieldTypes: ["textarea"],
+          options: [],
+        },
+        {
+          id: "standard:current-employer",
+          source: "GREENHOUSE",
+          group: "STANDARD",
+          label: "Do you currently work at Inter?",
+          required: true,
+          fieldNames: ["current_employer"],
+          fieldTypes: ["input_radio"],
+          options: ["Yes", "No"],
+          optionIdentities: [
+            { label: "Yes", value: "yes-id" },
+            { label: "No", value: "no-id" },
+          ],
+        },
+        {
+          id: "compliance:privacy",
+          source: "GREENHOUSE",
+          group: "COMPLIANCE",
+          label: "Inter privacy consent",
+          required: true,
+          fieldNames: ["privacy_consent"],
+          fieldTypes: ["external_consent"],
+          options: ["Yes", "No"],
+          optionIdentities: [
+            { label: "Yes", value: "true" },
+            { label: "No", value: "false" },
+          ],
+        },
+        {
+          id: "standard:offices",
+          source: "GREENHOUSE",
+          group: "STANDARD",
+          label: "Preferred offices",
+          required: true,
+          fieldNames: ["offices[]"],
+          fieldTypes: ["multi_value_multi_select"],
+          options: ["São Paulo", "Recife", "Curitiba"],
+          optionIdentities: [
+            { label: "São Paulo", value: "100" },
+            { label: "Recife", value: "200" },
+            { label: "Curitiba", value: "300" },
+          ],
+        },
       ],
       applicationOverrides: {
         identity: {},
-        answers: { "standard:question_42": "Day" },
+        answers: {
+          "standard:question_42": "Day",
+          "standard:salary": "salary-2",
+          "standard:benefits": "Health and meal allowance",
+          "standard:current-employer": "no-id",
+          "compliance:privacy": "false",
+          "standard:offices": '["100","300"]',
+        },
       },
       questionInspection: "AVAILABLE",
       sourceName: "GREENHOUSE",
@@ -148,15 +232,43 @@ describe("Greenhouse assisted transfer draft", () => {
     ).toHaveLength(6);
     expect(
       draft.fields.filter((field) => field.id.startsWith("answer:")),
-    ).toHaveLength(2);
+    ).toHaveLength(7);
     expect(draft.fields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: "answer:location:candidate-location",
-          kind: "HUMAN_REQUIRED",
+          id: "answer:standard:resume",
+          kind: "DOCUMENT",
+          value: "avery-resume.pdf",
+        }),
+        expect.objectContaining({
+          id: "answer:standard:salary",
+          kind: "CHOICE",
+          value: "salary-2",
+        }),
+        expect.objectContaining({
+          id: "answer:standard:benefits",
+          kind: "TEXT",
+          value: "Health and meal allowance",
+        }),
+        expect.objectContaining({
+          id: "answer:standard:current-employer",
+          kind: "CHOICE",
+          value: "no-id",
+        }),
+        expect.objectContaining({
+          id: "answer:compliance:privacy",
+          kind: "CHOICE",
+          value: "false",
+        }),
+        expect.objectContaining({
+          id: "answer:standard:offices",
+          kind: "CHOICE",
+          value: ["100", "300"],
         }),
       ]),
     );
+    expect(draft.resumeFileName).toBe("avery-resume.pdf");
+    expect(draft.resumeContentType).toBe("application/pdf");
     expect(JSON.stringify(draft)).not.toContain("candidate-documents/private");
   });
 

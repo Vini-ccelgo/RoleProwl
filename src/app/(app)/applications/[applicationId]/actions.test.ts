@@ -741,6 +741,69 @@ describe("application packet actions", () => {
     expect(saveDirectCandidateKnowledgeBatch).not.toHaveBeenCalled();
   });
 
+  it("persists exact consent and repeated multi-select identities only on this Application", async () => {
+    const base = packetForResolution({
+      concept: null,
+      disposition: "CANDIDATE_REQUIRED",
+      reasonCode: "EXPLICIT_APPLICATION_DECISION_REQUIRED",
+      value: null,
+    });
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: {
+        packet: {
+          ...base,
+          answers: [
+            {
+              ...base.answers[0]!,
+              key: "question:privacy",
+              questionId: "privacy",
+              questionGroup: "COMPLIANCE",
+              label: "Inter privacy consent",
+              fieldNames: ["privacy_consent"],
+              fieldTypes: ["external_consent"],
+              options: ["Yes", "No"],
+              optionIdentities: [
+                { label: "Yes", value: "true" },
+                { label: "No", value: "false" },
+              ],
+            },
+            {
+              ...base.answers[0]!,
+              key: "question:offices",
+              questionId: "offices",
+              label: "Preferred offices",
+              fieldNames: ["offices[]"],
+              fieldTypes: ["multi_value_multi_select"],
+              options: ["São Paulo", "Recife", "Curitiba"],
+              optionIdentities: [
+                { label: "São Paulo", value: "100" },
+                { label: "Recife", value: "200" },
+                { label: "Curitiba", value: "300" },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    const value = form();
+    value.set("answer:privacy", "false");
+    value.append("answer:offices", "");
+    value.append("answer:offices", "100");
+    value.append("answer:offices", "300");
+    await saveApplicationOverridesAction(value);
+    expect(saveApplicationOverrides).toHaveBeenCalledWith(
+      expect.objectContaining({
+        applicationId: "application-1",
+        userId: "user-1",
+        answers: expect.arrayContaining([
+          { key: "privacy", value: "false" },
+          { key: "offices", value: '["100","300"]' },
+        ]),
+      }),
+    );
+    expect(saveDirectCandidateKnowledgeBatch).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["WORK_AUTHORIZATION:BR", "Yes"],
     ["SPONSORSHIP_REQUIREMENT:BR", "No"],

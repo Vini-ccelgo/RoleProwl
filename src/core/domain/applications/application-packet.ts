@@ -62,7 +62,7 @@ export interface ApplicationPacketDocument {
   readonly storageKey: string | null;
   readonly status: ApplicationFieldStatus;
   readonly provenance: readonly ApplicationPacketProvenance[];
-  readonly externalTransferStatus?: "HUMAN_REQUIRED";
+  readonly externalTransferStatus?: "NOT_ATTEMPTED" | "HUMAN_REQUIRED";
 }
 
 export interface ApplicationPacketAnswer extends ApplicationPacketField {
@@ -72,6 +72,10 @@ export interface ApplicationPacketAnswer extends ApplicationPacketField {
   readonly fieldNames: readonly string[];
   readonly fieldTypes: readonly string[];
   readonly options: readonly string[];
+  readonly optionIdentities?: readonly {
+    readonly label: string;
+    readonly value: string;
+  }[];
   readonly controlDisposition?: ApplicationQuestionControlDisposition;
   readonly resolutionDisposition?: ApplicationAnswerResolutionDisposition;
   readonly canonicalConcept?: CandidateKnowledgeConcept | null;
@@ -103,10 +107,16 @@ function applicationAnswerCompatibilityKey(answer: ApplicationPacketAnswer) {
   )
     return `${answer.canonicalConcept}:TEXT`;
   if (answer.options.length > 0) {
-    const options = answer.options
-      .map((option) =>
-        option.normalize("NFKC").trim().toLocaleLowerCase("en-US"),
-      )
+    const options = (
+      answer.optionIdentities?.length
+        ? answer.optionIdentities
+        : answer.options.map((option) => ({ label: option, value: option }))
+    )
+      .map((option) => ({
+        label: normalizedQuestionLabel(option.label),
+        value: normalizedQuestionLabel(option.value),
+      }))
+      .map((option) => JSON.stringify(option))
       .sort();
     return `${answer.canonicalConcept}:CHOICE:${JSON.stringify(options)}`;
   }
@@ -189,6 +199,37 @@ export function isApplicationIdentityKey(
 export interface ApplicationPacketOverrides {
   readonly identity: Readonly<Partial<Record<ApplicationIdentityKey, string>>>;
   readonly answers: Readonly<Record<string, string>>;
+}
+
+export function applicationAnswerValues(value: string | null | undefined) {
+  if (!value) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (Array.isArray(parsed))
+      return [
+        ...new Set(
+          parsed.flatMap((candidate) =>
+            typeof candidate === "string" && candidate.trim()
+              ? [candidate.trim()]
+              : [],
+          ),
+        ),
+      ];
+  } catch {
+    // Scalar application answers are intentionally stored as plain strings.
+  }
+  return [value];
+}
+
+export function encodedApplicationAnswer(values: readonly string[]) {
+  const normalized = [
+    ...new Set(
+      values.map((value) => value.normalize("NFKC").trim()).filter(Boolean),
+    ),
+  ];
+  return normalized.length > 1
+    ? JSON.stringify(normalized)
+    : (normalized[0] ?? null);
 }
 
 export function parseApplicationPacketOverrides(
@@ -342,7 +383,10 @@ const ROLEPROWL_SUPPORTED_QUESTION_TYPES = new Set([
   "input_text",
   "textarea",
   "multi_value_single_select",
+  "multi_value_multi_select",
   "input_radio",
+  "input_checkbox",
+  "external_consent",
 ]);
 
 export function applicationQuestionControlDisposition(
@@ -352,21 +396,50 @@ export function applicationQuestionControlDisposition(
     `${question.label} ${question.fieldNames.join(" ")}`,
   );
   if (
-    ["COMPLIANCE", "DEMOGRAPHIC", "LOCATION"].includes(question.group) ||
     question.fieldTypes.includes("input_file") ||
-    question.fieldTypes.includes("multi_value_multi_select") ||
-    question.fieldTypes.includes("external_consent") ||
-    /\b(?:consent|privacy|terms|attest|signature|cpf|social security|national identification|national id|tax identification|tax id)\b/iu.test(
+    /\b(?:captcha|authentication|attest|signature|cpf|social security|national identification|national id|tax identification|tax id)\b/iu.test(
       searchable,
     )
+  )
+    return "CANDIDATE_REQUIRED_EXTERNAL";
+  if (
+    question.fieldTypes.includes("multi_value_multi_select") &&
+    question.options.length === 0
   )
     return "CANDIDATE_REQUIRED_EXTERNAL";
   if (
     question.fieldTypes.length !== 1 ||
     !ROLEPROWL_SUPPORTED_QUESTION_TYPES.has(question.fieldTypes[0]!)
   )
-    return "UNSUPPORTED";
+    return "CANDIDATE_REQUIRED_EXTERNAL";
   return "ROLEPROWL_RESOLVED";
+}
+
+export type ApplicationQuestionHandoffClass =
+  | "ROLEPROWL_CAN_COMPLETE"
+  | "CANDIDATE_DECIDES_THEN_ROLEPROWL_TRANSFERS"
+  | "IRREDUCIBLE_EMPLOYER_SITE_STEP";
+
+export function applicationQuestionHandoffClass(
+  answer: ApplicationPacketAnswer,
+): ApplicationQuestionHandoffClass {
+  if (
+    answer.status === "CANDIDATE_REQUIRED_EXTERNAL" &&
+    answer.classification === "DOCUMENT" &&
+    Boolean(answer.value)
+  )
+    return "ROLEPROWL_CAN_COMPLETE";
+  if (
+    answer.status === "CANDIDATE_REQUIRED_EXTERNAL" ||
+    answer.status === "UNSUPPORTED"
+  )
+    return "IRREDUCIBLE_EMPLOYER_SITE_STEP";
+  if (
+    answer.status === "RESOLVED" &&
+    !answer.provenance.some((item) => item.source === "APPLICATION_OVERRIDE")
+  )
+    return "ROLEPROWL_CAN_COMPLETE";
+  return "CANDIDATE_DECIDES_THEN_ROLEPROWL_TRANSFERS";
 }
 
 function materialQuestionSchemaEntry(input: {
@@ -375,6 +448,10 @@ function materialQuestionSchemaEntry(input: {
   readonly required: boolean;
   readonly fieldTypes: readonly string[];
   readonly options: readonly string[];
+  readonly optionIdentities?: readonly {
+    readonly label: string;
+    readonly value: string;
+  }[];
 }) {
   return JSON.stringify({
     group: input.group ?? "STANDARD",
@@ -383,7 +460,16 @@ function materialQuestionSchemaEntry(input: {
     fieldTypes: [...(input.fieldTypes ?? [])]
       .map(normalizedQuestionLabel)
       .sort(),
-    options: [...(input.options ?? [])].map(normalizedQuestionLabel).sort(),
+    options: (input.optionIdentities?.length
+      ? input.optionIdentities
+      : input.options.map((option) => ({ label: option, value: option }))
+    )
+      .map((option) => ({
+        label: normalizedQuestionLabel(option.label),
+        value: normalizedQuestionLabel(option.value),
+      }))
+      .map((option) => JSON.stringify(option))
+      .sort(),
   });
 }
 
@@ -579,6 +665,9 @@ function packetFieldForQuestion(
 ): ApplicationPacketAnswer {
   const searchable = `${question.label} ${question.fieldNames.join(" ")}`;
   const controlDisposition = applicationQuestionControlDisposition(question);
+  const optionIdentities = question.optionIdentities?.length
+    ? question.optionIdentities
+    : question.options.map((option) => ({ label: option, value: option }));
   if (controlDisposition !== "ROLEPROWL_RESOLVED") {
     const selected = /\b(?:resume|résumé|cv)\b/iu.test(searchable)
       ? source.selectedResume
@@ -607,25 +696,43 @@ function packetFieldForQuestion(
       fieldNames: question.fieldNames,
       fieldTypes: question.fieldTypes,
       options: question.options,
+      optionIdentities,
       controlDisposition,
     };
   }
   const applicationSpecific = clean(
     source.applicationOverrides?.answers[question.id],
   );
-  if (applicationSpecific)
+  if (applicationSpecific) {
+    const suppliedValues = applicationAnswerValues(applicationSpecific);
+    const canonicalSuppliedValues = suppliedValues.flatMap((value) => {
+      const valueMatches = optionIdentities.filter(
+        (option) => option.value === value,
+      );
+      if (valueMatches.length === 1) return [valueMatches[0]!.value];
+      const labelMatches = optionIdentities.filter(
+        (option) => option.label === value,
+      );
+      return labelMatches.length === 1 ? [labelMatches[0]!.value] : [];
+    });
+    const multiple = question.fieldTypes.includes("multi_value_multi_select");
+    const optionMismatch =
+      optionIdentities.length > 0 &&
+      (suppliedValues.length === 0 ||
+        (!multiple && suppliedValues.length !== 1) ||
+        canonicalSuppliedValues.length !== suppliedValues.length);
+    const canonicalApplicationSpecific =
+      optionIdentities.length > 0 && !optionMismatch
+        ? encodedApplicationAnswer(canonicalSuppliedValues)
+        : applicationSpecific;
     return {
       key: `question:${question.id}`,
       questionId: question.id,
       questionGroup: question.group,
       label: question.label,
       required: question.required,
-      status:
-        question.options.length > 0 &&
-        !question.options.includes(applicationSpecific)
-          ? "CONFLICTING"
-          : "RESOLVED",
-      value: applicationSpecific,
+      status: optionMismatch ? "CONFLICTING" : "RESOLVED",
+      value: canonicalApplicationSpecific,
       provenance: [
         {
           source: "APPLICATION_OVERRIDE",
@@ -641,12 +748,11 @@ function packetFieldForQuestion(
       fieldNames: question.fieldNames,
       fieldTypes: question.fieldTypes,
       options: question.options,
+      optionIdentities,
       controlDisposition,
-      ...(question.options.length > 0 &&
-      !question.options.includes(applicationSpecific)
-        ? { alternatives: question.options }
-        : {}),
+      ...(optionMismatch ? { alternatives: question.options } : {}),
     };
+  }
   const authoritative = source.questionResolutions?.find(
     (resolution) => resolution.questionId === question.id,
   );
@@ -682,6 +788,7 @@ function packetFieldForQuestion(
       fieldNames: question.fieldNames,
       fieldTypes: question.fieldTypes,
       options: question.options,
+      optionIdentities,
       controlDisposition,
     };
 
@@ -717,6 +824,7 @@ function packetFieldForQuestion(
       fieldNames: question.fieldNames,
       fieldTypes: question.fieldTypes,
       options: question.options,
+      optionIdentities,
       controlDisposition,
     };
   }
@@ -770,6 +878,7 @@ function packetFieldForQuestion(
       fieldNames: question.fieldNames,
       fieldTypes: question.fieldTypes,
       options: question.options,
+      optionIdentities,
       controlDisposition,
       resolutionDisposition: authoritative.disposition,
       canonicalConcept: authoritative.canonicalConcept,
@@ -841,6 +950,7 @@ function packetFieldForQuestion(
     fieldNames: question.fieldNames,
     fieldTypes: question.fieldTypes,
     options: question.options,
+    optionIdentities,
     controlDisposition,
   };
 }
@@ -977,7 +1087,7 @@ export function buildApplicationPacket(input: {
           },
         ]
       : [],
-    externalTransferStatus: "HUMAN_REQUIRED",
+    externalTransferStatus: selectedResume ? "NOT_ATTEMPTED" : "HUMAN_REQUIRED",
   };
   const documents = [resume];
   if (source.coverLetter)
@@ -1062,9 +1172,13 @@ export function buildApplicationPacket(input: {
       status:
         answer.status === "RESOLVED"
           ? ("NOT_ATTEMPTED" as const)
-          : answer.status === "CANDIDATE_REQUIRED_EXTERNAL"
-            ? ("HUMAN_REQUIRED" as const)
-            : ("UNSUPPORTED" as const),
+          : answer.status === "CANDIDATE_REQUIRED_EXTERNAL" &&
+              answer.classification === "DOCUMENT" &&
+              Boolean(answer.value)
+            ? ("NOT_ATTEMPTED" as const)
+            : answer.status === "CANDIDATE_REQUIRED_EXTERNAL"
+              ? ("HUMAN_REQUIRED" as const)
+              : ("UNSUPPORTED" as const),
     })),
   ];
   const professionalProvenance: ApplicationPacketProvenance[] = [];
@@ -1136,7 +1250,8 @@ export function buildApplicationPacket(input: {
           (answer) =>
             answer.required &&
             answer.status === "CANDIDATE_REQUIRED_EXTERNAL" &&
-            answer.classification === "DOCUMENT",
+            answer.classification === "DOCUMENT" &&
+            !answer.value,
         ).length,
       unsupported,
       readyForSubmissionHandoff:

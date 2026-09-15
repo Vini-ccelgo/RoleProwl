@@ -1,4 +1,5 @@
 import {
+  applicationAnswerValues,
   candidateDecisionKey,
   isApplicationPacket,
   semanticApplicationAnswerGroups,
@@ -16,6 +17,18 @@ function Status({ value }: { readonly value: string }) {
 }
 
 function Field({ field }: { readonly field: ApplicationPacketField }) {
+  const answer =
+    "questionId" in field ? (field as ApplicationPacketAnswer) : null;
+  const displayValue =
+    answer && field.value
+      ? applicationAnswerValues(field.value)
+          .map(
+            (value) =>
+              answer.optionIdentities?.find((option) => option.value === value)
+                ?.label ?? value,
+          )
+          .join(", ")
+      : field.value;
   return (
     <li className="border-border grid min-w-0 gap-1 border-b pb-3 last:border-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -24,10 +37,10 @@ function Field({ field }: { readonly field: ApplicationPacketField }) {
           <Status value={field.status} />
         ) : null}
       </div>
-      {field.value ? (
+      {displayValue ? (
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-          <span className="min-w-0 break-words">{field.value}</span>
-          <CopyApplicationValue value={field.value} />
+          <span className="min-w-0 break-words">{displayValue}</span>
+          <CopyApplicationValue value={displayValue} />
         </div>
       ) : (
         <span className="text-sm text-foreground-muted">
@@ -40,7 +53,7 @@ function Field({ field }: { readonly field: ApplicationPacketField }) {
                 : "No value required for this packet."}
         </span>
       )}
-      {field.value && field.status === "CANDIDATE_REQUIRED_EXTERNAL" ? (
+      {displayValue && field.status === "CANDIDATE_REQUIRED_EXTERNAL" ? (
         <span className="text-xs text-foreground-muted">
           Intended value is known, but you must complete or verify this control
           on the employer form.
@@ -118,6 +131,14 @@ export function ApplicationPacketSummary({
   );
   const candidateRequired = answers.filter(
     (field) => field.status === "CANDIDATE_REQUIRED_EXTERNAL",
+  );
+  const candidateRequiredHumanStepLabels = new Set(
+    candidateRequired.map(
+      (field) => `Complete ${field.label} on the employer form.`,
+    ),
+  );
+  const generalHumanSteps = packet.transfer.humanSteps.filter(
+    (step) => !candidateRequiredHumanStepLabels.has(step.label),
   );
   const roleProwlPrepared = [...packet.identity, ...answers].filter(
     (field) => field.status === "RESOLVED",
@@ -258,7 +279,7 @@ export function ApplicationPacketSummary({
             ["Needs your answer", needsReview.length],
             [
               "Complete on employer site",
-              candidateRequired.length + packet.transfer.humanSteps.length,
+              candidateRequired.length + generalHumanSteps.length,
             ],
           ].map(([label, count]) => (
             <div className="border-border rounded-lg border p-3" key={label}>
@@ -407,8 +428,9 @@ export function ApplicationPacketSummary({
                 </p>
                 {document.fileName ? (
                   <p className="m-0 text-xs text-foreground-muted">
-                    Available in RoleProwl for handoff; not attached to the
-                    employer form. Attach it there if required.
+                    Selected for this application. RoleProwl Helper will attempt
+                    an exact in-memory attachment and report whether it was
+                    verified.
                   </p>
                 ) : null}
                 {document.kind === "RESUME" &&
@@ -449,14 +471,15 @@ export function ApplicationPacketSummary({
             Complete on the employer form
           </h2>
           <p className="m-0 text-sm">
-            You remain responsible for required files, consent, dynamic
-            controls, CAPTCHA or authentication, final review, and Submit.
+            RoleProwl collects representable employer decisions before handoff.
+            You remain responsible only for the steps listed here, plus final
+            review and Submit.
           </p>
           <ul className="m-0 grid gap-1 pl-5 text-sm">
             {candidateRequired.map((field) => (
               <li key={field.key}>{field.label}</li>
             ))}
-            {packet.transfer.humanSteps.map((step) => (
+            {generalHumanSteps.map((step) => (
               <li key={step.label}>{step.label}</li>
             ))}
           </ul>

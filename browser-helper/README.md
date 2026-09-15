@@ -1,6 +1,6 @@
 # RoleProwl Greenhouse Helper
 
-This Manifest V3 Chromium helper performs one candidate-authorized, Greenhouse-only assisted transfer. It does not submit applications, access passwords, handle CAPTCHA, or retain the Application Packet beyond the browser session.
+This Manifest V3 Chromium helper performs one candidate-authorized, Greenhouse-only assisted transfer in two bounded phases. It does not submit applications, access passwords, handle CAPTCHA, or retain the Application Packet beyond the browser session.
 
 ## Build and install
 
@@ -12,12 +12,13 @@ This Manifest V3 Chromium helper performs one candidate-authorized, Greenhouse-o
 ## Use
 
 1. Complete and review a Greenhouse Application Packet until RoleProwl marks it ready.
-2. Choose **Prepare assisted transfer** on the Application page.
+2. Choose **Continue with RoleProwl Helper** on the Application page.
 3. Open the RoleProwl Helper browser action and choose **Capture packet and open Greenhouse**.
-4. Review every populated value, attach the downloaded résumé, complete human verification, and submit manually.
-5. Return to RoleProwl and explicitly confirm submission only after it actually occurred.
+4. Let the helper transfer the approved scalar decisions and, when safely included, attach the exact selected résumé. If attachment is reported as unavailable, attach the downloaded résumé manually.
+5. Review every populated value, complete any reported candidate/human steps, and submit manually.
+6. Return to RoleProwl and explicitly confirm submission only after it actually occurred.
 
-The helper has persistent host permission only for the two official Greenhouse job-board domains. It reads the RoleProwl page solely through Chromium's one-time `activeTab` permission after the candidate clicks the extension action.
+The helper has persistent host permission only for the two official Greenhouse job-board domains. It reads the RoleProwl page solely through Chromium's one-time `activeTab` permission after the candidate clicks the extension action. Prepared packets expire after five minutes. Résumé bytes are limited to the application's existing 4 MiB upload boundary, remain in session-only extension storage until the exact job consumes the packet once, and are never copied into a transfer result.
 
 ## Pre-live distribution requirement
 

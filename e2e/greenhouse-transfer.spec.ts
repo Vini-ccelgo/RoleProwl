@@ -83,7 +83,7 @@ test("helper popup distinguishes neutral, captured, pending, and completed state
           failed: 0,
         },
       },
-      "Transfer completed.",
+      "Transfer completed in 1 phase.",
     ],
   ] as const;
 
@@ -345,7 +345,13 @@ test("popup packet reaches the Greenhouse content script through the trusted bri
   expect(state.repeated).toEqual(expect.objectContaining({ ok: false }));
   expect(state.session.roleprowlTransferPacket).toBeUndefined();
   expect(state.session.roleprowlTransferResult).toEqual(
-    expect.objectContaining({ verified: 3, unsupported: 1, humanRequired: 1 }),
+    expect.objectContaining({
+      verified: 3,
+      unsupported: 1,
+      candidateActionRequired: 1,
+      humanRequired: 0,
+      phases: 2,
+    }),
   );
   expect(JSON.stringify(state.session.roleprowlTransferResult)).not.toContain(
     "avery@example.test",
@@ -572,6 +578,122 @@ test("Greenhouse readiness timeout leaves the packet unconsumed and undisclosed"
   expect(timedOut.html).not.toContain(privateValue);
 });
 
+test("two-phase transfer observes one dynamic update, fills represented follow-up, and reports missing data", async ({
+  page,
+}) => {
+  await page.setContent(`
+    <form>
+      <fieldset>
+        <legend>Do you currently work at Inter?</legend>
+        <label><input type="radio" name="current_employer" value="yes-id">Yes</label>
+        <label><input type="radio" name="current_employer" value="no-id">No</label>
+      </fieldset>
+      <div id="conditional"></div>
+      <button id="submit" type="submit">Submit application</button>
+    </form>
+    <script>
+      window.transferEvents = [];
+      window.submitClicks = 0;
+      document.querySelector('form').addEventListener('submit', event => {
+        event.preventDefault();
+        window.submitClicks += 1;
+      });
+      document.querySelectorAll('[name="current_employer"]').forEach(control => {
+        control.addEventListener('change', event => {
+          window.transferEvents.push(event.type);
+          if (event.target.value !== 'yes-id') return;
+          setTimeout(() => {
+            document.querySelector('#conditional').innerHTML =
+              '<label>Employee full name <input name="employee_name" required></label>' +
+              '<label>New required employer question <input name="new_required" required></label>';
+          }, 20);
+        });
+      });
+    </script>
+  `);
+  await page.addScriptTag({ path: helper });
+  const result = await page.evaluate(async () => {
+    const engine = (
+      globalThis as unknown as {
+        RoleProwlGreenhouseTransfer: {
+          transferInPhases(
+            document: Document,
+            packet: unknown,
+            url: string,
+            options: { timeoutMs: number; stableMs: number },
+          ): Promise<{
+            authorized: boolean;
+            phases: number;
+            fields: { id: string; status: string; reason: string }[];
+          }>;
+        };
+      }
+    ).RoleProwlGreenhouseTransfer;
+    const transfer = await engine.transferInPhases(
+      document,
+      {
+        version: "greenhouse-assisted-v1",
+        destination: "https://job-boards.greenhouse.io/acme/jobs/42",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        fields: [
+          {
+            id: "answer:current_employer",
+            label: "Do you currently work at Inter?",
+            value: "yes-id",
+            fieldNames: ["current_employer"],
+            kind: "CHOICE",
+          },
+          {
+            id: "answer:employee_name",
+            label: "Employee full name",
+            value: "Taylor Example",
+            fieldNames: ["employee_name"],
+            kind: "TEXT",
+          },
+        ],
+      },
+      "https://job-boards.greenhouse.io/acme/jobs/42",
+      { timeoutMs: 400, stableMs: 50 },
+    );
+    const state = globalThis as unknown as {
+      submitClicks: number;
+      transferEvents: string[];
+    };
+    return {
+      transfer,
+      submitClicks: state.submitClicks,
+      transferEvents: state.transferEvents,
+    };
+  });
+  await expect(
+    page.locator('[name="current_employer"][value="yes-id"]'),
+  ).toBeChecked();
+  await expect(page.locator('[name="employee_name"]')).toHaveValue(
+    "Taylor Example",
+  );
+  await expect(page.locator('[name="new_required"]')).toHaveValue("");
+  expect(result.transfer).toMatchObject({ authorized: true, phases: 2 });
+  expect(result.transfer.fields).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: "answer:current_employer",
+        status: "VERIFIED",
+      }),
+      expect.objectContaining({
+        id: "answer:employee_name",
+        status: "VERIFIED",
+      }),
+      expect.objectContaining({
+        id: "live:new_required",
+        status: "CANDIDATE_ACTION_REQUIRED",
+        reason: "MISSING_CANDIDATE_DATA_AFTER_DYNAMIC_UPDATE",
+      }),
+    ]),
+  );
+  expect(result.transferEvents).toEqual(["change"]);
+  expect(result.submitClicks).toBe(0);
+});
+
 test("Greenhouse helper maps confirmed empty-name IDs, semantic labels, and checkbox groups", async ({
   page,
 }) => {
@@ -741,6 +863,8 @@ test("Greenhouse helper fills exact fields, reports boundaries, and never submit
       <label for="question_42">Preferred shift</label>
       <select id="question_42" name="question_42"><option></option><option>Day</option><option>Night</option></select>
       <fieldset><legend>Sponsorship</legend><label><input type="radio" name="sponsorship" value="Yes">Yes</label><label><input type="radio" name="sponsorship" value="No">No</label></fieldset>
+      <label><input id="privacy_consent" name="privacy_consent" type="checkbox" checked>Privacy consent</label>
+      <label><input id="ai_consent" name="ai_consent" type="checkbox">AI transcription consent</label>
       <label>Portfolio <input name="ambiguous_a"></label>
       <label>Portfolio <input name="ambiguous_b"></label>
       <input name="resume" type="file">
@@ -756,6 +880,11 @@ test("Greenhouse helper fills exact fields, reports boundaries, and never submit
       destination: "https://job-boards.greenhouse.io/acme/jobs/42",
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
       resumeFileName: "avery-resume.pdf",
+      resumeFile: {
+        base64: "JVBERi0xLjQK",
+        contentType: "application/pdf",
+        fileName: "avery-resume.pdf",
+      },
       fields: [
         ["first", "First name", "Avery", ["first_name"], "TEXT"],
         ["last", "Last name", "Quill", ["last_name"], "TEXT"],
@@ -764,6 +893,13 @@ test("Greenhouse helper fills exact fields, reports boundaries, and never submit
         ["location", "City / location", "Boston", ["city"], "TEXT"],
         ["shift", "Preferred shift", "Day", ["question_42"], "CHOICE"],
         ["sponsorship", "Sponsorship", "No", ["sponsorship"], "CHOICE"],
+        [
+          "privacy-consent",
+          "Privacy consent",
+          "false",
+          ["privacy_consent"],
+          "CHOICE",
+        ],
         ["portfolio", "Portfolio", "https://example.test", [], "TEXT"],
         ["resume", "Résumé", "avery-resume.pdf", ["resume"], "DOCUMENT"],
         [
@@ -814,6 +950,8 @@ test("Greenhouse helper fills exact fields, reports boundaries, and never submit
   await expect(page.locator("#city")).toHaveValue("Boston");
   await expect(page.locator("#question_42")).toHaveValue("Day");
   await expect(page.locator('[name="sponsorship"][value="No"]')).toBeChecked();
+  await expect(page.locator("#privacy_consent")).not.toBeChecked();
+  await expect(page.locator("#ai_consent")).not.toBeChecked();
   await expect(page.locator("[name=ambiguous_a]")).toHaveValue("");
   await expect(page.locator("[name=ambiguous_b]")).toHaveValue("");
   expect(result.transfer.authorized).toBe(true);
@@ -822,8 +960,12 @@ test("Greenhouse helper fills exact fields, reports boundaries, and never submit
       expect.objectContaining({ id: "first", status: "VERIFIED" }),
       expect.objectContaining({ id: "shift", status: "VERIFIED" }),
       expect.objectContaining({ id: "sponsorship", status: "VERIFIED" }),
+      expect.objectContaining({
+        id: "privacy-consent",
+        status: "VERIFIED",
+      }),
       expect.objectContaining({ id: "portfolio", status: "UNSUPPORTED" }),
-      expect.objectContaining({ id: "resume", status: "HUMAN_REQUIRED" }),
+      expect.objectContaining({ id: "resume", status: "VERIFIED" }),
       expect.objectContaining({ id: "consent", status: "HUMAN_REQUIRED" }),
       expect.objectContaining({
         id: "human:verification",
@@ -831,6 +973,15 @@ test("Greenhouse helper fills exact fields, reports boundaries, and never submit
       }),
     ]),
   );
+  const attached = await page.locator('[name="resume"]').evaluate((element) => {
+    const file = (element as HTMLInputElement).files?.[0];
+    return file ? { name: file.name, size: file.size, type: file.type } : null;
+  });
+  expect(attached).toEqual({
+    name: "avery-resume.pdf",
+    size: 9,
+    type: "application/pdf",
+  });
   expect(result.submitClicks).toBe(0);
 });
 
