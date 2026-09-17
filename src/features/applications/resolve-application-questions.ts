@@ -20,8 +20,21 @@ import type {
 } from "@/core/domain/applications/application-question-resolution";
 import type { PublicApplicationQuestion } from "@/core/domain/applications/public-application-question";
 import { encodedApplicationAnswer } from "@/core/domain/applications/application-packet";
+import {
+  adaptKnownValueToEmployerControl,
+  employerQuestionOptions,
+} from "@/core/domain/applications/control-adaptation";
 import { aiTaskDefinitions } from "@/features/ai/task-definitions";
 import { resolveChoiceTaxonomyDeterministically } from "@/features/applications/resolve-choice-taxonomy";
+import {
+  minimizedApplicationJobContext,
+  relevantExperienceResolution,
+  resolveExperienceContextualQuestion,
+  resolveKnownContextualQuestion,
+  semanticExperienceYesResolution,
+  type ApplicationJobContext,
+  type ContextualAIQuestion,
+} from "@/features/applications/resolve-contextual-question";
 import type { Logger } from "@/lib/logging/logger";
 
 export type {
@@ -106,6 +119,8 @@ const CONCEPT_PATTERNS: readonly [
     [
       /\b(?:current|present) (?:city|location|residence)\b/iu,
       /\b(?:cidade|localiza[cç][aã]o|resid[eê]ncia) atual\b/iu,
+      /\b(?:country|pa[ií]s).{0,20}(?:residence|resid[eê]ncia|currently reside)\b/iu,
+      /\b(?:residence|resid[eê]ncia|currently reside).{0,20}(?:country|pa[ií]s)\b/iu,
     ],
   ],
   [
@@ -405,29 +420,11 @@ function adaptToField(
   disposition: "AUTO_RESOLVED" | "PROPOSED_FOR_CANDIDATE";
   value: string;
 } | null {
+  const directlyAdapted = adaptKnownValueToEmployerControl(value, question);
+  if (directlyAdapted)
+    return { disposition: "AUTO_RESOLVED", value: directlyAdapted };
   if (!question.options.length) return { disposition: "AUTO_RESOLVED", value };
-  const exact = question.options.find(
-    (option) =>
-      normalized(option).toLocaleLowerCase("en-US") ===
-      normalized(value).toLocaleLowerCase("en-US"),
-  );
-  if (exact) return { disposition: "AUTO_RESOLVED", value: exact };
   const normalizedValue = normalized(value).toLocaleLowerCase("en-US");
-  const booleanValue = ["true", "yes", "sim", "required"].includes(
-    normalizedValue,
-  )
-    ? true
-    : ["false", "no", "não", "nao", "not required"].includes(normalizedValue)
-      ? false
-      : null;
-  if (booleanValue != null) {
-    const option = question.options.find((candidate) =>
-      booleanValue
-        ? /^(?:yes|sim)(?:\b|$)/iu.test(normalized(candidate))
-        : /^(?:no|não|nao)(?:\b|$)/iu.test(normalized(candidate)),
-    );
-    if (option) return { disposition: "AUTO_RESOLVED", value: option };
-  }
   const tier = /(?:native|nativo)/u.test(normalizedValue)
     ? /(?:native|nativo)/u
     : /(?:fluent|fluente)/u.test(normalizedValue)
@@ -440,12 +437,12 @@ function adaptToField(
           ? /(?:intermediate|intermediário|intermediario)/u
           : null;
   const proficiency = tier
-    ? question.options.find((option) =>
-        tier.test(normalized(option).toLocaleLowerCase("en-US")),
+    ? employerQuestionOptions(question).find((option) =>
+        tier.test(normalized(option.label).toLocaleLowerCase("en-US")),
       )
     : null;
   return proficiency
-    ? { disposition: "PROPOSED_FOR_CANDIDATE", value: proficiency }
+    ? { disposition: "PROPOSED_FOR_CANDIDATE", value: proficiency.value }
     : null;
 }
 
@@ -754,6 +751,8 @@ export async function resolveApplicationQuestions(input: {
   readonly correlationId: string;
   readonly knowledge: readonly CandidateKnowledgeQueryResult[];
   readonly jurisdictionContext?: ApplicationJurisdictionContext;
+  readonly jobContext?: ApplicationJobContext;
+  readonly now?: Date;
   readonly applicationAnswers?: Readonly<Record<string, string>>;
   readonly questions: readonly ResolvableApplicationQuestion[];
   readonly userId: string;
@@ -809,6 +808,7 @@ export async function resolveApplicationQuestions(input: {
       readonly value: string;
     }[]
   >();
+  const contextualAIQuestions = new Map<string, ContextualAIQuestion>();
   for (const question of input.questions) {
     const applicationAnswer = input.applicationAnswers?.[question.id];
     if (applicationAnswer) {
@@ -822,6 +822,29 @@ export async function resolveApplicationQuestions(input: {
       });
       continue;
     }
+    const contextualResolutionAllowed =
+      question.controlDisposition === "ROLEPROWL_RESOLVED" &&
+      !["COMPLIANCE", "DEMOGRAPHIC"].includes(question.group) &&
+      !EXPLICIT_APPLICATION_DECISION.test(searchable(question));
+    const knownContextual = contextualResolutionAllowed
+      ? resolveKnownContextualQuestion({
+          question,
+          knowledge,
+        })
+      : null;
+    if (knownContextual?.resolution) {
+      results.set(question.id, knownContextual.resolution);
+      continue;
+    }
+    const deterministic = deterministicResolution(
+      question,
+      knowledge,
+      input.jurisdictionContext,
+    );
+    if (deterministic?.canonicalConcept) {
+      results.set(question.id, deterministic);
+      continue;
+    }
     const taxonomy =
       question.controlDisposition === "ROLEPROWL_RESOLVED" &&
       !["COMPLIANCE", "DEMOGRAPHIC"].includes(question.group)
@@ -832,20 +855,34 @@ export async function resolveApplicationQuestions(input: {
             questions: input.questions,
           })
         : null;
-    if (taxonomy?.resolution) results.set(question.id, taxonomy.resolution);
-    else {
-      if (taxonomy?.semanticEvidence.length)
-        taxonomyEvidence.set(question.id, taxonomy.semanticEvidence);
-      const resolution = taxonomy
-        ? null
-        : deterministicResolution(
-            question,
-            knowledge,
-            input.jurisdictionContext,
-          );
-      if (resolution) results.set(question.id, resolution);
-      else unknown.push(question);
+    if (taxonomy?.resolution) {
+      results.set(question.id, taxonomy.resolution);
+      continue;
     }
+    if (taxonomy?.semanticEvidence.length) {
+      taxonomyEvidence.set(question.id, taxonomy.semanticEvidence);
+      unknown.push(question);
+      continue;
+    }
+    if (deterministic) {
+      results.set(question.id, deterministic);
+      continue;
+    }
+    const contextual = contextualResolutionAllowed
+      ? resolveExperienceContextualQuestion({
+          question,
+          knowledge,
+          jobContext: input.jobContext,
+          now: input.now,
+        })
+      : null;
+    if (contextual?.resolution) {
+      results.set(question.id, contextual.resolution);
+      continue;
+    }
+    if (contextual?.aiQuestion)
+      contextualAIQuestions.set(question.id, contextual.aiQuestion);
+    unknown.push(question);
   }
   const taxonomyUnknown = unknown.filter((question) =>
     taxonomyEvidence.has(question.id),
@@ -1002,10 +1039,19 @@ export async function resolveApplicationQuestions(input: {
         item.applicationUse === "REUSABLE_ANSWER" &&
         canSupplyToApplicationAI(item) &&
         value
-        ? [{ referenceId: referenceId(item), concept: item.concept, value }]
+        ? [
+            {
+              referenceId: referenceId(item),
+              concept: item.concept,
+              value: value.slice(0, 2_000),
+            },
+          ]
         : [];
     });
-    if (!suppliedKnowledge.length) {
+    const contextualEligible = ordinaryUnknown.filter((question) =>
+      contextualAIQuestions.has(question.id),
+    );
+    if (!suppliedKnowledge.length && !contextualEligible.length) {
       emit({
         status: "NO_ELIGIBLE_QUESTIONS",
         reason: "NO_SAFE_SUPPORTED_CANDIDATE_KNOWLEDGE",
@@ -1049,14 +1095,36 @@ export async function resolveApplicationQuestions(input: {
             correlationId: input.correlationId,
             rateLimitSubject: input.userId,
             input: {
+              mode: "CONTEXTUAL_ORDINARY",
+              jobContext: minimizedApplicationJobContext(input.jobContext),
               questions: ordinaryUnknown.map((question) => ({
                 id: question.id,
                 label: question.label,
                 fieldTypes: question.fieldTypes,
-                options: question.options,
+                optionIdentities: employerQuestionOptions(question),
+                ...(contextualAIQuestions.has(question.id)
+                  ? {
+                      contextualKind: contextualAIQuestions.get(question.id)!
+                        .kind,
+                      proposition: contextualAIQuestions.get(question.id)!
+                        .proposition,
+                      candidateEvidence: contextualAIQuestions
+                        .get(question.id)!
+                        .evidence.map((item) => ({
+                          id: item.id,
+                          type: item.type,
+                          summary: item.summary,
+                          startDate: item.startDate,
+                          endDate: item.endDate,
+                          isCurrent: item.isCurrent,
+                        })),
+                    }
+                  : {}),
               })),
               candidateKnowledge: suppliedKnowledge,
-              allowedConcepts: suppliedKnowledge.map((item) => item.concept),
+              allowedConcepts: [
+                ...new Set(suppliedKnowledge.map((item) => item.concept)),
+              ],
             },
           });
           const byReference = new Map(
@@ -1068,6 +1136,40 @@ export async function resolveApplicationQuestions(input: {
               (item) => item.id === proposal.questionId,
             );
             if (!question || results.has(question.id)) continue;
+            const contextual = contextualAIQuestions.get(question.id);
+            if (contextual) {
+              const references = [
+                ...new Set(proposal.candidateKnowledgeReferences),
+              ];
+              const supported =
+                proposal.supported === true &&
+                proposal.contextualKind === contextual.kind &&
+                proposal.proposition === contextual.proposition &&
+                proposal.confidence >= 0.85 &&
+                references.length ===
+                  proposal.candidateKnowledgeReferences.length &&
+                references.every((id) =>
+                  contextual.evidence.some((item) => item.id === id),
+                );
+              if (!supported) continue;
+              const resolution =
+                contextual.kind === "RELEVANT_EXPERIENCE"
+                  ? relevantExperienceResolution({
+                      question,
+                      evidence: contextual.evidence,
+                      selectedEvidenceIds: references,
+                      now: input.now,
+                    })
+                  : semanticExperienceYesResolution({
+                      question,
+                      evidence: contextual.evidence,
+                      selectedEvidenceIds: references,
+                    });
+              if (!resolution) continue;
+              results.set(question.id, resolution);
+              accepted += 1;
+              continue;
+            }
             const references = proposal.candidateKnowledgeReferences.flatMap(
               (id) => {
                 const item = byReference.get(id);

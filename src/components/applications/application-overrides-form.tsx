@@ -221,6 +221,172 @@ function MultiChoiceInput({
   );
 }
 
+function ProposedTextInput({
+  answer,
+  label,
+  name,
+}: {
+  readonly answer: ApplicationPacketAnswer;
+  readonly label: string;
+  readonly name: string;
+}) {
+  const [decision, setDecision] = useState<"USE" | "ADJUST" | null>(null);
+  const calculated = answer.resolutionReasonCode?.startsWith(
+    "CONTEXTUAL_EXPERIENCE_DURATION",
+  );
+  const longAnswer = !answer.fieldTypes.includes("input_text");
+  return (
+    <fieldset className="field max-w-full min-w-0 md:col-span-2">
+      <legend className="max-w-full break-words">{label}</legend>
+      <div className="grid gap-2 rounded-lg border border-brand p-3 text-sm">
+        <strong>
+          RoleProwl {calculated ? "calculated" : "proposed"}: {answer.value}
+        </strong>
+        <label className="flex items-center gap-2">
+          <input
+            checked={decision === "USE"}
+            className="application-choice-input"
+            name={`proposal-decision:${answer.questionId}`}
+            onChange={() => setDecision("USE")}
+            required
+            type="radio"
+            value="use"
+          />
+          Use this answer
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            checked={decision === "ADJUST"}
+            className="application-choice-input"
+            name={`proposal-decision:${answer.questionId}`}
+            onChange={() => setDecision("ADJUST")}
+            required
+            type="radio"
+            value="adjust"
+          />
+          Adjust
+        </label>
+      </div>
+      {decision === "USE" ? (
+        <input name={name} type="hidden" value={answer.value ?? ""} />
+      ) : null}
+      {decision === "ADJUST" ? (
+        longAnswer ? (
+          <textarea
+            className="max-w-full min-w-0"
+            defaultValue={answer.value ?? ""}
+            maxLength={4_000}
+            name={name}
+            required={answer.required}
+            rows={4}
+          />
+        ) : (
+          <input
+            className="max-w-full min-w-0"
+            defaultValue={answer.value ?? ""}
+            maxLength={4_000}
+            name={name}
+            required={answer.required}
+            type="text"
+          />
+        )
+      ) : null}
+    </fieldset>
+  );
+}
+
+function ProposedSingleChoiceInput({
+  answer,
+  label,
+  name,
+  selectedValue,
+}: {
+  readonly answer: ApplicationPacketAnswer;
+  readonly label: string;
+  readonly name: string;
+  readonly selectedValue: string;
+}) {
+  const [decision, setDecision] = useState<"USE" | "CHOOSE" | null>(null);
+  const choices = answerChoices(answer);
+  const proposedLabel =
+    choices.find((option) => option.value === selectedValue)?.label ??
+    selectedValue;
+  const useRadio = answer.fieldTypes.some((type) =>
+    type.toLocaleLowerCase("en-US").includes("radio"),
+  );
+  return (
+    <fieldset className="field max-w-full min-w-0">
+      <legend className="max-w-full break-words">{label}</legend>
+      <div className="grid gap-2 rounded-lg border border-brand p-3 text-sm">
+        <strong>RoleProwl proposed: {proposedLabel}</strong>
+        <label className="flex items-center gap-2">
+          <input
+            checked={decision === "USE"}
+            className="application-choice-input"
+            name={`proposal-decision:${answer.questionId}`}
+            onChange={() => setDecision("USE")}
+            required
+            type="radio"
+            value="use"
+          />
+          Use this answer
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            checked={decision === "CHOOSE"}
+            className="application-choice-input"
+            name={`proposal-decision:${answer.questionId}`}
+            onChange={() => setDecision("CHOOSE")}
+            required
+            type="radio"
+            value="choose"
+          />
+          Choose another
+        </label>
+      </div>
+      {decision === "USE" ? (
+        <input name={name} type="hidden" value={selectedValue} />
+      ) : null}
+      {decision === "CHOOSE" ? (
+        useRadio ? (
+          <div className="grid gap-1">
+            {choices.map((option) => (
+              <label
+                className="flex min-w-0 items-center gap-2"
+                key={option.value}
+              >
+                <input
+                  className="application-choice-input"
+                  name={name}
+                  required={answer.required}
+                  type="radio"
+                  value={option.value}
+                />
+                <span className="min-w-0 break-words">{option.label}</span>
+              </label>
+            ))}
+          </div>
+        ) : (
+          <select
+            className="max-w-full min-w-0"
+            data-choice-cardinality="single"
+            defaultValue=""
+            name={name}
+            required={answer.required}
+          >
+            <option value="">Choose an answer</option>
+            {choices.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        )
+      ) : null}
+    </fieldset>
+  );
+}
+
 function OverrideInput({ field }: { readonly field: EditableField }) {
   const answer = "questionId" in field ? field : null;
   const name = fieldName(field);
@@ -239,6 +405,18 @@ function OverrideInput({ field }: { readonly field: EditableField }) {
           mismatch={mismatch}
           name={name}
           selectedValues={selectedValues}
+        />
+      );
+    if (
+      answer?.resolutionDisposition === "PROPOSED_FOR_CANDIDATE" &&
+      selectedValues[0]
+    )
+      return (
+        <ProposedSingleChoiceInput
+          answer={answer}
+          label={label}
+          name={name}
+          selectedValue={selectedValues[0]}
         />
       );
     const useRadio = (answer?.fieldTypes ?? []).some((type) =>
@@ -300,6 +478,11 @@ function OverrideInput({ field }: { readonly field: EditableField }) {
       </label>
     );
   }
+  if (
+    answer?.resolutionDisposition === "PROPOSED_FOR_CANDIDATE" &&
+    answer.value
+  )
+    return <ProposedTextInput answer={answer} label={label} name={name} />;
   const isLongAnswer =
     answer && !(answer.fieldTypes ?? []).includes("input_text");
   if (isLongAnswer)

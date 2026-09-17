@@ -935,7 +935,11 @@ function packetFieldForQuestion(
         ? "CANDIDATE_KNOWLEDGE"
         : authoritative.reasonCode.startsWith("EMPLOYER_SPECIFIC_")
           ? "APPLICATION_SPECIFIC"
-          : "UNKNOWN",
+          : authoritative.reasonCode.startsWith("CONTEXTUAL_") ||
+              authoritative.reasonCode.startsWith("EXPLICIT_EXPERIENCE_") ||
+              authoritative.reasonCode.startsWith("SEMANTIC_EXPERIENCE_")
+            ? "CONTEXTUAL_CANDIDATE_EVIDENCE"
+            : "UNKNOWN",
       fieldNames: question.fieldNames,
       fieldTypes: question.fieldTypes,
       options: question.options,

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApplicationPacket } from "@/core/domain/applications/application-packet";
+import type { CandidateKnowledgeConcept } from "@/core/domain/candidate/candidate-knowledge";
 import { AIInvalidOutputError } from "@/core/errors/application-errors";
 
 const {
@@ -171,17 +172,18 @@ const readyPacket = buildApplicationPacket({
 });
 
 function packetForResolution(input: {
-  readonly concept:
-    | "LANGUAGE_PROFICIENCY:english"
-    | "WORK_AUTHORIZATION:BR"
-    | "SPONSORSHIP_REQUIREMENT:BR"
-    | "WORK_AUTHORIZATION:US"
-    | "EDUCATION_HISTORY"
-    | null;
+  readonly concept: CandidateKnowledgeConcept | null;
   readonly disposition:
     "AUTO_RESOLVED" | "CANDIDATE_REQUIRED" | "PROPOSED_FOR_CANDIDATE";
   readonly reasonCode: string;
   readonly value: string | null;
+  readonly label?: string;
+  readonly fieldTypes?: readonly string[];
+  readonly options?: readonly string[];
+  readonly optionIdentities?: readonly {
+    readonly label: string;
+    readonly value: string;
+  }[];
 }) {
   return buildApplicationPacket({
     reviewed: false,
@@ -212,11 +214,12 @@ function packetForResolution(input: {
           id: "question-42",
           source: "GREENHOUSE",
           group: "STANDARD",
-          label: "English proficiency",
+          label: input.label ?? "English proficiency",
           required: true,
           fieldNames: ["english_proficiency"],
-          fieldTypes: ["input_text"],
-          options: [],
+          fieldTypes: input.fieldTypes ?? ["input_text"],
+          options: input.options ?? [],
+          optionIdentities: input.optionIdentities,
         },
       ],
       questionResolutions: [
@@ -757,6 +760,91 @@ describe("application packet actions", () => {
     value.set("answer:question-42", "course-100");
     await saveApplicationOverridesAction(value);
     expect(saveApplicationOverrides).toHaveBeenCalledOnce();
+    expect(saveDirectCandidateKnowledgeBatch).not.toHaveBeenCalled();
+  });
+
+  it("learns the semantic notice-period label instead of an employer raw identity", async () => {
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: {
+        packet: packetForResolution({
+          concept: "NOTICE_PERIOD",
+          disposition: "CANDIDATE_REQUIRED",
+          reasonCode: "CANDIDATE_KNOWLEDGE_MISSING",
+          value: null,
+          label: "Notice period",
+          fieldTypes: ["multi_value_single_select"],
+          options: ["Immediately", "30 days", "60 days"],
+          optionIdentities: [
+            { label: "Immediately", value: "notice-now" },
+            { label: "30 days", value: "notice-30" },
+            { label: "60 days", value: "notice-60" },
+          ],
+        }),
+      },
+    });
+    const value = form();
+    value.set("answer:question-42", "notice-30");
+    await saveApplicationOverridesAction(value);
+    expect(saveDirectCandidateKnowledgeBatch).toHaveBeenCalledWith([
+      {
+        userId: "user-1",
+        concept: "NOTICE_PERIOD",
+        answer: { text: "30 days" },
+        resolvesConflicts: false,
+      },
+    ]);
+    expect(saveApplicationOverrides).not.toHaveBeenCalled();
+  });
+
+  it("keeps contextual relevant-experience answers Application-scoped", async () => {
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: {
+        packet: packetForResolution({
+          concept: null,
+          disposition: "PROPOSED_FOR_CANDIDATE",
+          reasonCode: "CONTEXTUAL_EXPERIENCE_DURATION_APPROVAL_REQUIRED",
+          value: "3 years",
+          label: "Years of experience relevant to this position",
+        }),
+      },
+    });
+    const value = form();
+    value.set("answer:question-42", "3 years");
+    await saveApplicationOverridesAction(value);
+    expect(saveApplicationOverrides).toHaveBeenCalledWith(
+      expect.objectContaining({
+        answers: [{ key: "question-42", value: "3 years" }],
+      }),
+    );
+    expect(saveDirectCandidateKnowledgeBatch).not.toHaveBeenCalled();
+  });
+
+  it("does not replace a rich current location with an ambiguous Country confirmation", async () => {
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: {
+        packet: packetForResolution({
+          concept: "CURRENT_LOCATION",
+          disposition: "PROPOSED_FOR_CANDIDATE",
+          reasonCode: "AMBIGUOUS_COUNTRY_APPROVAL_REQUIRED",
+          value: "country-br",
+          label: "Country",
+          fieldTypes: ["multi_value_single_select"],
+          options: ["Brazil", "United States"],
+          optionIdentities: [
+            { label: "Brazil", value: "country-br" },
+            { label: "United States", value: "country-us" },
+          ],
+        }),
+      },
+    });
+    const value = form();
+    value.set("answer:question-42", "country-br");
+    await saveApplicationOverridesAction(value);
+    expect(saveApplicationOverrides).toHaveBeenCalledWith(
+      expect.objectContaining({
+        answers: [{ key: "question-42", value: "country-br" }],
+      }),
+    );
     expect(saveDirectCandidateKnowledgeBatch).not.toHaveBeenCalled();
   });
 

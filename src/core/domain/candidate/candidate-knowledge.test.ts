@@ -66,6 +66,7 @@ describe("candidate knowledge coverage", () => {
           applicationEmail: "maya@example.test",
           phone: "+1 555 0142",
           location: null,
+          countryCode: "DE",
           linkedInUrl: "https://linkedin.com/in/maya",
           websiteUrl: "https://maya.example.test",
         },
@@ -83,6 +84,31 @@ describe("candidate knowledge coverage", () => {
       });
     },
   );
+
+  it("projects an explicit profile country code into current-location knowledge", () => {
+    const evidence = evidenceFromCandidateSources({
+      ...emptySources(),
+      profile: {
+        id: "profile-1",
+        updatedAt: now,
+        firstName: "Maya",
+        lastName: "Chen",
+        applicationEmail: "maya@example.test",
+        phone: null,
+        location: "Berlin",
+        countryCode: "de",
+        linkedInUrl: null,
+        websiteUrl: null,
+      },
+    });
+    expect(
+      resolveCandidateKnowledge({
+        concept: "CURRENT_LOCATION",
+        evidence,
+        now,
+      }).value,
+    ).toEqual({ text: "Berlin", countryCode: "DE" });
+  });
 
   it("preserves structured education discipline and explicit completion evidence", () => {
     const evidence = evidenceFromCandidateSources({
@@ -114,6 +140,53 @@ describe("candidate knowledge coverage", () => {
           status: "Graduated",
           endDate: "2024-12-01T00:00:00.000Z",
         }),
+      ],
+    });
+  });
+
+  it("preserves bounded employment dates and role evidence for contextual questions", () => {
+    const evidence = evidenceFromCandidateSources({
+      ...emptySources(),
+      experiences: [
+        {
+          id: "experience-1",
+          updatedAt: now,
+          employer: "Example",
+          title: "Security Engineer",
+          employmentType: "FULL_TIME",
+          location: "São Paulo, Brazil",
+          description: "Cloud security and Python automation",
+          responsibilities: ["Led security reviews"],
+          achievements: ["Reduced incident response time"],
+          startDate: new Date("2023-01-01T00:00:00.000Z"),
+          endDate: new Date("2025-01-01T00:00:00.000Z"),
+          isCurrent: false,
+          unrelatedPrivateField: "must not be projected",
+        },
+      ],
+    });
+    expect(
+      resolveCandidateKnowledge({
+        concept: "EMPLOYMENT_HISTORY",
+        evidence,
+        now,
+      }).value,
+    ).toEqual({
+      items: [
+        {
+          identity: "experience-1",
+          text: "Security Engineer — Example",
+          employer: "Example",
+          title: "Security Engineer",
+          employmentType: "FULL_TIME",
+          location: "São Paulo, Brazil",
+          description: "Cloud security and Python automation",
+          responsibilities: ["Led security reviews"],
+          achievements: ["Reduced incident response time"],
+          startDate: "2023-01-01T00:00:00.000Z",
+          endDate: "2025-01-01T00:00:00.000Z",
+          isCurrent: false,
+        },
       ],
     });
   });
@@ -182,6 +255,9 @@ describe("candidate knowledge coverage", () => {
   it("does not globalize employer-specific answers", () => {
     expect(isCandidateKnowledgeConcept("WHY_COMPANY_X")).toBe(false);
     expect(isCandidateKnowledgeConcept("EMPLOYER_PRIVACY_CONSENT")).toBe(false);
+    expect(isCandidateKnowledgeConcept("EXPERIENCE_ASSERTION:python")).toBe(
+      false,
+    );
   });
 
   it("does not infer English fluency from the language of a résumé", () => {

@@ -20,6 +20,7 @@ import {
   fanOutCompatibleApplicationAnswers,
   isApplicationPacket,
   validatedApplicationAnswerValue,
+  type ApplicationPacketAnswer,
 } from "@/core/domain/applications/application-packet";
 import {
   AIInvalidOutputError,
@@ -93,6 +94,59 @@ function evidenceLabel(factType: string) {
     .replace(/_TEXT$/u, "")
     .replaceAll("_", " ")
     .toLocaleLowerCase("en-US")}`;
+}
+
+function reusableAnswerText(answer: ApplicationPacketAnswer, value: string) {
+  const values = (() => {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return Array.isArray(parsed) &&
+        parsed.every((item) => typeof item === "string")
+        ? parsed
+        : [value];
+    } catch {
+      return [value];
+    }
+  })();
+  const identities = answer.optionIdentities ?? [];
+  const labels = values.map(
+    (candidate) =>
+      identities.find((option) => option.value === candidate)?.label ??
+      candidate,
+  );
+  return labels.join(", ");
+}
+
+function reusableAnswerPayload(answer: ApplicationPacketAnswer, value: string) {
+  const text = reusableAnswerText(answer, value);
+  if (
+    answer.canonicalConcept !== "CURRENT_COMPENSATION" &&
+    answer.canonicalConcept !== "DESIRED_SALARY"
+  )
+    return { text };
+  const searchable = `${answer.label} ${text}`
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .toLocaleLowerCase("en-US");
+  const numeric = text.replace(/[^\d.,]/gu, "").replaceAll(",", "");
+  const amount = numeric ? Number(numeric) : NaN;
+  const currency = /\b(?:usd|us dollar|dollars?)\b/u.test(searchable)
+    ? "USD"
+    : /\b(?:brl|real|reais)\b|r\$/u.test(searchable)
+      ? "BRL"
+      : /\b(?:eur|euro|euros)\b/u.test(searchable)
+        ? "EUR"
+        : null;
+  const period = /\b(?:annual|annually|year|yearly|ano|anual)\b/u.test(
+    searchable,
+  )
+    ? "annual"
+    : /\b(?:month|monthly|mes|mensal)\b/u.test(searchable)
+      ? "monthly"
+      : null;
+  return Number.isFinite(amount) && currency && period
+    ? { amount, currency, period }
+    : { text };
 }
 
 function coverLetterFailure(error: unknown): CoverLetterGenerationActionState {
@@ -423,6 +477,8 @@ export async function saveApplicationOverridesAction(formData: FormData) {
       concept &&
       policy?.reusableForEmployerQuestions &&
       packetAnswer?.resolutionReasonCode !== "EMPLOYER_SPECIFIC_ANSWER" &&
+      packetAnswer?.resolutionReasonCode !==
+        "AMBIGUOUS_COUNTRY_APPROVAL_REQUIRED" &&
       !packetAnswer?.resolutionReasonCode?.includes("TAXONOMY") &&
       packetAnswer?.resolutionDisposition !== "AUTO_RESOLVED" &&
       packetAnswer?.resolutionDisposition !== "HUMAN_REQUIRED"
@@ -430,7 +486,7 @@ export async function saveApplicationOverridesAction(formData: FormData) {
           {
             userId: actor.id,
             concept,
-            answer: { text: answer.value },
+            answer: reusableAnswerPayload(packetAnswer, answer.value),
             resolvesConflicts:
               packetAnswer.resolutionReasonCode ===
               "CANDIDATE_KNOWLEDGE_CONFLICT",

@@ -189,6 +189,47 @@ describe("application override dirty state", () => {
     expect(markup).not.toContain('data-bounded-choice-list="true"');
   });
 
+  it("keeps a proposed single-choice answer collapsed until the candidate decides", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ApplicationOverridesForm, {
+        applicationId: "application-1",
+        saveAction: async () => undefined,
+        fields: [
+          {
+            key: "question:experience",
+            questionId: "experience",
+            questionGroup: "STANDARD",
+            label: "Years of relevant experience",
+            required: true,
+            status: "UNRESOLVED",
+            value: "range-3-5",
+            provenance: [],
+            classification: "CONTEXTUAL_CANDIDATE_EVIDENCE",
+            fieldNames: ["relevant_experience"],
+            fieldTypes: ["multi_value_single_select"],
+            options: ["0-1 years", "1-3 years", "3-5 years", "5+ years"],
+            optionIdentities: [
+              { label: "0-1 years", value: "range-0-1" },
+              { label: "1-3 years", value: "range-1-3" },
+              { label: "3-5 years", value: "range-3-5" },
+              { label: "5+ years", value: "range-5-plus" },
+            ],
+            resolutionDisposition: "PROPOSED_FOR_CANDIDATE",
+            canonicalConcept: null,
+            resolutionReasonCode:
+              "CONTEXTUAL_EXPERIENCE_DURATION_APPROVAL_REQUIRED",
+          },
+        ],
+      }),
+    );
+
+    expect(markup).toContain("RoleProwl proposed: 3-5 years");
+    expect(markup).toContain("Use this answer");
+    expect(markup).toContain("Choose another");
+    expect(markup).not.toContain('name="answer:experience"');
+    expect(markup.match(/required=""/gu)).toHaveLength(2);
+  });
+
   it("renders large unresolved taxonomies as searchable bounded raw-identity choices", () => {
     const options = Array.from({ length: 13 }, (_, index) => ({
       label: `Course ${index + 1}`,

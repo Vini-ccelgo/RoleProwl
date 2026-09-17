@@ -137,10 +137,10 @@ export const aiTaskDefinitions = {
     }),
   },
   APPLICATION_QUESTION_RESOLUTION: {
-    promptVersion: "application-question-resolution-v2",
+    promptVersion: "application-question-resolution-v3",
     schemaName: "application_question_resolutions",
     system:
-      "Map only the supplied ordinary employer questions to allowedConcepts and supplied candidateKnowledge. For CHOICE_TAXONOMY mode, select only exact supplied raw option values and report whether meaningful ambiguity requires candidate confirmation. A proposed value must be a faithful direct value or bounded reformulation supported by every listed candidateKnowledgeReference. Never invent facts, upgrade qualifications, completion, proficiency, or experience, infer negative personal facts, compensation, work authorization, sponsorship, consent, or employer relationships, or answer employer-specific motivation. Return no resolution when the supplied knowledge is insufficient.",
+      "Map only the supplied ordinary employer questions to supplied evidence. For CHOICE_TAXONOMY mode, select only exact supplied raw option values. For CONTEXTUAL_ORDINARY experience questions, return supported=true only when the proposition is supported by supplied evidence IDs; select existing experience IDs for relevance, but never calculate or emit duration. A proposed value must be a faithful direct value or bounded reformulation supported by every listed reference. Never invent facts, evidence IDs, dates, duration, qualifications, completion, proficiency, negative personal facts, compensation, authorization, sponsorship, consent, or employer relationships. Return supported=false or no resolution when evidence is insufficient.",
     schema: z.object({
       resolutions: z
         .array(
@@ -153,6 +153,11 @@ export const aiTaskDefinitions = {
               .max(8)
               .optional(),
             requiresCandidateConfirmation: z.boolean().optional(),
+            contextualKind: z
+              .enum(["RELEVANT_EXPERIENCE", "EXPERIENCE_PREDICATE"])
+              .optional(),
+            proposition: z.string().max(1_000).optional(),
+            supported: z.boolean().optional(),
             candidateKnowledgeReferences: z.array(z.string().max(512)).max(8),
             confidence: z.number().min(0).max(1),
           }),

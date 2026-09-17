@@ -17,6 +17,7 @@ export interface CandidateKnowledgeSources {
         readonly applicationEmail: string | null;
         readonly phone: string | null;
         readonly location: string | null;
+        readonly countryCode?: string | null;
         readonly websiteUrl: string | null;
         readonly linkedInUrl: string | null;
       })
@@ -105,7 +106,7 @@ function scalarEvidence(input: {
     value:
       typeof input.value === "string"
         ? { text: input.value.trim() }
-        : { value: input.value },
+        : (record(input.value) ?? { value: input.value }),
   });
 }
 
@@ -192,6 +193,46 @@ function collectionRecordValue(
   const base = summary
     ? { identity: value.id, text: summary }
     : { identity: value.id };
+  if (concept === "EMPLOYMENT_HISTORY")
+    return {
+      ...base,
+      ...Object.fromEntries(
+        [
+          "employer",
+          "title",
+          "employmentType",
+          "location",
+          "description",
+        ].flatMap((key) => {
+          const candidate = value[key];
+          return typeof candidate === "string" && candidate.trim()
+            ? [[key, candidate.trim()]]
+            : [];
+        }),
+      ),
+      ...Object.fromEntries(
+        ["responsibilities", "achievements"].flatMap((key) => {
+          const candidate = value[key];
+          return Array.isArray(candidate) &&
+            candidate.every((item) => typeof item === "string")
+            ? [[key, candidate.map((item) => item.trim()).filter(Boolean)]]
+            : [];
+        }),
+      ),
+      ...(value.startDate instanceof Date
+        ? { startDate: value.startDate.toISOString() }
+        : typeof value.startDate === "string" && value.startDate.trim()
+          ? { startDate: value.startDate.trim() }
+          : {}),
+      ...(value.endDate instanceof Date
+        ? { endDate: value.endDate.toISOString() }
+        : typeof value.endDate === "string" && value.endDate.trim()
+          ? { endDate: value.endDate.trim() }
+          : {}),
+      ...(typeof value.isCurrent === "boolean"
+        ? { isCurrent: value.isCurrent }
+        : {}),
+    };
   if (concept !== "EDUCATION_HISTORY") return base;
   return {
     ...base,
@@ -222,7 +263,17 @@ export function evidenceFromCandidateSources(
       ["LAST_NAME", profile.lastName],
       ["APPLICATION_EMAIL", profile.applicationEmail],
       ["PHONE", profile.phone],
-      ["CURRENT_LOCATION", profile.location],
+      [
+        "CURRENT_LOCATION",
+        profile.location || profile.countryCode
+          ? {
+              ...(profile.location ? { text: profile.location } : {}),
+              ...(profile.countryCode
+                ? { countryCode: profile.countryCode.toUpperCase() }
+                : {}),
+            }
+          : null,
+      ],
       ["WEBSITE_URL", profile.websiteUrl],
       ["LINKEDIN_URL", profile.linkedInUrl],
     ] as const;

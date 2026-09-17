@@ -78,6 +78,9 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
         job: {
           select: {
             locations: true,
+            preferredRequirements: true,
+            requirements: true,
+            skills: true,
             title: true,
             sourceRecords: {
               orderBy: { lastSeenAt: "desc" },
@@ -241,6 +244,12 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
               (location): location is string => typeof location === "string",
             )
           : null,
+      },
+      jobContext: {
+        title: application.job.title,
+        requirements: application.job.requirements,
+        preferredRequirements: application.job.preferredRequirements,
+        skills: application.job.skills,
       },
       questions: questions.map((question) => ({
         ...question,
