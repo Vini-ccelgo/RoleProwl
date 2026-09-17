@@ -232,6 +232,7 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
     const professionalTitle = currentValue("TARGET_ROLE");
     const questionResolutions = await resolveApplicationQuestions({
       aiFactory: this.aiProvider,
+      applicationAnswers: applicationOverrides.answers,
       correlationId: application.id,
       knowledge: candidateKnowledge,
       jurisdictionContext: {

@@ -423,6 +423,7 @@ export async function saveApplicationOverridesAction(formData: FormData) {
       concept &&
       policy?.reusableForEmployerQuestions &&
       packetAnswer?.resolutionReasonCode !== "EMPLOYER_SPECIFIC_ANSWER" &&
+      !packetAnswer?.resolutionReasonCode?.includes("TAXONOMY") &&
       packetAnswer?.resolutionDisposition !== "AUTO_RESOLVED" &&
       packetAnswer?.resolutionDisposition !== "HUMAN_REQUIRED"
       ? [

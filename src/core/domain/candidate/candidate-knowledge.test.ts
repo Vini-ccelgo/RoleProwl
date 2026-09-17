@@ -84,6 +84,40 @@ describe("candidate knowledge coverage", () => {
     },
   );
 
+  it("preserves structured education discipline and explicit completion evidence", () => {
+    const evidence = evidenceFromCandidateSources({
+      ...emptySources(),
+      education: [
+        {
+          id: "education-1",
+          updatedAt: now,
+          institution: "Example University",
+          credential: "Bachelor's degree",
+          program: "Computer Science",
+          status: "Graduated",
+          endDate: new Date("2024-12-01T00:00:00.000Z"),
+        },
+      ],
+    });
+    expect(
+      resolveCandidateKnowledge({
+        concept: "EDUCATION_HISTORY",
+        evidence,
+        now,
+      }).value,
+    ).toEqual({
+      items: [
+        expect.objectContaining({
+          identity: "education-1",
+          credential: "Bachelor's degree",
+          program: "Computer Science",
+          status: "Graduated",
+          endDate: "2024-12-01T00:00:00.000Z",
+        }),
+      ],
+    });
+  });
+
   it("allows explicit and faithful derived evidence to satisfy coverage", () => {
     expect(
       resolveCandidateKnowledge({

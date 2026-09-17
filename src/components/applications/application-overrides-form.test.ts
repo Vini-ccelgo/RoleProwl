@@ -153,6 +153,76 @@ describe("application override dirty state", () => {
     expect(markup).toContain("overflow-y-auto");
   });
 
+  it("collapses a taxonomy proposal behind an explicit candidate decision", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ApplicationOverridesForm, {
+        applicationId: "application-1",
+        saveAction: async () => undefined,
+        fields: [
+          {
+            key: "question:course",
+            questionId: "course",
+            questionGroup: "STANDARD",
+            label: "Degree course",
+            required: true,
+            status: "UNRESOLVED",
+            value: '["course-42"]',
+            provenance: [],
+            classification: "CANDIDATE_KNOWLEDGE",
+            fieldNames: ["course[]"],
+            fieldTypes: ["multi_value_multi_select"],
+            options: ["NA", "Computer Science"],
+            optionIdentities: [
+              { label: "NA", value: "na-id" },
+              { label: "Computer Science", value: "course-42" },
+            ],
+            resolutionDisposition: "PROPOSED_FOR_CANDIDATE",
+            canonicalConcept: "EDUCATION_HISTORY",
+          },
+        ],
+      }),
+    );
+
+    expect(markup).toContain("RoleProwl matched: Computer Science");
+    expect(markup).toContain("Use this answer");
+    expect(markup).toContain("Choose another");
+    expect(markup).not.toContain('data-bounded-choice-list="true"');
+  });
+
+  it("renders large unresolved taxonomies as searchable bounded raw-identity choices", () => {
+    const options = Array.from({ length: 13 }, (_, index) => ({
+      label: `Course ${index + 1}`,
+      value: `raw-course-${index + 1}`,
+    }));
+    const markup = renderToStaticMarkup(
+      createElement(ApplicationOverridesForm, {
+        applicationId: "application-1",
+        saveAction: async () => undefined,
+        fields: [
+          {
+            key: "question:course",
+            questionId: "course",
+            questionGroup: "STANDARD",
+            label: "Degree course",
+            required: true,
+            status: "UNRESOLVED",
+            value: null,
+            provenance: [],
+            classification: "CANDIDATE_KNOWLEDGE",
+            fieldNames: ["course[]"],
+            fieldTypes: ["multi_value_multi_select"],
+            options: options.map((option) => option.label),
+            optionIdentities: options,
+          },
+        ],
+      }),
+    );
+    expect(markup).toContain("Search employer options");
+    expect(markup).toContain('type="search"');
+    expect(markup).toContain('data-bounded-choice-list="true"');
+    expect(markup).toContain('value="raw-course-13"');
+  });
+
   it("compares repeated selections as one canonical application answer", () => {
     const current = new FormData();
     current.append("answer:locations", "");

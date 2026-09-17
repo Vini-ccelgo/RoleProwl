@@ -19,7 +19,9 @@ import type {
   ResolvableApplicationQuestion,
 } from "@/core/domain/applications/application-question-resolution";
 import type { PublicApplicationQuestion } from "@/core/domain/applications/public-application-question";
+import { encodedApplicationAnswer } from "@/core/domain/applications/application-packet";
 import { aiTaskDefinitions } from "@/features/ai/task-definitions";
+import { resolveChoiceTaxonomyDeterministically } from "@/features/applications/resolve-choice-taxonomy";
 import type { Logger } from "@/lib/logging/logger";
 
 export type {
@@ -752,6 +754,7 @@ export async function resolveApplicationQuestions(input: {
   readonly correlationId: string;
   readonly knowledge: readonly CandidateKnowledgeQueryResult[];
   readonly jurisdictionContext?: ApplicationJurisdictionContext;
+  readonly applicationAnswers?: Readonly<Record<string, string>>;
   readonly questions: readonly ResolvableApplicationQuestion[];
   readonly userId: string;
   readonly log?: Logger;
@@ -797,21 +800,199 @@ export async function resolveApplicationQuestions(input: {
   }
   const results = new Map<string, ApplicationQuestionResolution>();
   const unknown: ResolvableApplicationQuestion[] = [];
+  const taxonomyEvidence = new Map<
+    string,
+    readonly {
+      readonly autoResolve: boolean;
+      readonly concept: CandidateKnowledgeConcept;
+      readonly referenceId: string;
+      readonly value: string;
+    }[]
+  >();
   for (const question of input.questions) {
-    const resolution = deterministicResolution(
-      question,
-      knowledge,
-      input.jurisdictionContext,
-    );
-    if (resolution) results.set(question.id, resolution);
-    else unknown.push(question);
+    const applicationAnswer = input.applicationAnswers?.[question.id];
+    if (applicationAnswer) {
+      results.set(question.id, {
+        questionId: question.id,
+        canonicalConcept: null,
+        disposition: "AUTO_RESOLVED",
+        value: applicationAnswer,
+        candidateKnowledgeReferences: [],
+        reasonCode: "APPLICATION_OVERRIDE",
+      });
+      continue;
+    }
+    const taxonomy =
+      question.controlDisposition === "ROLEPROWL_RESOLVED" &&
+      !["COMPLIANCE", "DEMOGRAPHIC"].includes(question.group)
+        ? resolveChoiceTaxonomyDeterministically({
+            applicationAnswers: input.applicationAnswers,
+            knowledge,
+            question,
+            questions: input.questions,
+          })
+        : null;
+    if (taxonomy?.resolution) results.set(question.id, taxonomy.resolution);
+    else {
+      if (taxonomy?.semanticEvidence.length)
+        taxonomyEvidence.set(question.id, taxonomy.semanticEvidence);
+      const resolution = taxonomy
+        ? null
+        : deterministicResolution(
+            question,
+            knowledge,
+            input.jurisdictionContext,
+          );
+      if (resolution) results.set(question.id, resolution);
+      else unknown.push(question);
+    }
   }
-  if (!unknown.length) {
-    emit({
-      status: "NO_ELIGIBLE_QUESTIONS",
-      reason: "ALL_QUESTIONS_DETERMINISTICALLY_CLASSIFIED",
-      questionCount: 0,
-    });
+  const taxonomyUnknown = unknown.filter((question) =>
+    taxonomyEvidence.has(question.id),
+  );
+  if (taxonomyUnknown.length) {
+    const supplied = [
+      ...new Map(
+        taxonomyUnknown
+          .flatMap((question) => taxonomyEvidence.get(question.id) ?? [])
+          .map((item) => [item.referenceId, item]),
+      ).values(),
+    ];
+    let ai = input.ai;
+    try {
+      ai ??= input.aiFactory?.();
+      if (!ai) throw new ConfigurationError("AI provider unavailable.");
+      const definition = aiTaskDefinitions.APPLICATION_QUESTION_RESOLUTION;
+      const generated = await ai.generateStructured({
+        ...definition,
+        task: "APPLICATION_QUESTION_RESOLUTION",
+        dataClassification: "REAL_CANDIDATE",
+        correlationId: input.correlationId,
+        rateLimitSubject: input.userId,
+        input: {
+          mode: "CHOICE_TAXONOMY",
+          questions: taxonomyUnknown.map((question) => ({
+            id: question.id,
+            label: question.label,
+            fieldTypes: question.fieldTypes,
+            optionIdentities: (question.optionIdentities?.length
+              ? question.optionIdentities
+              : question.options.map((option) => ({
+                  label: option,
+                  value: option,
+                }))
+            ).map((option) => ({
+              label: option.label,
+              value: option.value,
+            })),
+            candidateKnowledge: (taxonomyEvidence.get(question.id) ?? []).map(
+              ({ referenceId, concept, value }) => ({
+                referenceId,
+                concept,
+                value,
+              }),
+            ),
+          })),
+          allowedConcepts: [...new Set(supplied.map((item) => item.concept))],
+        },
+      });
+      let accepted = 0;
+      for (const proposal of generated.data.resolutions) {
+        const question = taxonomyUnknown.find(
+          (candidate) => candidate.id === proposal.questionId,
+        );
+        if (!question || results.has(question.id)) continue;
+        const evidence = taxonomyEvidence.get(question.id) ?? [];
+        const proposedReferences = [
+          ...new Set(proposal.candidateKnowledgeReferences),
+        ];
+        const referenced = proposedReferences.flatMap((id) =>
+          evidence.filter((item) => item.referenceId === id),
+        );
+        const allowedOptions = question.optionIdentities?.length
+          ? question.optionIdentities
+          : question.options.map((option) => ({
+              label: option,
+              value: option,
+            }));
+        const selected = [...new Set(proposal.selectedOptionValues ?? [])];
+        const grounded =
+          proposal.canonicalConcept === "EDUCATION_HISTORY" &&
+          referenced.length > 0 &&
+          proposedReferences.length ===
+            proposal.candidateKnowledgeReferences.length &&
+          referenced.length === proposedReferences.length &&
+          selected.length > 0 &&
+          selected.length <= referenced.length &&
+          selected.every((value) =>
+            allowedOptions.some((option) => option.value === value),
+          );
+        if (!grounded) continue;
+        const autoResolved =
+          proposal.confidence >= 0.95 &&
+          proposal.requiresCandidateConfirmation === false &&
+          referenced.every((item) => item.autoResolve);
+        results.set(question.id, {
+          questionId: question.id,
+          canonicalConcept: "EDUCATION_HISTORY",
+          disposition: autoResolved
+            ? "AUTO_RESOLVED"
+            : "PROPOSED_FOR_CANDIDATE",
+          value: question.fieldTypes.includes("multi_value_multi_select")
+            ? JSON.stringify(selected)
+            : encodedApplicationAnswer(selected),
+          candidateKnowledgeReferences: referenced.map(
+            (item) => item.referenceId,
+          ),
+          reasonCode: autoResolved
+            ? "SEMANTIC_TAXONOMY_MATCH"
+            : "SEMANTIC_TAXONOMY_APPROVAL_REQUIRED",
+        });
+        accepted += 1;
+      }
+      emit({
+        status: accepted ? "RESULTS_PROPOSED" : "NO_SUPPORTED_RESULTS",
+        reason: accepted
+          ? "GROUNDED_TAXONOMY_RESULTS"
+          : "ALL_TAXONOMY_RESULTS_REJECTED",
+        questionCount: taxonomyUnknown.length,
+        resultCount: accepted,
+        provider: generated.metadata.provider,
+        model: generated.metadata.model,
+        retryCount: generated.metadata.retryCount,
+      });
+    } catch (error) {
+      emit({
+        status:
+          error instanceof ConfigurationError
+            ? "PROVIDER_DISABLED"
+            : error instanceof AIDataPolicyError
+              ? "POLICY_BLOCKED"
+              : error instanceof AIInvalidOutputError
+                ? "INVALID_PROVIDER_OUTPUT"
+                : "PROVIDER_FAILED",
+        reason:
+          error instanceof ConfigurationError
+            ? "PROVIDER_CONFIGURATION_UNAVAILABLE"
+            : error instanceof AIDataPolicyError
+              ? "REAL_CANDIDATE_DATA_POLICY_BLOCKED"
+              : error instanceof AIInvalidOutputError
+                ? "STRUCTURED_OUTPUT_INVALID"
+                : "PROVIDER_REQUEST_FAILED",
+        questionCount: taxonomyUnknown.length,
+      });
+    }
+  }
+  const ordinaryUnknown = unknown.filter(
+    (question) => !taxonomyEvidence.has(question.id),
+  );
+  if (!ordinaryUnknown.length) {
+    if (!unknown.length)
+      emit({
+        status: "NO_ELIGIBLE_QUESTIONS",
+        reason: "ALL_QUESTIONS_DETERMINISTICALLY_CLASSIFIED",
+        questionCount: 0,
+      });
   } else {
     const suppliedKnowledge = input.knowledge.flatMap((item) => {
       const value = candidateKnowledgeDisplayValue(item.value);
@@ -828,7 +1009,7 @@ export async function resolveApplicationQuestions(input: {
       emit({
         status: "NO_ELIGIBLE_QUESTIONS",
         reason: "NO_SAFE_SUPPORTED_CANDIDATE_KNOWLEDGE",
-        questionCount: unknown.length,
+        questionCount: ordinaryUnknown.length,
       });
     } else {
       let ai = input.ai;
@@ -846,7 +1027,7 @@ export async function resolveApplicationQuestions(input: {
             error instanceof ConfigurationError
               ? "PROVIDER_CONFIGURATION_UNAVAILABLE"
               : "PROVIDER_CONSTRUCTION_FAILED",
-          questionCount: unknown.length,
+          questionCount: ordinaryUnknown.length,
         });
       }
       if (!ai) {
@@ -856,7 +1037,7 @@ export async function resolveApplicationQuestions(input: {
             reason: input.aiFactory
               ? "PROVIDER_CONFIGURATION_UNAVAILABLE"
               : "NO_PROVIDER_CONFIGURED",
-            questionCount: unknown.length,
+            questionCount: ordinaryUnknown.length,
           });
       } else
         try {
@@ -868,7 +1049,7 @@ export async function resolveApplicationQuestions(input: {
             correlationId: input.correlationId,
             rateLimitSubject: input.userId,
             input: {
-              questions: unknown.map((question) => ({
+              questions: ordinaryUnknown.map((question) => ({
                 id: question.id,
                 label: question.label,
                 fieldTypes: question.fieldTypes,
@@ -883,7 +1064,7 @@ export async function resolveApplicationQuestions(input: {
           );
           let accepted = 0;
           for (const proposal of generated.data.resolutions) {
-            const question = unknown.find(
+            const question = ordinaryUnknown.find(
               (item) => item.id === proposal.questionId,
             );
             if (!question || results.has(question.id)) continue;
@@ -931,7 +1112,7 @@ export async function resolveApplicationQuestions(input: {
               : generated.data.resolutions.length
                 ? "ALL_RESULTS_REJECTED"
                 : "PROVIDER_RETURNED_NO_RESULTS",
-            questionCount: unknown.length,
+            questionCount: ordinaryUnknown.length,
             resultCount: accepted,
             provider: generated.metadata.provider,
             model: generated.metadata.model,
@@ -951,7 +1132,7 @@ export async function resolveApplicationQuestions(input: {
                 : error instanceof AIInvalidOutputError
                   ? "STRUCTURED_OUTPUT_INVALID"
                   : "PROVIDER_REQUEST_FAILED",
-            questionCount: unknown.length,
+            questionCount: ordinaryUnknown.length,
           });
         }
     }

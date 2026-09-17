@@ -11,6 +11,10 @@ import {
   applicationAnswerValues,
   encodedApplicationAnswer,
 } from "@/core/domain/applications/application-packet";
+import {
+  exclusiveChoiceValues,
+  normalizedChoiceText,
+} from "@/core/domain/applications/choice-taxonomy";
 
 type EditableField = ApplicationPacketField | ApplicationPacketAnswer;
 
@@ -79,7 +83,30 @@ function MultiChoiceInput({
   readonly selectedValues: readonly string[];
 }) {
   const choices = answerChoices(answer);
-  const [selected, setSelected] = useState(() => new Set(selectedValues));
+  const proposed =
+    answer.resolutionDisposition === "PROPOSED_FOR_CANDIDATE" &&
+    selectedValues.length > 0;
+  const [decision, setDecision] = useState<"USE" | "CHOOSE" | null>(
+    proposed ? null : "CHOOSE",
+  );
+  const [selected, setSelected] = useState(
+    () => new Set(proposed ? [] : selectedValues),
+  );
+  const [filter, setFilter] = useState("");
+  const exclusive = exclusiveChoiceValues(choices);
+  const matchingChoices = filter
+    ? choices.filter((option) =>
+        normalizedChoiceText(option.label).includes(
+          normalizedChoiceText(filter),
+        ),
+      )
+    : choices;
+  const visibleChoices = matchingChoices.length ? matchingChoices : choices;
+  const noFilterMatches = Boolean(filter) && matchingChoices.length === 0;
+  const suggestedLabels = choices
+    .filter((option) => selectedValues.includes(option.value))
+    .map((option) => option.label);
+  const expanded = !proposed || decision === "CHOOSE";
 
   return (
     <fieldset
@@ -94,37 +121,99 @@ function MultiChoiceInput({
           explicitly.
         </small>
       ) : null}
-      <div
-        className="border-border grid max-h-64 gap-1 overflow-y-auto rounded-lg border p-2"
-        data-bounded-choice-list="true"
-      >
-        {choices.map((option, index) => (
-          <label
-            className="flex min-w-0 items-start gap-2 rounded px-1 py-1 text-sm"
-            key={option.value}
-          >
+      {proposed ? (
+        <div className="grid gap-2 rounded-lg border border-brand p-3 text-sm">
+          <strong>RoleProwl matched: {suggestedLabels.join(", ")}</strong>
+          <label className="flex items-center gap-2">
             <input
+              checked={decision === "USE"}
               className="application-choice-input"
-              checked={selected.has(option.value)}
-              name={name}
-              onChange={(event) => {
-                const next = new Set(selected);
-                if (event.currentTarget.checked) next.add(option.value);
-                else next.delete(option.value);
-                setSelected(next);
+              name={`taxonomy-decision:${answer.questionId}`}
+              onChange={() => {
+                setDecision("USE");
+                setSelected(new Set(selectedValues));
               }}
-              required={
-                (answer.required || mismatch) &&
-                selected.size === 0 &&
-                index === 0
-              }
-              type="checkbox"
-              value={option.value}
+              required
+              type="radio"
+              value="use"
             />
-            <span className="min-w-0 break-words">{option.label}</span>
+            Use this answer
           </label>
-        ))}
-      </div>
+          <label className="flex items-center gap-2">
+            <input
+              checked={decision === "CHOOSE"}
+              className="application-choice-input"
+              name={`taxonomy-decision:${answer.questionId}`}
+              onChange={() => {
+                setDecision("CHOOSE");
+                setSelected(new Set());
+              }}
+              required
+              type="radio"
+              value="choose"
+            />
+            Choose another
+          </label>
+        </div>
+      ) : null}
+      {decision === "USE"
+        ? selectedValues.map((value) => (
+            <input key={value} name={name} type="hidden" value={value} />
+          ))
+        : null}
+      {expanded && choices.length > 12 ? (
+        <label className="grid gap-1 text-sm">
+          <span className="font-semibold">Search employer options</span>
+          <input
+            className="max-w-full min-w-0"
+            onChange={(event) => setFilter(event.currentTarget.value)}
+            placeholder="Type to filter choices"
+            type="search"
+            value={filter}
+          />
+        </label>
+      ) : null}
+      {expanded ? (
+        <>
+          {noFilterMatches ? (
+            <small>No matching option. Showing all employer options.</small>
+          ) : null}
+          <div
+            className="border-border grid max-h-64 gap-1 overflow-y-auto rounded-lg border p-2"
+            data-bounded-choice-list="true"
+          >
+            {visibleChoices.map((option) => (
+              <label
+                className="flex min-w-0 items-start gap-2 rounded px-1 py-1 text-sm"
+                key={option.value}
+              >
+                <input
+                  className="application-choice-input"
+                  checked={selected.has(option.value)}
+                  name={name}
+                  onChange={(event) => {
+                    const next = new Set(selected);
+                    if (event.currentTarget.checked) {
+                      if (exclusive.has(option.value)) next.clear();
+                      else for (const value of exclusive) next.delete(value);
+                      next.add(option.value);
+                    } else next.delete(option.value);
+                    setSelected(next);
+                  }}
+                  required={
+                    (answer.required || mismatch) &&
+                    selected.size === 0 &&
+                    option.value === visibleChoices[0]?.value
+                  }
+                  type="checkbox"
+                  value={option.value}
+                />
+                <span className="min-w-0 break-words">{option.label}</span>
+              </label>
+            ))}
+          </div>
+        </>
+      ) : null}
       {answer.required || mismatch ? (
         <small>Select at least one option.</small>
       ) : null}

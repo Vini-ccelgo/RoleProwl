@@ -189,9 +189,26 @@ function collectionRecordValue(
           : [];
       })
       .join(" — ");
-  return summary
+  const base = summary
     ? { identity: value.id, text: summary }
     : { identity: value.id };
+  if (concept !== "EDUCATION_HISTORY") return base;
+  return {
+    ...base,
+    ...Object.fromEntries(
+      ["credential", "program", "status"].flatMap((key) => {
+        const candidate = value[key];
+        return typeof candidate === "string" && candidate.trim()
+          ? [[key, candidate.trim()]]
+          : [];
+      }),
+    ),
+    ...(value.endDate instanceof Date
+      ? { endDate: value.endDate.toISOString() }
+      : typeof value.endDate === "string" && value.endDate.trim()
+        ? { endDate: value.endDate.trim() }
+        : {}),
+  };
 }
 
 export function evidenceFromCandidateSources(

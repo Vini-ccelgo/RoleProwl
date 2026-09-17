@@ -137,10 +137,10 @@ export const aiTaskDefinitions = {
     }),
   },
   APPLICATION_QUESTION_RESOLUTION: {
-    promptVersion: "application-question-resolution-v1",
+    promptVersion: "application-question-resolution-v2",
     schemaName: "application_question_resolutions",
     system:
-      "Map only the supplied ordinary employer questions to allowedConcepts and supplied candidateKnowledge. A proposed value must be a faithful direct value or bounded reformulation supported by every listed candidateKnowledgeReference. Never invent facts, upgrade proficiency or experience, infer compensation, work authorization, sponsorship, or consent, or answer employer-specific motivation. Return no resolution when the supplied knowledge is insufficient. Every proposed value requires candidate approval.",
+      "Map only the supplied ordinary employer questions to allowedConcepts and supplied candidateKnowledge. For CHOICE_TAXONOMY mode, select only exact supplied raw option values and report whether meaningful ambiguity requires candidate confirmation. A proposed value must be a faithful direct value or bounded reformulation supported by every listed candidateKnowledgeReference. Never invent facts, upgrade qualifications, completion, proficiency, or experience, infer negative personal facts, compensation, work authorization, sponsorship, consent, or employer relationships, or answer employer-specific motivation. Return no resolution when the supplied knowledge is insufficient.",
     schema: z.object({
       resolutions: z
         .array(
@@ -148,6 +148,11 @@ export const aiTaskDefinitions = {
             questionId: z.string().max(500),
             canonicalConcept: z.string().max(128).nullable(),
             proposedValue: z.string().max(4_000).nullable(),
+            selectedOptionValues: z
+              .array(z.string().max(500))
+              .max(8)
+              .optional(),
+            requiresCandidateConfirmation: z.boolean().optional(),
             candidateKnowledgeReferences: z.array(z.string().max(512)).max(8),
             confidence: z.number().min(0).max(1),
           }),

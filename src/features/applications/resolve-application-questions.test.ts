@@ -1170,4 +1170,443 @@ describe("application question resolver", () => {
       results.filter((result) => result.disposition === "CANDIDATE_REQUIRED"),
     ).toHaveLength(2);
   });
+
+  it("auto-selects an exact completed education taxonomy match by raw identity", async () => {
+    const course = question("Em qual curso você se formou?", {
+      fieldTypes: ["multi_value_multi_select"],
+      fieldNames: ["question_course[]"],
+      options: ["Ciência da Computação", "Engenharia de Computação"],
+      optionIdentities: [
+        { label: "Ciência da Computação", value: "course-100" },
+        { label: "Engenharia de Computação", value: "course-200" },
+      ],
+    });
+    const [result] = await resolveApplicationQuestions({
+      correlationId: "education-exact",
+      userId: "candidate-1",
+      questions: [course],
+      knowledge: [
+        knowledge("EDUCATION_HISTORY", {
+          items: [
+            {
+              identity: "education-1",
+              program: "Ciência da Computação",
+              status: "Concluído",
+            },
+          ],
+        }),
+      ],
+    });
+    expect(result).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: '["course-100"]',
+      reasonCode: "EXACT_TAXONOMY_MATCH",
+      canonicalConcept: "EDUCATION_HISTORY",
+    });
+  });
+
+  it("accepts only a grounded raw identity from semantic education mapping", async () => {
+    const course = question("Em qual curso você se formou?", {
+      fieldTypes: ["multi_value_multi_select"],
+      options: [
+        "Ciência da Computação",
+        "Engenharia de Computação",
+        "Sistemas de Informação",
+      ],
+      optionIdentities: [
+        { label: "Ciência da Computação", value: "course-100" },
+        { label: "Engenharia de Computação", value: "course-200" },
+        { label: "Sistemas de Informação", value: "course-300" },
+      ],
+    });
+    const fake = fakeAI([
+      {
+        questionId: course.id,
+        canonicalConcept: "EDUCATION_HISTORY",
+        proposedValue: null,
+        selectedOptionValues: ["course-100"],
+        candidateKnowledgeReferences: [
+          "EDUCATION_HISTORY:ANSWER_MEMORY:memory-1:item-1",
+        ],
+        confidence: 0.98,
+        requiresCandidateConfirmation: false,
+      },
+    ]);
+    const [result] = await resolveApplicationQuestions({
+      ai: fake.ai,
+      correlationId: "education-semantic",
+      userId: "candidate-1",
+      questions: [course],
+      knowledge: [
+        knowledge("EDUCATION_HISTORY", {
+          items: [
+            {
+              identity: "education-1",
+              program: "Computer Science",
+              endDate: "2024-12-01T00:00:00.000Z",
+            },
+          ],
+        }),
+      ],
+    });
+    expect(result).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: '["course-100"]',
+      reasonCode: "SEMANTIC_TAXONOMY_MATCH",
+    });
+    expect(fake.generateStructured).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          mode: "CHOICE_TAXONOMY",
+          allowedConcepts: ["EDUCATION_HISTORY"],
+          questions: [
+            expect.objectContaining({
+              candidateKnowledge: [
+                {
+                  concept: "EDUCATION_HISTORY",
+                  referenceId:
+                    "EDUCATION_HISTORY:ANSWER_MEMORY:memory-1:item-1",
+                  value: "Computer Science",
+                },
+              ],
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("keeps ambiguous semantic education mapping candidate-controlled", async () => {
+    const course = question("Degree field or course", {
+      fieldTypes: ["multi_value_multi_select"],
+      options: [
+        "Ciência da Computação",
+        "Engenharia de Computação",
+        "Sistemas de Informação",
+      ],
+      optionIdentities: [
+        { label: "Ciência da Computação", value: "100" },
+        { label: "Engenharia de Computação", value: "200" },
+        { label: "Sistemas de Informação", value: "300" },
+      ],
+    });
+    const fake = fakeAI([
+      {
+        questionId: course.id,
+        canonicalConcept: "EDUCATION_HISTORY",
+        proposedValue: null,
+        selectedOptionValues: ["100"],
+        candidateKnowledgeReferences: [
+          "EDUCATION_HISTORY:ANSWER_MEMORY:memory-1:item-1",
+        ],
+        confidence: 0.8,
+        requiresCandidateConfirmation: true,
+      },
+    ]);
+    const [result] = await resolveApplicationQuestions({
+      ai: fake.ai,
+      correlationId: "education-ambiguous",
+      userId: "candidate-1",
+      questions: [course],
+      knowledge: [
+        knowledge("EDUCATION_HISTORY", {
+          items: [
+            {
+              program: "Computing and technology",
+              status: "Graduated",
+            },
+          ],
+        }),
+      ],
+    });
+    expect(result).toMatchObject({
+      disposition: "PROPOSED_FOR_CANDIDATE",
+      value: '["100"]',
+      reasonCode: "SEMANTIC_TAXONOMY_APPROVAL_REQUIRED",
+    });
+  });
+
+  it("rejects a semantic option identity outside the supplied employer taxonomy", async () => {
+    const course = question("Degree field or course", {
+      fieldTypes: ["multi_value_multi_select"],
+      options: ["Ciência da Computação", "Sistemas de Informação"],
+      optionIdentities: [
+        { label: "Ciência da Computação", value: "100" },
+        { label: "Sistemas de Informação", value: "200" },
+      ],
+    });
+    const fake = fakeAI([
+      {
+        questionId: course.id,
+        canonicalConcept: "EDUCATION_HISTORY",
+        proposedValue: null,
+        selectedOptionValues: ["invented-option"],
+        candidateKnowledgeReferences: [
+          "EDUCATION_HISTORY:ANSWER_MEMORY:memory-1:item-1",
+        ],
+        confidence: 1,
+        requiresCandidateConfirmation: false,
+      },
+    ]);
+    const [result] = await resolveApplicationQuestions({
+      ai: fake.ai,
+      correlationId: "education-forged-option",
+      userId: "candidate-1",
+      questions: [course],
+      knowledge: [
+        knowledge("EDUCATION_HISTORY", {
+          items: [{ program: "Computer Science", status: "Graduated" }],
+        }),
+      ],
+    });
+    expect(result).toMatchObject({
+      disposition: "CANDIDATE_REQUIRED",
+      value: null,
+      reasonCode: "NO_GROUNDED_CANDIDATE_KNOWLEDGE",
+    });
+  });
+
+  it("uses NA only from an explicit negative controlling answer and instruction", async () => {
+    const completion = question("Você possui curso superior completo?", {
+      fieldTypes: ["multi_value_single_select"],
+      options: ["Sim", "Não"],
+      optionIdentities: [
+        { label: "Sim", value: "yes-id" },
+        { label: "Não", value: "no-id" },
+      ],
+    });
+    const course = question(
+      "Caso tenha respondido NÃO para a pergunta anterior, selecione NA. Em qual curso você se formou?",
+      {
+        fieldTypes: ["multi_value_multi_select"],
+        options: ["NA", "Ciência da Computação"],
+        optionIdentities: [
+          { label: "NA", value: "na-id" },
+          { label: "Ciência da Computação", value: "course-id" },
+        ],
+      },
+    );
+    const results = await resolveApplicationQuestions({
+      applicationAnswers: { [completion.id]: "no-id" },
+      correlationId: "education-na",
+      userId: "candidate-1",
+      questions: [completion, course],
+      knowledge: [],
+    });
+    expect(results[1]).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: '["na-id"]',
+      reasonCode: "EXPLICIT_CONTROLLING_ANSWER_SELECTED_SENTINEL",
+    });
+  });
+
+  it("keeps an explicit employer relationship answer application-scoped and above automation", async () => {
+    const relationship = question(
+      "Você conhece alguém que trabalha no Inter?",
+      {
+        fieldTypes: ["multi_value_multi_select"],
+        options: ["I do not know anyone at Inter", "Friend"],
+        optionIdentities: [
+          {
+            label: "I do not know anyone at Inter",
+            value: "no-known-employee-id",
+          },
+          { label: "Friend", value: "friend-id" },
+        ],
+      },
+    );
+    const fake = fakeAI([]);
+    const [result] = await resolveApplicationQuestions({
+      ai: fake.ai,
+      applicationAnswers: {
+        [relationship.id]: '["no-known-employee-id"]',
+      },
+      correlationId: "explicit-employer-relationship",
+      userId: "candidate-1",
+      questions: [relationship],
+      knowledge: [],
+    });
+    expect(result).toEqual({
+      questionId: relationship.id,
+      canonicalConcept: null,
+      disposition: "AUTO_RESOLVED",
+      value: '["no-known-employee-id"]',
+      candidateKnowledgeReferences: [],
+      reasonCode: "APPLICATION_OVERRIDE",
+    });
+    expect(fake.generateStructured).not.toHaveBeenCalled();
+  });
+
+  it("does not infer an employer relationship or education completion from absence", async () => {
+    const results = await resolveApplicationQuestions({
+      correlationId: "closed-world",
+      userId: "candidate-1",
+      questions: [
+        question("Você conhece alguém que trabalha no Inter?", {
+          fieldTypes: ["multi_value_multi_select"],
+          options: ["Não conheço", "Amigo"],
+        }),
+        question("Você possui curso superior completo?", {
+          fieldTypes: ["multi_value_single_select"],
+          options: ["Sim", "Não"],
+        }),
+      ],
+      knowledge: [],
+    });
+    expect(results.map((result) => result.reasonCode)).toEqual([
+      "EMPLOYER_SPECIFIC_RELATIONSHIP_REQUIRED",
+      "EDUCATION_COMPLETION_NOT_ESTABLISHED",
+    ]);
+  });
+
+  it("does not infer completion merely because an education row exists", async () => {
+    const fake = fakeAI([]);
+    const results = await resolveApplicationQuestions({
+      ai: fake.ai,
+      correlationId: "education-row-without-completion",
+      userId: "candidate-1",
+      questions: [
+        question("Você possui curso superior completo?", {
+          fieldTypes: ["multi_value_single_select"],
+          options: ["Sim", "Não"],
+        }),
+        question("Em qual curso você se formou?", {
+          fieldTypes: ["multi_value_multi_select"],
+          options: ["Ciência da Computação", "Sistemas de Informação"],
+        }),
+      ],
+      knowledge: [
+        knowledge("EDUCATION_HISTORY", {
+          items: [{ program: "Ciência da Computação" }],
+        }),
+      ],
+    });
+    expect(results.map((result) => result.reasonCode)).toEqual([
+      "EDUCATION_COMPLETION_NOT_ESTABLISHED",
+      "EDUCATION_COMPLETION_NOT_ESTABLISHED",
+    ]);
+    expect(fake.generateStructured).not.toHaveBeenCalled();
+  });
+
+  it("selects the raw Yes identity only when completion is explicitly established", async () => {
+    const [result] = await resolveApplicationQuestions({
+      correlationId: "education-completion-established",
+      userId: "candidate-1",
+      questions: [
+        question("Você possui curso superior completo?", {
+          fieldTypes: ["multi_value_single_select"],
+          options: ["Sim", "Não"],
+          optionIdentities: [
+            { label: "Sim", value: "yes-raw-id" },
+            { label: "Não", value: "no-raw-id" },
+          ],
+        }),
+      ],
+      knowledge: [
+        knowledge("EDUCATION_HISTORY", {
+          items: [
+            {
+              program: "Ciência da Computação",
+              endDate: "2024-12-01T00:00:00.000Z",
+            },
+          ],
+        }),
+      ],
+    });
+    expect(result).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: "yes-raw-id",
+      reasonCode: "EDUCATION_COMPLETION_ESTABLISHED",
+    });
+  });
+
+  it("falls back to a manual candidate decision when taxonomy AI is unavailable", async () => {
+    const [result] = await resolveApplicationQuestions({
+      correlationId: "education-ai-disabled",
+      userId: "candidate-1",
+      questions: [
+        question("Em qual curso você se formou?", {
+          fieldTypes: ["multi_value_multi_select"],
+          options: ["Ciência da Computação", "Sistemas de Informação"],
+        }),
+      ],
+      knowledge: [
+        knowledge("EDUCATION_HISTORY", {
+          items: [{ program: "Computer Science", status: "Graduated" }],
+        }),
+      ],
+    });
+    expect(result).toMatchObject({
+      disposition: "CANDIDATE_REQUIRED",
+      reasonCode: "NO_GROUNDED_CANDIDATE_KNOWLEDGE",
+    });
+  });
+
+  it("reduces the two-control Inter taxonomy fixture to one genuine candidate decision", async () => {
+    const results = await resolveApplicationQuestions({
+      correlationId: "inter-taxonomy-residual",
+      userId: "candidate-1",
+      questions: [
+        question("Você conhece alguém que trabalha no Inter?", {
+          fieldTypes: ["multi_value_multi_select"],
+          options: ["I do not know anyone at Inter", "Friend"],
+          optionIdentities: [
+            {
+              label: "I do not know anyone at Inter",
+              value: "relationship-none",
+            },
+            { label: "Friend", value: "relationship-friend" },
+          ],
+        }),
+        question(
+          "Caso você tenha respondido SIM para a pergunta anterior, em qual curso você se formou? Caso você tenha respondido NÃO, preencha o campo abaixo com NA",
+          {
+            fieldTypes: ["multi_value_multi_select"],
+            options: [
+              "NA",
+              "Administração",
+              "Ciência da Computação",
+              "Engenharia de Computação",
+            ],
+            optionIdentities: [
+              { label: "NA", value: "course-na" },
+              { label: "Administração", value: "course-admin" },
+              {
+                label: "Ciência da Computação",
+                value: "course-computer-science",
+              },
+              {
+                label: "Engenharia de Computação",
+                value: "course-computer-engineering",
+              },
+            ],
+          },
+        ),
+      ],
+      knowledge: [
+        knowledge("EDUCATION_HISTORY", {
+          items: [
+            {
+              program: "Ciência da Computação",
+              status: "Concluído",
+            },
+          ],
+        }),
+      ],
+    });
+    expect(results).toEqual([
+      expect.objectContaining({
+        disposition: "CANDIDATE_REQUIRED",
+        reasonCode: "EMPLOYER_SPECIFIC_RELATIONSHIP_REQUIRED",
+      }),
+      expect.objectContaining({
+        disposition: "AUTO_RESOLVED",
+        value: '["course-computer-science"]',
+        reasonCode: "EXACT_TAXONOMY_MATCH",
+      }),
+    ]);
+    expect(
+      results.filter((result) => result.disposition === "CANDIDATE_REQUIRED"),
+    ).toHaveLength(1);
+  });
 });

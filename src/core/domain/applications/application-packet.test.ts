@@ -57,6 +57,22 @@ describe("application answer cardinality", () => {
       "no longer available",
     );
   });
+
+  it("rejects an exclusive sentinel combined with affirmative alternatives", () => {
+    expect(() =>
+      validatedApplicationAnswerValue(
+        {
+          ...multiple,
+          options: ["NA", "Computer Science"],
+          optionIdentities: [
+            { label: "NA", value: "na-id" },
+            { label: "Computer Science", value: "course-id" },
+          ],
+        },
+        ["na-id", "course-id"],
+      ),
+    ).toThrow("cannot be combined");
+  });
 });
 
 function source(
@@ -455,6 +471,43 @@ describe("application packet", () => {
     expect(packet.answers[0]).toMatchObject({
       status: "RESOLVED",
       value: "Candidate-approved answer",
+      provenance: [expect.objectContaining({ source: "APPLICATION_OVERRIDE" })],
+    });
+  });
+
+  it("keeps an explicit employer-relationship raw option application-scoped", () => {
+    const packet = buildApplicationPacket({
+      reviewed: false,
+      source: source({
+        applicationOverrides: {
+          identity: {},
+          answers: { "standard:relationship": '["no-known-employee-id"]' },
+        },
+        questions: [
+          {
+            id: "standard:relationship",
+            source: "GREENHOUSE",
+            group: "STANDARD",
+            label: "Do you know anyone who works at Inter?",
+            required: true,
+            fieldNames: ["relationship[]"],
+            fieldTypes: ["multi_value_multi_select"],
+            options: ["I do not know anyone at Inter", "Friend"],
+            optionIdentities: [
+              {
+                label: "I do not know anyone at Inter",
+                value: "no-known-employee-id",
+              },
+              { label: "Friend", value: "friend-id" },
+            ],
+          },
+        ],
+      }),
+    });
+    expect(packet.answers[0]).toMatchObject({
+      classification: "APPLICATION_SPECIFIC",
+      status: "RESOLVED",
+      value: '["no-known-employee-id"]',
       provenance: [expect.objectContaining({ source: "APPLICATION_OVERRIDE" })],
     });
   });

@@ -8,6 +8,7 @@ import type {
 } from "./application-question-resolution";
 import type { CandidateKnowledgeConcept } from "@/core/domain/candidate/candidate-knowledge";
 import { ValidationError } from "@/core/errors/application-errors";
+import { exclusiveChoiceValues } from "./choice-taxonomy";
 
 export const APPLICATION_PACKET_VERSION = "application-packet-v1";
 
@@ -277,6 +278,14 @@ export function validatedApplicationAnswerValue(
       `An option selected for “${answer.label}” is no longer available.`,
     );
   });
+  const exclusive = exclusiveChoiceValues(options);
+  if (
+    canonical.some((value) => exclusive.has(value)) &&
+    canonical.some((value) => !exclusive.has(value))
+  )
+    throw new ValidationError(
+      `An exclusive option for “${answer.label}” cannot be combined with other answers.`,
+    );
   return cardinality === "MULTIPLE" && canonical.length
     ? JSON.stringify(canonical)
     : encodedApplicationAnswer(canonical);
@@ -924,7 +933,7 @@ function packetFieldForQuestion(
         : {}),
       classification: authoritative.canonicalConcept
         ? "CANDIDATE_KNOWLEDGE"
-        : authoritative.reasonCode === "EMPLOYER_SPECIFIC_ANSWER"
+        : authoritative.reasonCode.startsWith("EMPLOYER_SPECIFIC_")
           ? "APPLICATION_SPECIFIC"
           : "UNKNOWN",
       fieldNames: question.fieldNames,

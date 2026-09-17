@@ -176,6 +176,7 @@ function packetForResolution(input: {
     | "WORK_AUTHORIZATION:BR"
     | "SPONSORSHIP_REQUIREMENT:BR"
     | "WORK_AUTHORIZATION:US"
+    | "EDUCATION_HISTORY"
     | null;
   readonly disposition:
     "AUTO_RESOLVED" | "CANDIDATE_REQUIRED" | "PROPOSED_FOR_CANDIDATE";
@@ -736,6 +737,24 @@ describe("application packet actions", () => {
     });
     const value = form();
     value.set("answer:question-42", "Because this role is specific to Inter.");
+    await saveApplicationOverridesAction(value);
+    expect(saveApplicationOverrides).toHaveBeenCalledOnce();
+    expect(saveDirectCandidateKnowledgeBatch).not.toHaveBeenCalled();
+  });
+
+  it("does not globalize an employer raw taxonomy identity", async () => {
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: {
+        packet: packetForResolution({
+          concept: "EDUCATION_HISTORY",
+          disposition: "PROPOSED_FOR_CANDIDATE",
+          reasonCode: "SEMANTIC_TAXONOMY_APPROVAL_REQUIRED",
+          value: "course-100",
+        }),
+      },
+    });
+    const value = form();
+    value.set("answer:question-42", "course-100");
     await saveApplicationOverridesAction(value);
     expect(saveApplicationOverrides).toHaveBeenCalledOnce();
     expect(saveDirectCandidateKnowledgeBatch).not.toHaveBeenCalled();
