@@ -6,6 +6,7 @@ import {
   candidateKnowledgePolicy,
   employerSpecificConsentFromGeneralPreference,
   isCandidateKnowledgeConcept,
+  isValidCandidateKnowledgeAnswer,
   resolveCandidateKnowledge,
   type CandidateKnowledgeEvidence,
 } from "./candidate-knowledge";
@@ -449,6 +450,46 @@ describe("candidate knowledge coverage", () => {
         now,
       }).status,
     ).toBe("MISSING");
+  });
+
+  it("keeps professional-history authorities finite, fresh, and outside reusable answers", () => {
+    const concept = "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION";
+    expect(isCandidateKnowledgeConcept(concept)).toBe(true);
+    expect(candidateKnowledgePolicy(concept)).toMatchObject({
+      class: "CANDIDATE_AUTHORITY",
+      reverifyAfterDays: 30,
+      reusableForEmployerQuestions: false,
+    });
+    expect(isValidCandidateKnowledgeAnswer(concept, { attested: true })).toBe(
+      true,
+    );
+    expect(isValidCandidateKnowledgeAnswer(concept, { attested: false })).toBe(
+      false,
+    );
+    expect(
+      isValidCandidateKnowledgeAnswer(concept, {
+        attested: true,
+        arbitrary: "not allowed",
+      }),
+    ).toBe(false);
+    expect(
+      resolveCandidateKnowledge({
+        concept,
+        evidence: [
+          item({
+            concept,
+            source: "ANSWER_MEMORY",
+            value: { attested: true },
+          }),
+        ],
+        now,
+      }),
+    ).toMatchObject({
+      applicationUse: "PREFERENCE_CONTEXT_ONLY",
+      autoAnswerAllowed: false,
+      freshness: "CURRENT",
+      status: "AVAILABLE",
+    });
   });
 
   it("requires confirmation for stale volatile values but never expires stable history", () => {

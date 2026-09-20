@@ -13,6 +13,7 @@ import {
   type DocumentDeletionConsequences,
 } from "@/features/candidate/document-deletion-protocol";
 import { synchronizeVerifiedCandidateSkills } from "./sync-verified-candidate-skills";
+import { invalidateProfessionalHistoryAuthorities } from "./prisma-candidate-knowledge";
 
 export class DocumentDeletionConfirmationRequiredError extends ConflictError {
   readonly confirmationCode = DOCUMENT_DELETION_CONFIRMATION_REQUIRED;
@@ -62,31 +63,41 @@ export class PrismaCandidateDocumentDeletion {
           if (!document)
             throw new NotFoundError("The requested document was not found.");
 
-          const [acceptedFactCount, applications] = await Promise.all([
-            transaction.candidateFact.count({
-              where: {
-                userId: input.userId,
-                status: "ACTIVE",
-                sourceProposal: { documentId: document.id },
-              },
-            }),
-            transaction.application.findMany({
-              where: { userId: input.userId },
-              select: {
-                id: true,
-                state: true,
-                submittedAt: true,
-                externalConfirmedAt: true,
-                externalSubmissionId: true,
-                documentsSnapshot: true,
-                events: {
-                  where: { type: "SUBMISSION_CONFIRMED" },
-                  select: { id: true },
-                  take: 1,
+          const [acceptedFactCount, historicalFact, applications] =
+            await Promise.all([
+              transaction.candidateFact.count({
+                where: {
+                  userId: input.userId,
+                  status: "ACTIVE",
+                  sourceProposal: { documentId: document.id },
                 },
-              },
-            }),
-          ]);
+              }),
+              transaction.candidateFact.findFirst({
+                where: {
+                  userId: input.userId,
+                  status: "ACTIVE",
+                  factType: "WORK_EXPERIENCE_TEXT",
+                  sourceProposal: { documentId: document.id },
+                },
+                select: { id: true },
+              }),
+              transaction.application.findMany({
+                where: { userId: input.userId },
+                select: {
+                  id: true,
+                  state: true,
+                  submittedAt: true,
+                  externalConfirmedAt: true,
+                  externalSubmissionId: true,
+                  documentsSnapshot: true,
+                  events: {
+                    where: { type: "SUBMISSION_CONFIRMED" },
+                    select: { id: true },
+                    take: 1,
+                  },
+                },
+              }),
+            ]);
           const references = applications.filter((application) =>
             applicationUsesResumeStorageKey(
               application.documentsSnapshot,
@@ -148,6 +159,12 @@ export class PrismaCandidateDocumentDeletion {
               sourceProposal: { documentId: document.id },
             },
           });
+          if (historicalFact) {
+            await invalidateProfessionalHistoryAuthorities(
+              transaction,
+              input.userId,
+            );
+          }
           await synchronizeVerifiedCandidateSkills(transaction, input.userId);
           const deletedDocument =
             await transaction.candidateDocument.deleteMany({

@@ -30,12 +30,14 @@ import { synchronizeVerifiedCandidateSkills } from "@/integrations/candidate/syn
 import {
   createCandidateNarrative,
   getCandidateKnowledgeSnapshot,
+  invalidateProfessionalHistoryAuthorities,
   persistCandidateKnowledgeProposals,
   reconfirmDirectCandidateKnowledge,
   removeDirectCandidateKnowledge,
   reviewCandidateKnowledgeProposal,
   saveDirectCandidateKnowledge,
   saveDirectCandidateKnowledgeBatch,
+  setProfessionalHistoryAuthorities,
 } from "@/integrations/candidate/prisma-candidate-knowledge";
 import {
   candidateNarrativeOutcomeMessage,
@@ -75,8 +77,10 @@ function formError(error: unknown): CandidateFormState {
 async function success(
   message: string,
   userId: string,
+  applicationPacketsAlreadyInvalidated = false,
 ): Promise<CandidateFormState> {
-  await invalidateReadyApplicationPackets(databaseClient(), userId);
+  if (!applicationPacketsAlreadyInvalidated)
+    await invalidateReadyApplicationPackets(databaseClient(), userId);
   await invalidateCandidateJobMatchAnalyses(databaseClient(), userId);
   revalidatePath("/profile");
   revalidatePath("/applications");
@@ -137,26 +141,29 @@ export async function saveWorkExperience(
       achievements: splitList(value(formData, "achievements")),
     });
     const { id, ...data } = parsed;
-    if (id) {
-      const result = await databaseClient().workExperience.updateMany({
-        where: ownedRecordWhere(actor.id, id),
-        data: {
-          ...data,
-          endDate: data.isCurrent ? null : data.endDate,
-          verificationState: "UNVERIFIED",
-          source: "USER_ENTERED",
-        },
-      });
-      requireOwnedMutation(result.count);
-    } else {
-      await databaseClient().workExperience.create({
-        data: {
-          userId: actor.id,
-          ...data,
-          endDate: data.isCurrent ? null : data.endDate,
-        },
-      });
-    }
+    await databaseClient().$transaction(async (transaction) => {
+      if (id) {
+        const result = await transaction.workExperience.updateMany({
+          where: ownedRecordWhere(actor.id, id),
+          data: {
+            ...data,
+            endDate: data.isCurrent ? null : data.endDate,
+            verificationState: "UNVERIFIED",
+            source: "USER_ENTERED",
+          },
+        });
+        requireOwnedMutation(result.count);
+      } else {
+        await transaction.workExperience.create({
+          data: {
+            userId: actor.id,
+            ...data,
+            endDate: data.isCurrent ? null : data.endDate,
+          },
+        });
+      }
+      await invalidateProfessionalHistoryAuthorities(transaction, actor.id);
+    });
     return success(id ? "Experience updated." : "Experience added.", actor.id);
   } catch (error) {
     return formError(error);
@@ -435,7 +442,14 @@ export async function deleteCandidateEntity(
   const database = databaseClient();
   const result =
     kind === "experience"
-      ? await database.workExperience.deleteMany({ where })
+      ? await database.$transaction(async (transaction) => {
+          const deleted = await transaction.workExperience.deleteMany({
+            where,
+          });
+          requireOwnedMutation(deleted.count);
+          await invalidateProfessionalHistoryAuthorities(transaction, actor.id);
+          return deleted;
+        })
       : kind === "education"
         ? await database.education.deleteMany({ where })
         : kind === "skill"
@@ -480,6 +494,9 @@ export async function editCandidateFact(
       if (current!.factType === "SKILL_TEXT") {
         await synchronizeVerifiedCandidateSkills(transaction, actor.id);
       }
+      if (current!.factType === "WORK_EXPERIENCE_TEXT") {
+        await invalidateProfessionalHistoryAuthorities(transaction, actor.id);
+      }
       await transaction.auditEvent.create({
         data: {
           actorUserId: actor.id,
@@ -515,6 +532,9 @@ export async function removeCandidateFact(id: string): Promise<void> {
     requireOwnedMutation(removed.count);
     if (current!.factType === "SKILL_TEXT") {
       await synchronizeVerifiedCandidateSkills(transaction, actor.id);
+    }
+    if (current!.factType === "WORK_EXPERIENCE_TEXT") {
+      await invalidateProfessionalHistoryAuthorities(transaction, actor.id);
     }
     await transaction.auditEvent.create({
       data: {
@@ -559,6 +579,32 @@ export async function saveCandidateKnowledgeAnswer(
     return success(
       "Recurring answer saved and marked as candidate-approved.",
       actor.id,
+    );
+  } catch (error) {
+    return formError(error);
+  }
+}
+
+export async function saveProfessionalHistoryAuthorities(
+  _state: CandidateFormState,
+  formData: FormData,
+): Promise<CandidateFormState> {
+  try {
+    const actor = await requireAuthenticatedActor(currentAuthProvider());
+    const complete = formData.get("completeProfessionalHistory") === "on";
+    const negativeInference =
+      complete && formData.get("negativeHistoryInference") === "on";
+    await setProfessionalHistoryAuthorities({
+      userId: actor.id,
+      complete,
+      negativeInference,
+    });
+    return success(
+      complete
+        ? "Professional-history authority saved and confirmed."
+        : "Professional-history authority revoked.",
+      actor.id,
+      true,
     );
   } catch (error) {
     return formError(error);

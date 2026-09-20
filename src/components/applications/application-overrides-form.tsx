@@ -234,6 +234,8 @@ function ProposedTextInput({
   const calculated = answer.resolutionReasonCode?.startsWith(
     "CONTEXTUAL_EXPERIENCE_DURATION",
   );
+  const employerCompensationProposal =
+    answer.resolutionReasonCode === "EMPLOYER_POSTED_COMPENSATION_PROPOSAL";
   const longAnswer = !answer.fieldTypes.includes("input_text");
   return (
     <fieldset className="field max-w-full min-w-0 md:col-span-2">
@@ -242,6 +244,12 @@ function ProposedTextInput({
         <strong>
           RoleProwl {calculated ? "calculated" : "proposed"}: {answer.value}
         </strong>
+        {employerCompensationProposal ? (
+          <small>
+            Based on compensation published with this job. This is a proposal,
+            not a stored candidate salary fact, and requires your confirmation.
+          </small>
+        ) : null}
         <label className="flex items-center gap-2">
           <input
             checked={decision === "USE"}

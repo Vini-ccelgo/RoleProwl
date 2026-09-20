@@ -2,7 +2,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { buildCandidateKnowledgeCoverage } from "@/core/domain/candidate/candidate-knowledge";
-import { CandidateKnowledgeSection } from "./candidate-knowledge-section";
+import {
+  CandidateKnowledgeSection,
+  ProfessionalHistoryAuthorityControls,
+} from "./candidate-knowledge-section";
 
 const confirmedAt = new Date("2026-09-14T12:00:00Z");
 
@@ -58,6 +61,39 @@ function renderSnapshot(input: {
 }
 
 describe("candidate knowledge profile gaps", () => {
+  it("renders inspectable dependent professional-history authority controls", () => {
+    const coverage = buildCandidateKnowledgeCoverage({
+      evidence: [
+        evidence("PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION", {
+          attested: true,
+        }),
+        evidence("NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION", {
+          authorized: true,
+        }),
+      ],
+      now: confirmedAt,
+    });
+    const markup = renderToStaticMarkup(
+      createElement(ProfessionalHistoryAuthorityControls, {
+        snapshot: {
+          coverage,
+          currentDetails: [],
+          jurisdictions: [],
+          gapPrompts: [],
+          narratives: [],
+          proposals: [],
+          counts: { known: 0, worthCompleting: 0, optional: 0, conflicts: 0 },
+        } as never,
+      }),
+    );
+    expect(markup).toContain("Professional-history authority");
+    expect(markup).toContain("Completeness: Active");
+    expect(markup).toContain("Negative experience inference: Active");
+    expect(markup).toContain('name="completeProfessionalHistory"');
+    expect(markup).toContain('name="negativeHistoryInference"');
+    expect(markup).toContain("Employment-history changes clear both");
+  });
+
   it("keeps generic gaps jurisdiction-neutral and offers explicit structured entry", () => {
     const coverage = buildCandidateKnowledgeCoverage({
       evidence: [],

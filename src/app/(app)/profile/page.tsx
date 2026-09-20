@@ -14,7 +14,10 @@ import { currentAuthProvider } from "@/integrations/auth/clerk-auth-provider";
 import { getCandidateTruthVault } from "@/integrations/candidate/prisma-truth-vault";
 import { connection } from "next/server";
 import { ProfileSectionNavigation } from "@/components/candidate/profile-section-navigation";
-import { CandidateKnowledgeSection } from "@/components/candidate/candidate-knowledge-section";
+import {
+  CandidateKnowledgeSection,
+  ProfessionalHistoryAuthorityControls,
+} from "@/components/candidate/candidate-knowledge-section";
 import { getCandidateKnowledgeSnapshot } from "@/integrations/candidate/prisma-candidate-knowledge";
 
 export default async function ProfilePage() {
@@ -43,6 +46,7 @@ export default async function ProfilePage() {
           <VerifiedResumeFactsSection vault={vault} />
         </div>
         <div id="experience">
+          <ProfessionalHistoryAuthorityControls snapshot={knowledge} />
           <ExperienceSection vault={vault} />
         </div>
         <div id="education">

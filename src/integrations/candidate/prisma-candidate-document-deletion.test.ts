@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   documentFindFirst: vi.fn(),
   eventCreate: vi.fn(),
   factCount: vi.fn(),
+  historicalFactFindFirst: vi.fn(),
   factsDeleteMany: vi.fn(async () => ({ count: 0 })),
   notificationDeleteMany: vi.fn(async () => ({ count: 0 })),
   matchDeleteMany: vi.fn(async () => ({ count: 1 })),
@@ -81,11 +82,13 @@ describe("Prisma candidate document deletion", () => {
       storageKey: "candidate-documents/private",
     });
     mocks.factCount.mockResolvedValue(0);
+    mocks.historicalFactFindFirst.mockResolvedValue(null);
     mocks.applicationsFindMany.mockResolvedValue([]);
     mocks.transaction.mockImplementation(async (callback) =>
       callback({
         candidateFact: {
           count: mocks.factCount,
+          findFirst: mocks.historicalFactFindFirst,
           deleteMany: mocks.factsDeleteMany,
         },
         candidateDocument: {
@@ -253,6 +256,51 @@ describe("Prisma candidate document deletion", () => {
       expect.anything(),
       "user-1",
     );
+  });
+
+  it("clears history authorities only when the deleted resume removes active employment evidence", async () => {
+    const authorityFindMany = vi.fn(async () => [
+      {
+        id: "authority-complete",
+        concept: "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+      },
+    ]);
+    const authorityDeleteMany = vi.fn(async () => ({ count: 1 }));
+    const auditCreate = vi.fn(async () => ({}));
+    mocks.historicalFactFindFirst.mockResolvedValue({ id: "history-fact" });
+    mocks.transaction.mockImplementationOnce(async (callback) =>
+      callback({
+        candidateFact: {
+          count: mocks.factCount,
+          findFirst: mocks.historicalFactFindFirst,
+          deleteMany: mocks.factsDeleteMany,
+        },
+        candidateDocument: {
+          findFirst: mocks.documentFindFirst,
+          deleteMany: mocks.documentDeleteMany,
+        },
+        answerMemory: {
+          findMany: authorityFindMany,
+          deleteMany: authorityDeleteMany,
+        },
+        auditEvent: { create: auditCreate },
+        application: {
+          deleteMany: mocks.applicationDeleteMany,
+          findMany: mocks.applicationsFindMany,
+          updateMany: mocks.applicationUpdateMany,
+        },
+        applicationEvent: { create: mocks.eventCreate },
+        notification: { deleteMany: mocks.notificationDeleteMany },
+        jobMatchAnalysis: { deleteMany: mocks.matchDeleteMany },
+      }),
+    );
+    await new PrismaCandidateDocumentDeletion(storage() as never).delete({
+      confirmDeletion: true,
+      documentId: "document-1",
+      userId: "user-1",
+    });
+    expect(authorityDeleteMany).toHaveBeenCalledOnce();
+    expect(JSON.stringify(auditCreate.mock.calls)).toContain("HISTORY_CHANGED");
   });
 
   it("uses fresh dependencies when confirmation follows the preview", async () => {

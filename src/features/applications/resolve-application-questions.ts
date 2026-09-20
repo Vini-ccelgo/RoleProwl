@@ -23,6 +23,7 @@ import { encodedApplicationAnswer } from "@/core/domain/applications/application
 import {
   adaptKnownValueToEmployerControl,
   employerQuestionOptions,
+  normalizePersonalNameForEmployerPresentation,
 } from "@/core/domain/applications/control-adaptation";
 import { aiTaskDefinitions } from "@/features/ai/task-definitions";
 import { resolveChoiceTaxonomyDeterministically } from "@/features/applications/resolve-choice-taxonomy";
@@ -592,7 +593,7 @@ function deterministicResolution(
     /\b(?:do you speak|can you speak|fala|consegue falar)\b/iu.test(
       searchable(question),
     );
-  const value = explicitLanguagePresence
+  const resolvedValue = explicitLanguagePresence
     ? "Yes"
     : authorizationStatus
       ? /(?:not authorized|unauthorized|not eligible)/u.test(
@@ -605,6 +606,10 @@ function deterministicResolution(
           ? "Yes"
           : displayValue
       : displayValue;
+  const value =
+    resolvedValue && (concept === "FIRST_NAME" || concept === "LAST_NAME")
+      ? normalizePersonalNameForEmployerPresentation(resolvedValue)
+      : resolvedValue;
   if (!candidate || candidate.status === "MISSING")
     return {
       questionId: question.id,
@@ -829,7 +834,9 @@ export async function resolveApplicationQuestions(input: {
     const knownContextual = contextualResolutionAllowed
       ? resolveKnownContextualQuestion({
           question,
+          questions: input.questions,
           knowledge,
+          jobContext: input.jobContext,
         })
       : null;
     if (knownContextual?.resolution) {

@@ -7,6 +7,7 @@ import { ConflictError } from "@/core/errors/application-errors";
 import type { Prisma } from "@/generated/prisma/client";
 import { invalidateCandidateJobMatchAnalyses } from "@/integrations/jobs/invalidate-job-match-analyses";
 import { synchronizeVerifiedCandidateSkills } from "./sync-verified-candidate-skills";
+import { invalidateProfessionalHistoryAuthorities } from "./prisma-candidate-knowledge";
 
 export interface PersistFactProposalDecisionInput {
   readonly decision: ProposalDecision;
@@ -74,6 +75,9 @@ export async function persistFactProposalDecision(
   }
   if (proposal!.factType === "SKILL_TEXT") {
     await synchronizeVerifiedCandidateSkills(transaction, input.userId);
+  }
+  if (proposal!.factType === "WORK_EXPERIENCE_TEXT") {
+    await invalidateProfessionalHistoryAuthorities(transaction, input.userId);
   }
   await transaction.auditEvent.create({
     data: {

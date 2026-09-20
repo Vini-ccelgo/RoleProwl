@@ -12,19 +12,43 @@ beforeEach(() => {
 });
 
 function transactionFixture() {
-  const proposals = new Map(
-    ["TypeScript", "PostgreSQL"].map((text, index) => [
-      `proposal-${index + 1}`,
+  const proposals = new Map<
+    string,
+    {
+      id: string;
+      userId: string;
+      factType: string;
+      targetPath: string;
+      proposedValue: { text: string };
+      status: string;
+    }
+  >([
+    ...["TypeScript", "PostgreSQL"].map(
+      (text, index) =>
+        [
+          `proposal-${index + 1}`,
+          {
+            id: `proposal-${index + 1}`,
+            userId: "user-1",
+            factType: "SKILL_TEXT",
+            targetPath: "candidateFacts.skills",
+            proposedValue: { text },
+            status: "PENDING",
+          },
+        ] as const,
+    ),
+    [
+      "proposal-history",
       {
-        id: `proposal-${index + 1}`,
+        id: "proposal-history",
         userId: "user-1",
-        factType: "SKILL_TEXT",
-        targetPath: "candidateFacts.skills",
-        proposedValue: { text },
+        factType: "WORK_EXPERIENCE_TEXT",
+        targetPath: "candidateFacts.workExperience",
+        proposedValue: { text: "Security Analyst at Example" },
         status: "PENDING",
       },
-    ]),
-  );
+    ] as const,
+  ]);
   const factCreate = vi.fn(
     async ({ data }: { data: { sourceProposalId: string } }) => ({
       id: `fact-${data.sourceProposalId}`,
@@ -33,6 +57,13 @@ function transactionFixture() {
   const proposalUpdate = vi.fn(async () => ({ count: 1 }));
   const auditCreate = vi.fn(async () => ({}));
   const matchDeleteMany = vi.fn(async () => ({ count: 1 }));
+  const authorityFindMany = vi.fn(async () => [
+    {
+      id: "authority-complete",
+      concept: "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+    },
+  ]);
+  const authorityDeleteMany = vi.fn(async () => ({ count: 1 }));
   const transaction = {
     candidateFactProposal: {
       findFirst: vi.fn(
@@ -44,11 +75,16 @@ function transactionFixture() {
       updateMany: proposalUpdate,
     },
     candidateFact: { create: factCreate },
+    answerMemory: {
+      findMany: authorityFindMany,
+      deleteMany: authorityDeleteMany,
+    },
     auditEvent: { create: auditCreate },
     jobMatchAnalysis: { deleteMany: matchDeleteMany },
   };
   return {
     auditCreate,
+    authorityDeleteMany,
     factCreate,
     matchDeleteMany,
     proposalUpdate,
@@ -160,5 +196,19 @@ describe("Prisma fact proposal review persistence", () => {
         }),
       }),
     );
+  });
+
+  it("invalidates history authority when accepted evidence expands employment history", async () => {
+    const fixture = transactionFixture();
+    await persistFactProposalDecision(fixture.transaction as never, {
+      decision: "ACCEPT",
+      proposalId: "proposal-history",
+      userId: "user-1",
+    });
+    expect(fixture.authorityDeleteMany).toHaveBeenCalledOnce();
+    expect(JSON.stringify(fixture.auditCreate.mock.calls)).toContain(
+      "HISTORY_CHANGED",
+    );
+    expect(synchronizeVerifiedCandidateSkills).not.toHaveBeenCalled();
   });
 });

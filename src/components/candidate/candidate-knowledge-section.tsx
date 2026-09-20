@@ -2,6 +2,7 @@ import {
   reconfirmCandidateKnowledgeAnswer,
   removeCandidateKnowledgeAnswer,
   saveCandidateKnowledgeAnswer,
+  saveProfessionalHistoryAuthorities,
   saveJurisdictionCandidateKnowledge,
   submitCandidateNarrative,
 } from "@/app/(app)/profile/actions";
@@ -141,6 +142,7 @@ export function CandidateKnowledgeSection({
   const directGaps = snapshot.coverage.filter((item) => {
     const policy = candidateKnowledgePolicy(item.concept);
     return (
+      policy?.class !== "CANDIDATE_AUTHORITY" &&
       item.status !== "KNOWN" &&
       (policy?.class !== "STABLE_FACT" ||
         item.concept.startsWith("LANGUAGE_PROFICIENCY:"))
@@ -544,6 +546,104 @@ export function CandidateKnowledgeSection({
             previously approved reusable details.
           </p>
         ) : null}
+      </div>
+    </section>
+  );
+}
+
+export function ProfessionalHistoryAuthorityControls({
+  snapshot,
+}: {
+  snapshot: Snapshot;
+}) {
+  const completeness = snapshot.coverage.find(
+    (item) => item.concept === "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+  );
+  const negativeInference = snapshot.coverage.find(
+    (item) =>
+      item.concept === "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
+  );
+  const completenessStored = Boolean(completeness?.result.value?.attested);
+  const negativeStored = Boolean(negativeInference?.result.value?.authorized);
+  const completenessActive =
+    completenessStored && completeness?.result.status === "AVAILABLE";
+  const negativeActive =
+    completenessActive &&
+    negativeStored &&
+    negativeInference?.result.status === "AVAILABLE";
+  const latestConfirmation = [
+    completeness?.result.confirmedAt,
+    negativeInference?.result.confirmedAt,
+  ]
+    .filter((item): item is Date => Boolean(item))
+    .sort((left, right) => right.getTime() - left.getTime())[0];
+
+  return (
+    <section className="vault-section professional-history-authority">
+      <header>
+        <div>
+          <h2>Professional-history authority</h2>
+          <p>
+            Control whether RoleProwl may treat your Career Profile as complete
+            when answering ordinary experience questions.
+          </p>
+        </div>
+      </header>
+      <div className="vault-section-body">
+        <p className="candidate-knowledge-prompt">
+          Completeness: {completenessActive ? "Active" : "Inactive"}. Negative
+          experience inference: {negativeActive ? "Active" : "Inactive"}.
+          {completenessStored && !completenessActive
+            ? " Your completeness confirmation needs renewal."
+            : ""}
+          {negativeStored &&
+          negativeInference?.result.status === "STALE_CONFIRMATION_REQUIRED"
+            ? " Your negative-inference permission needs renewal."
+            : ""}
+          {latestConfirmation
+            ? ` Last confirmed ${new Intl.DateTimeFormat("en-US", {
+                dateStyle: "medium",
+                timeZone: "UTC",
+              }).format(latestConfirmation)}.`
+            : ""}
+        </p>
+        <VaultForm
+          action={saveProfessionalHistoryAuthorities}
+          submitLabel={
+            completenessStored
+              ? "Save or reconfirm authority"
+              : "Save authority"
+          }
+        >
+          <label className="field">
+            <span>
+              <input
+                defaultChecked={completenessStored}
+                name="completeProfessionalHistory"
+                type="checkbox"
+              />{" "}
+              My Career Profile contains my complete professional history
+              through today.
+            </span>
+          </label>
+          <label className="field">
+            <span>
+              <input
+                defaultChecked={negativeStored}
+                name="negativeHistoryInference"
+                type="checkbox"
+              />{" "}
+              Allow RoleProwl to answer ordinary professional-experience
+              questions with “No” or “0 years” when this complete history has no
+              matching evidence.
+            </span>
+          </label>
+          <small>
+            The second permission is effective only while the completeness
+            confirmation is current. Employment-history changes clear both
+            permissions.
+          </small>
+        </VaultForm>
       </div>
     </section>
   );

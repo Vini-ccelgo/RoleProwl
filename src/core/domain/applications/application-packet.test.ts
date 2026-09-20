@@ -168,6 +168,36 @@ describe("application packet", () => {
     expect(packet.completeness.readyForSubmissionHandoff).toBe(true);
   });
 
+  it("normalizes uppercase profile names only in employer presentation and preserves overrides", () => {
+    const candidate = source({
+      profile: {
+        firstName: "MAYA",
+        lastName: "O'NEIL",
+        applicationEmail: "maya@example.test",
+        phone: null,
+        location: null,
+        countryCode: null,
+        professionalTitle: null,
+      },
+      applicationOverrides: {
+        identity: { firstName: "M. MAYA" },
+        answers: {},
+      },
+    });
+    const packet = buildApplicationPacket({
+      source: candidate,
+      reviewed: false,
+    });
+    expect(
+      packet.identity.find((field) => field.key === "firstName"),
+    ).toMatchObject({ value: "M. MAYA", alternatives: ["Maya"] });
+    expect(
+      packet.identity.find((field) => field.key === "lastName"),
+    ).toMatchObject({ value: "O'Neil" });
+    expect(candidate.profile?.firstName).toBe("MAYA");
+    expect(candidate.profile?.lastName).toBe("O'NEIL");
+  });
+
   it("marks equal-precedence accepted email conflicts for review", () => {
     const packet = buildApplicationPacket({
       reviewed: true,

@@ -22,6 +22,10 @@ export interface ApplicationJobContext {
   readonly requirements?: unknown;
   readonly preferredRequirements?: unknown;
   readonly skills?: unknown;
+  readonly salaryMin?: number | null;
+  readonly salaryMax?: number | null;
+  readonly salaryCurrency?: string | null;
+  readonly salaryInterval?: string | null;
 }
 
 export interface ContextualEvidence {
@@ -188,6 +192,28 @@ function residenceQuestionKind(question: ResolvableApplicationQuestion) {
   return /^(?:country|pais)$/u.test(label) ? ("AMBIGUOUS" as const) : null;
 }
 
+function sameFormResidenceContext(input: {
+  readonly question: ResolvableApplicationQuestion;
+  readonly questions: readonly ResolvableApplicationQuestion[];
+}) {
+  if (residenceQuestionKind(input.question) !== "AMBIGUOUS") return false;
+  const otherQuestions = input.questions.filter(
+    (question) => question.id !== input.question.id,
+  );
+  const explicitResidence = otherQuestions.some(
+    (question) => residenceQuestionKind(question) === "CLEAR",
+  );
+  if (!explicitResidence) return false;
+  const competingSemantics = otherQuestions.some((question) =>
+    /\b(?:citizenship|citizen|nationality|tax residence|tax residency|work authorization|authorized to work|sponsorship|sponsoring country|office location|office country|country of employment|cidadania|nacionalidade|residencia fiscal|autorizacao para trabalhar|patrocinio)\b/u.test(
+      normalizedChoiceText(
+        `${question.label} ${question.fieldNames.join(" ")}`,
+      ),
+    ),
+  );
+  return !competingSemantics;
+}
+
 function unavailableResolution(input: {
   question: ResolvableApplicationQuestion;
   concept: CandidateKnowledgeConcept | null;
@@ -206,6 +232,7 @@ function unavailableResolution(input: {
 
 function resolveResidence(input: {
   question: ResolvableApplicationQuestion;
+  questions: readonly ResolvableApplicationQuestion[];
   knowledge: ReadonlyMap<
     CandidateKnowledgeConcept,
     CandidateKnowledgeQueryResult
@@ -213,6 +240,15 @@ function resolveResidence(input: {
 }): ContextualQuestionResult | null {
   const kind = residenceQuestionKind(input.question);
   if (!kind) return null;
+  const supportedBySameForm = sameFormResidenceContext(input);
+  if (kind === "AMBIGUOUS" && !supportedBySameForm)
+    return {
+      resolution: unavailableResolution({
+        question: input.question,
+        concept: "CURRENT_LOCATION",
+        reasonCode: "AMBIGUOUS_COUNTRY_CONTEXT_REQUIRED",
+      }),
+    };
   const candidate = input.knowledge.get("CURRENT_LOCATION");
   if (!candidate || candidate.status === "MISSING")
     return {
@@ -270,7 +306,8 @@ function resolveResidence(input: {
         reasonCode: "FIELD_TAXONOMY_MISMATCH",
       }),
     };
-  const auto = kind === "CLEAR" && canAutoResolve(candidate);
+  const auto =
+    (kind === "CLEAR" || supportedBySameForm) && canAutoResolve(candidate);
   return {
     resolution: {
       questionId: input.question.id,
@@ -279,10 +316,10 @@ function resolveResidence(input: {
       value,
       candidateKnowledgeReferences: references,
       reasonCode: auto
-        ? "EXPLICIT_CURRENT_RESIDENCE"
-        : kind === "AMBIGUOUS"
-          ? "AMBIGUOUS_COUNTRY_APPROVAL_REQUIRED"
-          : "CURRENT_RESIDENCE_APPROVAL_REQUIRED",
+        ? supportedBySameForm
+          ? "SAME_FORM_CURRENT_RESIDENCE_CONTEXT"
+          : "EXPLICIT_CURRENT_RESIDENCE"
+        : "CURRENT_RESIDENCE_APPROVAL_REQUIRED",
     },
   };
 }
@@ -366,6 +403,7 @@ function formattedAmount(amount: number) {
 
 function resolveCompensation(input: {
   question: ResolvableApplicationQuestion;
+  jobContext?: ApplicationJobContext;
   knowledge: ReadonlyMap<
     CandidateKnowledgeConcept,
     CandidateKnowledgeQueryResult
@@ -374,13 +412,67 @@ function resolveCompensation(input: {
   const semantics = compensationSemantics(input.question);
   if (!semantics) return null;
   const candidate = input.knowledge.get(semantics.concept);
+  const postedCurrency =
+    input.jobContext?.salaryCurrency?.toUpperCase() ?? null;
+  const postedPeriodText = normalizedChoiceText(
+    input.jobContext?.salaryInterval ?? "",
+  );
+  const postedPeriod = /\b(?:annual|annually|year|yearly|ano|anual)\b/u.test(
+    postedPeriodText,
+  )
+    ? ("annual" as const)
+    : /\b(?:month|monthly|mes|mensal)\b/u.test(postedPeriodText)
+      ? ("monthly" as const)
+      : null;
+  const postedMaximum = input.jobContext?.salaryMax ?? null;
+  const postedMinimum = input.jobContext?.salaryMin ?? null;
+  const postedRecommendation =
+    semantics.concept === "DESIRED_SALARY" &&
+    postedMinimum != null &&
+    postedMaximum != null &&
+    Number.isFinite(postedMinimum) &&
+    Number.isFinite(postedMaximum) &&
+    postedMinimum >= 0 &&
+    postedMaximum >= 0 &&
+    postedMinimum <= postedMaximum &&
+    postedCurrency &&
+    postedPeriod &&
+    (!semantics.currency || semantics.currency === postedCurrency) &&
+    (!semantics.period || semantics.period === postedPeriod)
+      ? {
+          amount: postedMaximum,
+          currency: postedCurrency,
+          period: postedPeriod,
+        }
+      : null;
+  const postedValue = postedRecommendation
+    ? input.question.options.length
+      ? [
+          formattedAmount(postedRecommendation.amount),
+          `${postedRecommendation.currency} ${formattedAmount(postedRecommendation.amount)}`,
+        ]
+          .map((value) =>
+            adaptKnownValueToEmployerControl(value, input.question),
+          )
+          .find(Boolean)
+      : formattedAmount(postedRecommendation.amount)
+    : null;
   if (!candidate || candidate.status === "MISSING")
     return {
-      resolution: unavailableResolution({
-        question: input.question,
-        concept: semantics.concept,
-        reasonCode: "CANDIDATE_KNOWLEDGE_MISSING",
-      }),
+      resolution: postedValue
+        ? {
+            questionId: input.question.id,
+            canonicalConcept: semantics.concept,
+            disposition: "PROPOSED_FOR_CANDIDATE",
+            value: postedValue,
+            candidateKnowledgeReferences: [],
+            reasonCode: "EMPLOYER_POSTED_COMPENSATION_PROPOSAL",
+          }
+        : unavailableResolution({
+            question: input.question,
+            concept: semantics.concept,
+            reasonCode: "CANDIDATE_KNOWLEDGE_MISSING",
+          }),
     };
   const references = [referenceId(candidate)];
   if (
@@ -401,21 +493,39 @@ function resolveCompensation(input: {
   const known = compensationValue(candidate);
   if (!known)
     return {
-      resolution: unavailableResolution({
-        question: input.question,
-        concept: semantics.concept,
-        references,
-        reasonCode: "COMPENSATION_NOT_STRUCTURED",
-      }),
+      resolution: postedValue
+        ? {
+            questionId: input.question.id,
+            canonicalConcept: semantics.concept,
+            disposition: "PROPOSED_FOR_CANDIDATE",
+            value: postedValue,
+            candidateKnowledgeReferences: references,
+            reasonCode: "EMPLOYER_POSTED_COMPENSATION_PROPOSAL",
+          }
+        : unavailableResolution({
+            question: input.question,
+            concept: semantics.concept,
+            references,
+            reasonCode: "COMPENSATION_NOT_STRUCTURED",
+          }),
     };
   if (semantics.currency && semantics.currency !== known.currency)
     return {
-      resolution: unavailableResolution({
-        question: input.question,
-        concept: semantics.concept,
-        references,
-        reasonCode: "COMPENSATION_CURRENCY_MISMATCH",
-      }),
+      resolution: postedValue
+        ? {
+            questionId: input.question.id,
+            canonicalConcept: semantics.concept,
+            disposition: "PROPOSED_FOR_CANDIDATE",
+            value: postedValue,
+            candidateKnowledgeReferences: references,
+            reasonCode: "EMPLOYER_POSTED_COMPENSATION_PROPOSAL",
+          }
+        : unavailableResolution({
+            question: input.question,
+            concept: semantics.concept,
+            references,
+            reasonCode: "COMPENSATION_CURRENCY_MISMATCH",
+          }),
     };
   const converted = semantics.period
     ? convertCompensationBasis(known, semantics.period)
@@ -466,12 +576,19 @@ function resolveCompensation(input: {
 
 export function resolveKnownContextualQuestion(input: {
   readonly question: ResolvableApplicationQuestion;
+  readonly questions?: readonly ResolvableApplicationQuestion[];
+  readonly jobContext?: ApplicationJobContext;
   readonly knowledge: ReadonlyMap<
     CandidateKnowledgeConcept,
     CandidateKnowledgeQueryResult
   >;
 }): ContextualQuestionResult | null {
-  return resolveResidence(input) ?? resolveCompensation(input);
+  return (
+    resolveResidence({
+      ...input,
+      questions: input.questions ?? [input.question],
+    }) ?? resolveCompensation(input)
+  );
 }
 
 function evidenceId(
@@ -648,7 +765,28 @@ function deterministicPredicateEvidence(
   evidence: readonly ContextualEvidence[],
   question: ResolvableApplicationQuestion,
 ) {
-  const value = normalizedChoiceText(question.label);
+  const requiredTerms = professionalHistoryPredicateTerms(question);
+  if (!requiredTerms) return [];
+  return evidence.filter((item) => {
+    const summary = normalizedChoiceText(item.summary);
+    return requiredTerms.every((required) => summary.includes(required));
+  });
+}
+
+const PROTECTED_CLOSED_WORLD_QUESTION =
+  /\b(?:criminal|legal|arrest|conviction|background check|disab|medical|health|demographic|race|ethnicity|gender|sex|veteran|citizen|citizenship|nationality|authorized|authorization|sponsor|sponsorship|visa|consent|privacy|data processing|salary|compensation|pay|identifier|social security|cpf|currently work|currently employed|employee of)\b/u;
+
+function professionalHistoryPredicateTerms(
+  question: ResolvableApplicationQuestion,
+): readonly string[] | null {
+  const value = normalizedChoiceText(
+    `${question.label} ${question.fieldNames.join(" ")}`,
+  );
+  if (
+    PROTECTED_CLOSED_WORLD_QUESTION.test(value) ||
+    /\b(?:worked|work|employed) (?:at|for|by)\b/u.test(value)
+  )
+    return null;
   const rules: readonly { pattern: RegExp; required: readonly string[] }[] = [
     { pattern: /\baccount executive\b/u, required: ["account executive"] },
     { pattern: /\bclosing role\b/u, required: ["closing"] },
@@ -667,10 +805,112 @@ function deterministicPredicateEvidence(
     },
   ];
   const rule = rules.find((candidate) => candidate.pattern.test(value));
-  if (!rule) return [];
-  return evidence.filter((item) => {
-    const summary = normalizedChoiceText(item.summary);
-    return rule.required.every((required) => summary.includes(required));
+  if (rule) return rule.required;
+  if (
+    !/\b(?:experience (?:with|using|in|as)|(?:have|has|prior|previous|existing).{0,50}experience|worked with|used professionally|professional use)\b/u.test(
+      value,
+    )
+  )
+    return null;
+  const subject = value
+    .replace(
+      /\b(?:do you|have you|has the candidate|does the candidate|candidate|your|you|prior|previous|existing|professional|professionally|relevant|work|worked|used|use|using|experience|experiencia|anos?|years?|with|in|as|of|the|a|an)\b/gu,
+      " ",
+    )
+    .replace(/\s+/gu, " ")
+    .trim();
+  const required = terms(subject).slice(0, 6);
+  return required.length ? required : null;
+}
+
+function boundedProfessionalHistoryPredicate(
+  question: ResolvableApplicationQuestion,
+) {
+  return professionalHistoryPredicateTerms(question) !== null;
+}
+
+function activeAuthority(
+  knowledge: ReadonlyMap<
+    CandidateKnowledgeConcept,
+    CandidateKnowledgeQueryResult
+  >,
+  concept:
+    | "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION"
+    | "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
+  key: "attested" | "authorized",
+) {
+  const result = knowledge.get(concept);
+  return result &&
+    result.status === "AVAILABLE" &&
+    result.freshness === "CURRENT" &&
+    !result.conflict &&
+    result.candidateApproved &&
+    result.reusable &&
+    result.applicationUse === "PREFERENCE_CONTEXT_ONLY" &&
+    result.value?.[key] === true
+    ? result
+    : null;
+}
+
+function professionalHistoryNegativeAuthority(
+  knowledge: ReadonlyMap<
+    CandidateKnowledgeConcept,
+    CandidateKnowledgeQueryResult
+  >,
+) {
+  const completeness = activeAuthority(
+    knowledge,
+    "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+    "attested",
+  );
+  const negativeInference = activeAuthority(
+    knowledge,
+    "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
+    "authorized",
+  );
+  return completeness && negativeInference
+    ? {
+        references: [referenceId(completeness), referenceId(negativeInference)],
+      }
+    : null;
+}
+
+function clearlyNoRelevantExperience(
+  evidence: readonly ContextualEvidence[],
+  jobContext: ApplicationJobContext | undefined,
+) {
+  const employment = evidence.filter((item) => item.type === "EXPERIENCE");
+  if (!employment.length) return true;
+  const target = normalizedChoiceText(
+    `${jobContext?.title ?? ""} ${boundedJobStrings(jobContext?.skills).join(" ")}`,
+  );
+  const domains = [
+    {
+      id: "SALES",
+      pattern:
+        /\b(?:sales|account executive|closing|business development|b2b)\b/u,
+    },
+    {
+      id: "SECURITY",
+      pattern:
+        /\b(?:security|cybersecurity|cyber|infosec|penetration testing)\b/u,
+    },
+    {
+      id: "SOFTWARE_ENGINEERING",
+      pattern:
+        /\b(?:software|developer|engineering|programming|python|typescript|java)\b/u,
+    },
+  ];
+  const targetDomains = domains.filter((domain) => domain.pattern.test(target));
+  if (targetDomains.length !== 1) return false;
+  return employment.every((item) => {
+    const evidenceDomains = domains.filter((domain) =>
+      domain.pattern.test(normalizedChoiceText(item.summary)),
+    );
+    return (
+      evidenceDomains.length > 0 &&
+      evidenceDomains.every((domain) => domain.id !== targetDomains[0]!.id)
+    );
   });
 }
 
@@ -729,6 +969,23 @@ export function relevantExperienceResolution(input: {
   };
 }
 
+function zeroExperienceResolution(input: {
+  readonly question: ResolvableApplicationQuestion;
+  readonly authorityReferences: readonly string[];
+}) {
+  const value = adaptExperienceDurationToEmployerControl(0, input.question);
+  return value
+    ? {
+        questionId: input.question.id,
+        canonicalConcept: null,
+        disposition: "AUTO_RESOLVED" as const,
+        value,
+        candidateKnowledgeReferences: input.authorityReferences,
+        reasonCode: "COMPLETE_HISTORY_SUPPORTS_ZERO_EXPERIENCE",
+      }
+    : null;
+}
+
 function yesResolution(input: {
   question: ResolvableApplicationQuestion;
   references: readonly string[];
@@ -765,14 +1022,20 @@ export function resolveExperienceContextualQuestion(input: {
   if (!relevant && !predicate) return null;
   const employment = input.knowledge.get("EMPLOYMENT_HISTORY");
   const evidence = contextualCandidateEvidence(input.knowledge);
+  const negativeAuthority = professionalHistoryNegativeAuthority(
+    input.knowledge,
+  );
 
   if (relevant) {
+    const missingHistoryCoveredByAuthority =
+      negativeAuthority && (!employment || employment.status === "MISSING");
     if (
-      !employment ||
-      employment.status !== "AVAILABLE" ||
-      employment.conflict ||
-      employment.freshness === "STALE" ||
-      !employment.candidateApproved
+      !missingHistoryCoveredByAuthority &&
+      (!employment ||
+        employment.status !== "AVAILABLE" ||
+        employment.conflict ||
+        employment.freshness === "STALE" ||
+        !employment.candidateApproved)
     )
       return {
         resolution: unavailableResolution({
@@ -808,6 +1071,16 @@ export function resolveExperienceContextualQuestion(input: {
         }),
       };
     }
+    if (
+      negativeAuthority &&
+      clearlyNoRelevantExperience(evidence, input.jobContext)
+    ) {
+      const zero = zeroExperienceResolution({
+        question: input.question,
+        authorityReferences: negativeAuthority.references,
+      });
+      if (zero) return { resolution: zero };
+    }
     return {
       resolution: null,
       aiQuestion: {
@@ -819,15 +1092,6 @@ export function resolveExperienceContextualQuestion(input: {
       },
     };
   }
-
-  if (!evidence.length)
-    return {
-      resolution: unavailableResolution({
-        question: input.question,
-        concept: null,
-        reasonCode: "CAPABILITY_EVIDENCE_MISSING",
-      }),
-    };
 
   const matches = deterministicPredicateEvidence(evidence, input.question);
   if (matches.length) {
@@ -845,6 +1109,29 @@ export function resolveExperienceContextualQuestion(input: {
             reasonCode: "FIELD_TAXONOMY_MISMATCH",
           }),
         };
+  }
+  if (
+    negativeAuthority &&
+    boundedProfessionalHistoryPredicate(input.question)
+  ) {
+    const value = adaptKnownValueToEmployerControl("No", input.question);
+    return {
+      resolution: value
+        ? {
+            questionId: input.question.id,
+            canonicalConcept: null,
+            disposition: "AUTO_RESOLVED",
+            value,
+            candidateKnowledgeReferences: negativeAuthority.references,
+            reasonCode: "COMPLETE_HISTORY_SUPPORTS_NO_EXPERIENCE",
+          }
+        : unavailableResolution({
+            question: input.question,
+            concept: null,
+            references: negativeAuthority.references,
+            reasonCode: "FIELD_TAXONOMY_MISMATCH",
+          }),
+    };
   }
   return evidence.length
     ? {

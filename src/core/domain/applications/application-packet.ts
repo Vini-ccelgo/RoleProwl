@@ -9,6 +9,7 @@ import type {
 import type { CandidateKnowledgeConcept } from "@/core/domain/candidate/candidate-knowledge";
 import { ValidationError } from "@/core/errors/application-errors";
 import { exclusiveChoiceValues } from "./choice-taxonomy";
+import { normalizePersonalNameForEmployerPresentation } from "./control-adaptation";
 
 export const APPLICATION_PACKET_VERSION = "application-packet-v1";
 
@@ -1026,7 +1027,11 @@ function identityValue(
   profileValue: string | null | undefined,
 ) {
   const applicationSpecific = clean(source.applicationOverrides?.identity[key]);
-  const profile = clean(profileValue);
+  const rawProfile = clean(profileValue);
+  const profile =
+    rawProfile && (key === "firstName" || key === "lastName")
+      ? normalizePersonalNameForEmployerPresentation(rawProfile)
+      : rawProfile;
   return {
     value: applicationSpecific ?? profile,
     provenance: applicationSpecific

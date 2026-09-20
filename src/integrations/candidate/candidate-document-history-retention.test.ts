@@ -87,6 +87,7 @@ vi.mock("@/lib/db/client", () => ({
       },
       candidateFact: {
         count: vi.fn(async () => 0),
+        findFirst: vi.fn(async () => null),
         deleteMany: vi.fn(async () => ({ count: 0 })),
       },
       jobMatchAnalysis: { deleteMany: vi.fn(async () => ({ count: 0 })) },

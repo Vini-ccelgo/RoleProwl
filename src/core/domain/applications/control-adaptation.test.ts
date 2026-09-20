@@ -3,6 +3,7 @@ import type { PublicApplicationQuestion } from "./public-application-question";
 import {
   adaptExperienceDurationToEmployerControl,
   adaptKnownValueToEmployerControl,
+  normalizePersonalNameForEmployerPresentation,
 } from "./control-adaptation";
 
 function question(
@@ -59,5 +60,43 @@ describe("employer control adaptation", () => {
         ]),
       ),
     ).toBe("three");
+  });
+
+  it("requires an explicit zero option instead of coercing zero into a range", () => {
+    expect(
+      adaptExperienceDurationToEmployerControl(
+        0,
+        question([
+          { label: "0 to 1 years", value: "range-zero" },
+          { label: "1 to 3 years", value: "range-one" },
+        ]),
+      ),
+    ).toBeNull();
+    expect(
+      adaptExperienceDurationToEmployerControl(
+        0,
+        question([
+          { label: "None", value: "none-raw" },
+          { label: "1 to 3 years", value: "range-one" },
+        ]),
+      ),
+    ).toBe("none-raw");
+  });
+
+  it("normalizes only obviously uppercase personal names for presentation", () => {
+    expect(normalizePersonalNameForEmployerPresentation("  MAYA   CHEN ")).toBe(
+      "Maya Chen",
+    );
+    expect(normalizePersonalNameForEmployerPresentation("MARY-JANE")).toBe(
+      "Mary-Jane",
+    );
+    expect(normalizePersonalNameForEmployerPresentation("O'NEIL")).toBe(
+      "O'Neil",
+    );
+    expect(normalizePersonalNameForEmployerPresentation("McDonald")).toBe(
+      "McDonald",
+    );
+    expect(normalizePersonalNameForEmployerPresentation("李")).toBe("李");
+    expect(normalizePersonalNameForEmployerPresentation("АННА")).toBe("АННА");
   });
 });

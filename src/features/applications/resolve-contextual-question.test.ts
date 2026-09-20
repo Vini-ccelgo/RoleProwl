@@ -55,6 +55,21 @@ function knowledgeMap(...items: CandidateKnowledgeQueryResult[]) {
   return new Map(items.map((item) => [item.concept, item]));
 }
 
+function professionalHistoryAuthorities() {
+  return [
+    knowledge(
+      "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+      { attested: true },
+      { applicationUse: "PREFERENCE_CONTEXT_ONLY", autoAnswerAllowed: false },
+    ),
+    knowledge(
+      "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
+      { authorized: true },
+      { applicationUse: "PREFERENCE_CONTEXT_ONLY", autoAnswerAllowed: false },
+    ),
+  ] as const;
+}
+
 describe("known contextual application questions", () => {
   it("answers a clear residence-country question from explicit current location", () => {
     const result = resolveKnownContextualQuestion({
@@ -139,10 +154,53 @@ describe("known contextual application questions", () => {
       ),
     });
     expect(result?.resolution).toMatchObject({
-      disposition: "PROPOSED_FOR_CANDIDATE",
-      value: "Brazil",
-      reasonCode: "AMBIGUOUS_COUNTRY_APPROVAL_REQUIRED",
+      disposition: "CANDIDATE_REQUIRED",
+      value: null,
+      reasonCode: "AMBIGUOUS_COUNTRY_CONTEXT_REQUIRED",
     });
+  });
+
+  it("uses explicit same-form residence context for bare Country only without competing semantics", () => {
+    const country = question("Country", {
+      fieldTypes: ["multi_value_single_select"],
+      options: ["Brazil", "United States"],
+    });
+    const residence = question("Which country do you currently reside in?");
+    const citizenship = question("Country of citizenship");
+    const authorization = question("Work authorization country");
+    const candidate = knowledgeMap(
+      knowledge("CURRENT_LOCATION", { text: "São Paulo, Brazil" }),
+    );
+    expect(
+      resolveKnownContextualQuestion({
+        question: country,
+        questions: [residence, country],
+        knowledge: candidate,
+      })?.resolution,
+    ).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: "Brazil",
+      reasonCode: "SAME_FORM_CURRENT_RESIDENCE_CONTEXT",
+    });
+    for (const competitor of [citizenship, authorization]) {
+      expect(
+        resolveKnownContextualQuestion({
+          question: country,
+          questions: [residence, competitor, country],
+          knowledge: candidate,
+        })?.resolution,
+      ).toMatchObject({
+        disposition: "CANDIDATE_REQUIRED",
+        reasonCode: "AMBIGUOUS_COUNTRY_CONTEXT_REQUIRED",
+      });
+    }
+    expect(
+      resolveKnownContextualQuestion({
+        question: country,
+        questions: [country],
+        knowledge: candidate,
+      })?.resolution?.reasonCode,
+    ).toBe("AMBIGUOUS_COUNTRY_CONTEXT_REQUIRED");
   });
 
   it("converts same-currency monthly and annual compensation by code", () => {
@@ -203,6 +261,31 @@ describe("known contextual application questions", () => {
     expect(wrongCurrency?.resolution?.reasonCode).toBe(
       "COMPENSATION_CURRENCY_MISMATCH",
     );
+  });
+
+  it("offers a posted-range desired-compensation value only as a candidate proposal", () => {
+    const result = resolveKnownContextualQuestion({
+      question: question("Expected annual base compensation (USD)"),
+      knowledge: knowledgeMap(
+        knowledge("DESIRED_SALARY", {
+          amount: 8_500,
+          currency: "BRL",
+          period: "monthly",
+        }),
+      ),
+      jobContext: {
+        title: "Account Executive",
+        salaryMin: 120_000,
+        salaryMax: 160_000,
+        salaryCurrency: "USD",
+        salaryInterval: "annual",
+      },
+    });
+    expect(result?.resolution).toMatchObject({
+      disposition: "PROPOSED_FOR_CANDIDATE",
+      value: "160000",
+      reasonCode: "EMPLOYER_POSTED_COMPENSATION_PROPOSAL",
+    });
   });
 });
 
@@ -274,6 +357,132 @@ describe("experience-contextual application questions", () => {
     });
     expect(accountExecutive?.resolution).toBeNull();
     expect(accountExecutive?.aiQuestion?.kind).toBe("EXPERIENCE_PREDICATE");
+  });
+
+  it("uses absence only with both current authorities and a faithful No control", () => {
+    const accountExecutiveQuestion = question(
+      "Previous experience as an Account Executive?",
+      {
+        fieldTypes: ["input_radio"],
+        options: ["Yes", "No"],
+        optionIdentities: [
+          { label: "Yes", value: "yes-raw" },
+          { label: "No", value: "no-raw" },
+        ],
+      },
+    );
+    const withAuthority = resolveExperienceContextualQuestion({
+      question: accountExecutiveQuestion,
+      knowledge: knowledgeMap(employment, ...professionalHistoryAuthorities()),
+    });
+    const incompleteAuthority = resolveExperienceContextualQuestion({
+      question: accountExecutiveQuestion,
+      knowledge: knowledgeMap(employment, professionalHistoryAuthorities()[1]),
+    });
+    expect(withAuthority?.resolution).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: "no-raw",
+      reasonCode: "COMPLETE_HISTORY_SUPPORTS_NO_EXPERIENCE",
+    });
+    expect(incompleteAuthority?.resolution).toBeNull();
+    expect(incompleteAuthority?.aiQuestion?.kind).toBe("EXPERIENCE_PREDICATE");
+  });
+
+  it("supports exact bounded technology predicates without widening into protected claims", () => {
+    const technology = resolveExperienceContextualQuestion({
+      question: question("Do you have TypeScript experience?", {
+        fieldTypes: ["input_radio"],
+        options: ["Yes", "No"],
+      }),
+      knowledge: knowledgeMap(employment, ...professionalHistoryAuthorities()),
+    });
+    const protectedClaim = resolveExperienceContextualQuestion({
+      question: question("Do you have criminal investigation experience?", {
+        fieldTypes: ["input_radio"],
+        options: ["Yes", "No"],
+      }),
+      knowledge: knowledgeMap(employment, ...professionalHistoryAuthorities()),
+    });
+    expect(technology?.resolution).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: "No",
+      reasonCode: "COMPLETE_HISTORY_SUPPORTS_NO_EXPERIENCE",
+    });
+    expect(protectedClaim?.resolution).toBeNull();
+    expect(protectedClaim?.aiQuestion?.kind).toBe("EXPERIENCE_PREDICATE");
+  });
+
+  it("never applies closed-world authority to employer relationships", () => {
+    const result = resolveExperienceContextualQuestion({
+      question: question("Have you worked at Inter?", {
+        fieldTypes: ["input_radio"],
+        options: ["Yes", "No"],
+      }),
+      knowledge: knowledgeMap(employment, ...professionalHistoryAuthorities()),
+    });
+    expect(result?.resolution).toBeNull();
+    expect(result?.aiQuestion?.kind).toBe("EXPERIENCE_PREDICATE");
+  });
+
+  it("resolves zero relevant experience only with authority and an explicit zero option", () => {
+    const zeroQuestion = question(
+      "Years of experience relevant to the position",
+      {
+        fieldTypes: ["multi_value_single_select"],
+        options: ["None", "1 to 3 years", "3 plus years"],
+        optionIdentities: [
+          { label: "None", value: "none-raw" },
+          { label: "1 to 3 years", value: "one-three" },
+          { label: "3 plus years", value: "three-plus" },
+        ],
+      },
+    );
+    const withoutAuthority = resolveExperienceContextualQuestion({
+      question: zeroQuestion,
+      knowledge: knowledgeMap(employment),
+      jobContext: { title: "Account Executive", skills: ["B2B sales"] },
+    });
+    const withAuthority = resolveExperienceContextualQuestion({
+      question: zeroQuestion,
+      knowledge: knowledgeMap(employment, ...professionalHistoryAuthorities()),
+      jobContext: { title: "Account Executive", skills: ["B2B sales"] },
+    });
+    const noZeroRepresentation = resolveExperienceContextualQuestion({
+      question: question("Years of experience relevant to the position", {
+        fieldTypes: ["multi_value_single_select"],
+        options: ["1 to 3 years", "3 plus years"],
+      }),
+      knowledge: knowledgeMap(employment, ...professionalHistoryAuthorities()),
+      jobContext: { title: "Account Executive", skills: ["B2B sales"] },
+    });
+    expect(withoutAuthority?.resolution).toBeNull();
+    expect(withAuthority?.resolution).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: "none-raw",
+      reasonCode: "COMPLETE_HISTORY_SUPPORTS_ZERO_EXPERIENCE",
+    });
+    expect(noZeroRepresentation?.resolution).toBeNull();
+  });
+
+  it("can resolve explicit zero when complete history contains no employment records", () => {
+    const result = resolveExperienceContextualQuestion({
+      question: question("Years of Python experience", {
+        fieldTypes: ["multi_value_single_select"],
+        options: ["0 years", "1 year", "2 plus years"],
+        optionIdentities: [
+          { label: "0 years", value: "zero-raw" },
+          { label: "1 year", value: "one-raw" },
+          { label: "2 plus years", value: "two-plus" },
+        ],
+      }),
+      knowledge: knowledgeMap(...professionalHistoryAuthorities()),
+      jobContext: { title: "Python Developer", skills: ["Python"] },
+    });
+    expect(result?.resolution).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: "zero-raw",
+      reasonCode: "COMPLETE_HISTORY_SUPPORTS_ZERO_EXPERIENCE",
+    });
   });
 
   it("establishes explicit B2B SaaS support without employer-specific hardcoding", () => {

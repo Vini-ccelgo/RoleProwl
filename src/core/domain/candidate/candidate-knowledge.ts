@@ -2,7 +2,8 @@ export type CandidateKnowledgeClass =
   | "STABLE_FACT"
   | "REUSABLE_PERSONAL"
   | "VOLATILE_CONSEQUENTIAL"
-  | "CONSENT_PREFERENCE_ONLY";
+  | "CONSENT_PREFERENCE_ONLY"
+  | "CANDIDATE_AUTHORITY";
 
 export type CandidateKnowledgeOrigin = "EXPLICIT" | "DERIVED" | "INFERRED";
 export type CandidateKnowledgeSource =
@@ -42,6 +43,8 @@ export const STATIC_CANDIDATE_KNOWLEDGE_CONCEPTS = [
   "REUSABLE_SELF_DESCRIPTION",
   "AI_HIRING_PROCESS_PREFERENCE",
   "GENERAL_DATA_USE_PREFERENCE",
+  "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+  "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
 ] as const;
 
 export type StaticCandidateKnowledgeConcept =
@@ -107,6 +110,12 @@ const CONSENT_PREFERENCE: CandidateKnowledgePolicy = {
   reverifyAfterDays: 180,
   reusableForEmployerQuestions: false,
 };
+const CANDIDATE_AUTHORITY: CandidateKnowledgePolicy = {
+  class: "CANDIDATE_AUTHORITY",
+  candidateInputOptional: true,
+  reverifyAfterDays: 30,
+  reusableForEmployerQuestions: false,
+};
 
 export const CANDIDATE_KNOWLEDGE_REGISTRY: Readonly<
   Record<StaticCandidateKnowledgeConcept, CandidateKnowledgePolicy>
@@ -139,7 +148,38 @@ export const CANDIDATE_KNOWLEDGE_REGISTRY: Readonly<
   REUSABLE_SELF_DESCRIPTION: REUSABLE,
   AI_HIRING_PROCESS_PREFERENCE: CONSENT_PREFERENCE,
   GENERAL_DATA_USE_PREFERENCE: CONSENT_PREFERENCE,
+  PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION: CANDIDATE_AUTHORITY,
+  NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION: CANDIDATE_AUTHORITY,
 };
+
+export const PROFESSIONAL_HISTORY_AUTHORITY_CONCEPTS = [
+  "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+  "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
+] as const satisfies readonly StaticCandidateKnowledgeConcept[];
+
+export type ProfessionalHistoryAuthorityConcept =
+  (typeof PROFESSIONAL_HISTORY_AUTHORITY_CONCEPTS)[number];
+
+export function isProfessionalHistoryAuthorityConcept(
+  concept: string,
+): concept is ProfessionalHistoryAuthorityConcept {
+  return PROFESSIONAL_HISTORY_AUTHORITY_CONCEPTS.includes(
+    concept as ProfessionalHistoryAuthorityConcept,
+  );
+}
+
+export function isValidCandidateKnowledgeAnswer(
+  concept: CandidateKnowledgeConcept,
+  answer: Readonly<Record<string, unknown>>,
+) {
+  if (!isProfessionalHistoryAuthorityConcept(concept))
+    return Object.keys(answer).length > 0;
+  const expectedKey =
+    concept === "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION"
+      ? "attested"
+      : "authorized";
+  return Object.keys(answer).length === 1 && answer[expectedKey] === true;
+}
 
 export function normalizeLanguageKey(language: string) {
   return language
@@ -508,7 +548,8 @@ export function resolveCandidateKnowledge(input: {
     return {
       concept: input.concept,
       applicationUse:
-        policy.class === "CONSENT_PREFERENCE_ONLY"
+        policy.class === "CONSENT_PREFERENCE_ONLY" ||
+        policy.class === "CANDIDATE_AUTHORITY"
           ? "PREFERENCE_CONTEXT_ONLY"
           : "REUSABLE_ANSWER",
       autoAnswerAllowed: false,
@@ -544,7 +585,8 @@ export function resolveCandidateKnowledge(input: {
   return {
     concept: input.concept,
     applicationUse:
-      policy.class === "CONSENT_PREFERENCE_ONLY"
+      policy.class === "CONSENT_PREFERENCE_ONLY" ||
+      policy.class === "CANDIDATE_AUTHORITY"
         ? "PREFERENCE_CONTEXT_ONLY"
         : "REUSABLE_ANSWER",
     autoAnswerAllowed:

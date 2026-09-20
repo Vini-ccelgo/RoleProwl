@@ -13,11 +13,13 @@ vi.mock("@/integrations/applications/invalidate-application-packets", () => ({
 
 import {
   getCandidateKnowledgeSnapshot,
+  invalidateProfessionalHistoryAuthorities,
   reconfirmDirectCandidateKnowledge,
   removeDirectCandidateKnowledge,
   reviewCandidateKnowledgeProposal,
   saveDirectCandidateKnowledge,
   saveDirectCandidateKnowledgeBatch,
+  setProfessionalHistoryAuthorities,
 } from "./prisma-candidate-knowledge";
 
 function database(proposalUserId = "candidate-a") {
@@ -37,7 +39,16 @@ function database(proposalUserId = "candidate-a") {
       ),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
-    answerMemory: { upsert: vi.fn(async () => ({ id: "memory-1" })) },
+    answerMemory: {
+      findMany: vi.fn(async () => []),
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+      upsert: vi.fn(async ({ where }) => ({
+        id:
+          where.userId_concept.concept === "TARGET_ROLE"
+            ? "memory-1"
+            : `memory-${where.userId_concept.concept}`,
+      })),
+    },
     auditEvent: { create: vi.fn(async () => ({})) },
     application: { findMany: vi.fn(async () => []), updateMany: vi.fn() },
     applicationEvent: { create: vi.fn() },
@@ -59,6 +70,13 @@ function snapshotDatabase(input?: {
   const candidateFactDelete = vi.fn();
   const transaction = {
     answerMemory: {
+      findMany: vi.fn(async ({ where }) =>
+        memories.filter(
+          (memory) =>
+            memory.userId === where.userId &&
+            (!where.concept?.in || where.concept.in.includes(memory.concept)),
+        ),
+      ),
       findFirst: vi.fn(
         async ({ where }) =>
           memories.find(
@@ -136,6 +154,82 @@ describe("candidate knowledge proposal review persistence", () => {
         }),
       }),
     );
+  });
+
+  it("stores both professional-history authorities atomically as finite policy values", async () => {
+    const db = database();
+    await expect(
+      setProfessionalHistoryAuthorities(
+        {
+          userId: "candidate-a",
+          complete: true,
+          negativeInference: true,
+          confirmedAt: new Date("2026-09-20T12:00:00.000Z"),
+        },
+        db.client as never,
+      ),
+    ).resolves.toEqual({ complete: true, negativeInference: true });
+    expect(db.transaction.answerMemory.upsert).toHaveBeenCalledTimes(2);
+    expect(db.transaction.answerMemory.upsert).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        create: expect.objectContaining({
+          concept: "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+          answer: { attested: true },
+          autoAnswerAllowed: false,
+        }),
+      }),
+    );
+    expect(db.transaction.answerMemory.upsert).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        create: expect.objectContaining({
+          concept: "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
+          answer: { authorized: true },
+          autoAnswerAllowed: false,
+        }),
+      }),
+    );
+    expect(invalidateReadyApplicationPackets).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears both authorities with bounded metadata after history changes", async () => {
+    const findMany = vi.fn(async () => [
+      {
+        id: "memory-complete",
+        concept: "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+      },
+      {
+        id: "memory-negative",
+        concept: "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
+      },
+    ]);
+    const deleteMany = vi.fn(async () => ({ count: 2 }));
+    const auditCreate = vi.fn(async () => ({}));
+    await expect(
+      invalidateProfessionalHistoryAuthorities(
+        {
+          answerMemory: { findMany, deleteMany },
+          auditEvent: { create: auditCreate },
+        } as never,
+        "candidate-a",
+      ),
+    ).resolves.toBe(2);
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: ["memory-complete", "memory-negative"] },
+        userId: "candidate-a",
+        concept: {
+          in: [
+            "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+            "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
+          ],
+        },
+      },
+    });
+    const serialized = JSON.stringify(auditCreate.mock.calls);
+    expect(serialized).toContain("HISTORY_CHANGED");
+    expect(serialized).not.toContain("resume");
   });
 
   it("stores a candidate correction without altering the proposal or original narrative", async () => {

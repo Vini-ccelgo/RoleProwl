@@ -5,6 +5,8 @@ import {
   candidateKnowledgeGapPrompts,
   candidateKnowledgePolicy,
   isCandidateKnowledgeConcept,
+  isValidCandidateKnowledgeAnswer,
+  PROFESSIONAL_HISTORY_AUTHORITY_CONCEPTS,
   resolveCandidateKnowledge,
   type CandidateKnowledgeConcept,
 } from "@/core/domain/candidate/candidate-knowledge";
@@ -70,6 +72,11 @@ export async function getCandidateKnowledgeSnapshot(
     memories,
   });
   const coverage = buildCandidateKnowledgeCoverage({ evidence, now });
+  const reusableDetailCoverage = coverage.filter(
+    (item) =>
+      item.concept !== "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION" &&
+      item.concept !== "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
+  );
   const currentDetails = coverage.filter(
     (item) =>
       item.result.value !== null &&
@@ -87,6 +94,8 @@ export async function getCandidateKnowledgeSnapshot(
         "PROJECTS",
         "US_WORK_AUTHORIZATION",
         "US_FUTURE_SPONSORSHIP",
+        "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+        "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
       ].includes(item.concept) &&
       !item.concept.startsWith("LANGUAGE:") &&
       !item.concept.startsWith("WORK_AUTHORIZATION:") &&
@@ -122,18 +131,21 @@ export async function getCandidateKnowledgeSnapshot(
     narratives,
     proposals,
     counts: {
-      known: coverage.filter((item) => item.status === "KNOWN").length,
-      worthCompleting: coverage.filter(
+      known: reusableDetailCoverage.filter((item) => item.status === "KNOWN")
+        .length,
+      worthCompleting: reusableDetailCoverage.filter(
         (item) =>
           (item.status === "MISSING" || item.status === "PARTIAL") &&
           !candidateKnowledgePolicy(item.concept)?.candidateInputOptional,
       ).length,
-      optional: coverage.filter(
+      optional: reusableDetailCoverage.filter(
         (item) =>
           item.status === "MISSING" &&
           candidateKnowledgePolicy(item.concept)?.candidateInputOptional,
       ).length,
-      conflicts: coverage.filter((item) => item.status === "CONFLICT").length,
+      conflicts: reusableDetailCoverage.filter(
+        (item) => item.status === "CONFLICT",
+      ).length,
     },
   };
 }
@@ -194,7 +206,7 @@ async function upsertDirectCandidateKnowledge(
 ) {
   if (!isCandidateKnowledgeConcept(input.concept))
     throw new ValidationError("Unknown recurring candidate concept.");
-  if (Object.keys(input.answer).length === 0)
+  if (!isValidCandidateKnowledgeAnswer(input.concept, input.answer))
     throw new ValidationError("A recurring answer cannot be empty.");
   const policy = candidateKnowledgePolicy(input.concept)!;
   const confirmedAt = input.confirmedAt ?? new Date();
@@ -249,6 +261,102 @@ async function upsertDirectCandidateKnowledge(
     },
   });
   return memory;
+}
+
+async function removeProfessionalHistoryAuthorityMemories(
+  transaction: Prisma.TransactionClient,
+  input: {
+    readonly userId: string;
+    readonly concepts: readonly (typeof PROFESSIONAL_HISTORY_AUTHORITY_CONCEPTS)[number][];
+    readonly reason: "HISTORY_CHANGED" | "USER_REVOCATION";
+  },
+) {
+  const memories = await transaction.answerMemory.findMany({
+    where: { userId: input.userId, concept: { in: [...input.concepts] } },
+    select: { concept: true, id: true },
+  });
+  if (!memories.length) return 0;
+  const removed = await transaction.answerMemory.deleteMany({
+    where: {
+      id: { in: memories.map((memory) => memory.id) },
+      userId: input.userId,
+      concept: { in: [...input.concepts] },
+    },
+  });
+  for (const memory of memories) {
+    await transaction.auditEvent.create({
+      data: {
+        actorUserId: input.userId,
+        action: "POLICY_CHANGED",
+        entityType: "answerMemory",
+        entityId: memory.id,
+        metadata: {
+          concept: memory.concept,
+          operation: "REMOVED",
+          reason: input.reason,
+        },
+      },
+    });
+  }
+  return removed.count;
+}
+
+export function invalidateProfessionalHistoryAuthorities(
+  transaction: Prisma.TransactionClient,
+  userId: string,
+) {
+  return removeProfessionalHistoryAuthorityMemories(transaction, {
+    userId,
+    concepts: PROFESSIONAL_HISTORY_AUTHORITY_CONCEPTS,
+    reason: "HISTORY_CHANGED",
+  });
+}
+
+export async function setProfessionalHistoryAuthorities(
+  input: {
+    readonly userId: string;
+    readonly complete: boolean;
+    readonly negativeInference: boolean;
+    readonly confirmedAt?: Date;
+  },
+  database: PrismaClient = databaseClient(),
+) {
+  const confirmedAt = input.confirmedAt ?? new Date();
+  return database.$transaction(async (transaction) => {
+    if (!input.complete) {
+      await removeProfessionalHistoryAuthorityMemories(transaction, {
+        userId: input.userId,
+        concepts: PROFESSIONAL_HISTORY_AUTHORITY_CONCEPTS,
+        reason: "USER_REVOCATION",
+      });
+    } else {
+      await upsertDirectCandidateKnowledge(transaction, {
+        userId: input.userId,
+        concept: "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+        answer: { attested: true },
+        confirmedAt,
+      });
+      if (input.negativeInference) {
+        await upsertDirectCandidateKnowledge(transaction, {
+          userId: input.userId,
+          concept: "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
+          answer: { authorized: true },
+          confirmedAt,
+        });
+      } else {
+        await removeProfessionalHistoryAuthorityMemories(transaction, {
+          userId: input.userId,
+          concepts: ["NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION"],
+          reason: "USER_REVOCATION",
+        });
+      }
+    }
+    await invalidateReadyApplicationPackets(transaction, input.userId);
+    return {
+      complete: input.complete,
+      negativeInference: input.complete && input.negativeInference,
+    };
+  });
 }
 
 export async function saveDirectCandidateKnowledgeBatch(
@@ -432,6 +540,8 @@ export async function reviewCandidateKnowledgeProposal(
       );
     if (!isCandidateKnowledgeConcept(proposal.concept))
       throw new ValidationError("Unknown recurring candidate concept.");
+    if (!isValidCandidateKnowledgeAnswer(proposal.concept, answer))
+      throw new ValidationError("Invalid recurring candidate answer.");
     const updated = await transaction.candidateKnowledgeProposal.updateMany({
       where: { id: proposal.id, userId: input.userId, status: "PENDING" },
       data: {

@@ -11,6 +11,24 @@ export function employerQuestionOptions(question: PublicApplicationQuestion) {
     : question.options.map((option) => ({ label: option, value: option }));
 }
 
+export function normalizePersonalNameForEmployerPresentation(value: string) {
+  const normalized = value.normalize("NFKC").replace(/\s+/gu, " ").trim();
+  if (
+    /\p{L}/u.test(normalized) &&
+    /[^\p{Script_Extensions=Latin}\p{M}\p{N}\s'’.-]/u.test(normalized)
+  )
+    return normalized;
+  const hasUppercase = /\p{Lu}/u.test(normalized);
+  const hasLowercase = /\p{Ll}/u.test(normalized);
+  if (!hasUppercase || hasLowercase) return normalized;
+  return normalized.replace(/\p{L}+/gu, (part) => {
+    const [first, ...rest] = [...part];
+    return `${first?.toLocaleUpperCase("en-US") ?? ""}${rest
+      .join("")
+      .toLocaleLowerCase("en-US")}`;
+  });
+}
+
 function encodedOptionValue(
   question: PublicApplicationQuestion,
   values: readonly string[],
@@ -96,6 +114,16 @@ export function adaptExperienceDurationToEmployerControl(
 ) {
   const options = employerQuestionOptions(question);
   if (!options.length) return formattedExperienceDuration(months);
+  if (months === 0) {
+    const zero = options.filter((option) =>
+      /^(?:0\s*(?:year|years|yr|yrs|ano|anos)?|none|no experience|nenhuma|nenhum|sem experiencia)$/u.test(
+        normalizedChoiceText(option.label),
+      ),
+    );
+    return zero.length === 1
+      ? encodedOptionValue(question, [zero[0]!.value])
+      : null;
+  }
   const years = months / 12;
   const completedYears = completedExperienceYears(months);
   const matches = options.filter((option) => {

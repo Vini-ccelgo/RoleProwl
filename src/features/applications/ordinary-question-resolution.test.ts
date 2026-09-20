@@ -73,6 +73,21 @@ const noticeQuestion = question("Notice period", {
 });
 
 describe("ordinary application question resolution", () => {
+  it("normalizes an uppercase candidate name only for employer presentation", async () => {
+    const candidateName = { text: "  MAYA-LEE  " };
+    const [result] = await resolveApplicationQuestions({
+      correlationId: "name-presentation",
+      userId: "candidate-1",
+      questions: [question("First name")],
+      knowledge: [knowledge("FIRST_NAME", candidateName)],
+    });
+    expect(result).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: "Maya-Lee",
+    });
+    expect(candidateName.text).toBe("  MAYA-LEE  ");
+  });
+
   it("maps an exact reusable notice period to the raw employer identity before AI", async () => {
     const fake = fakeAI([]);
     const [result] = await resolveApplicationQuestions({
@@ -402,8 +417,8 @@ describe("ordinary application intervention fixtures", () => {
     const metric = candidateInterventionMetric(results);
     expect(metric).toEqual({
       totalEmployerSemanticDecisions: 7,
-      automaticallyResolved: 2,
-      oneClickProposals: 1,
+      automaticallyResolved: 3,
+      oneClickProposals: 0,
       candidateEnteredAnswers: 4,
       employerSiteIrreducibleSteps: 0,
     });
@@ -413,6 +428,76 @@ describe("ordinary application intervention fixtures", () => {
     expect(results[3]?.value).toBeNull();
     expect(results[4]?.value).toBeNull();
     expect(results[5]?.reasonCode).toBe("COMPENSATION_CURRENCY_MISMATCH");
+  });
+
+  it("uses explicit complete-history authority to close only bounded sales absences", async () => {
+    const results = await resolveApplicationQuestions({
+      correlationId: "sales-fixture-complete-history",
+      userId: "candidate-1",
+      questions: [
+        question("Country", {
+          options: ["Brazil", "United States"],
+          fieldTypes: ["multi_value_single_select"],
+        }),
+        question("Which country do you currently reside in?", {
+          options: ["Brazil", "United States"],
+          fieldTypes: ["multi_value_single_select"],
+        }),
+        question("Years of experience relevant to the position"),
+        question(
+          "Previous experience as an Account Executive or in a closing role?",
+          { options: ["Yes", "No"], fieldTypes: ["input_radio"] },
+        ),
+        question("Existing/previous experience in B2B SaaS sales?", {
+          options: ["Yes", "No"],
+          fieldTypes: ["input_radio"],
+        }),
+        question("Expected annual base compensation (USD)"),
+        noticeQuestion,
+      ],
+      knowledge: [
+        currentLocation,
+        notice,
+        cyberHistory,
+        knowledge(
+          "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+          { attested: true },
+          {
+            applicationUse: "PREFERENCE_CONTEXT_ONLY",
+            autoAnswerAllowed: false,
+          },
+        ),
+        knowledge(
+          "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
+          { authorized: true },
+          {
+            applicationUse: "PREFERENCE_CONTEXT_ONLY",
+            autoAnswerAllowed: false,
+          },
+        ),
+      ],
+      jobContext: { title: "Account Executive", skills: ["B2B SaaS sales"] },
+      now: new Date("2026-09-17T00:00:00.000Z"),
+    });
+    expect(candidateInterventionMetric(results)).toEqual({
+      totalEmployerSemanticDecisions: 7,
+      automaticallyResolved: 6,
+      oneClickProposals: 0,
+      candidateEnteredAnswers: 1,
+      employerSiteIrreducibleSteps: 0,
+    });
+    expect(results[2]).toMatchObject({
+      value: "0 years",
+      reasonCode: "COMPLETE_HISTORY_SUPPORTS_ZERO_EXPERIENCE",
+    });
+    expect(results[3]).toMatchObject({
+      value: "No",
+      reasonCode: "COMPLETE_HISTORY_SUPPORTS_NO_EXPERIENCE",
+    });
+    expect(results[4]).toMatchObject({
+      value: "No",
+      reasonCode: "COMPLETE_HISTORY_SUPPORTS_NO_EXPERIENCE",
+    });
   });
 
   it("removes materially more work for a matching security application", async () => {
@@ -470,5 +555,70 @@ describe("ordinary application intervention fixtures", () => {
     expect(metric.automaticallyResolved).toBeGreaterThan(
       preRp040ResidualBaseline.automaticallyResolved,
     );
+  });
+
+  it("stops closed-world negatives after authority invalidation while preserving positives", async () => {
+    const questions = [
+      question("Previous experience as an Account Executive?", {
+        options: ["Yes", "No"],
+        fieldTypes: ["input_radio"],
+      }),
+      question("Do you have Python experience?", {
+        options: ["Yes", "No"],
+        fieldTypes: ["input_radio"],
+      }),
+    ];
+    const authorities = [
+      knowledge(
+        "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+        { attested: true },
+        {
+          applicationUse: "PREFERENCE_CONTEXT_ONLY",
+          autoAnswerAllowed: false,
+        },
+      ),
+      knowledge(
+        "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
+        { authorized: true },
+        {
+          applicationUse: "PREFERENCE_CONTEXT_ONLY",
+          autoAnswerAllowed: false,
+        },
+      ),
+    ];
+    const before = await resolveApplicationQuestions({
+      correlationId: "authority-before-history-change",
+      userId: "candidate-1",
+      questions,
+      knowledge: [cyberHistory, ...authorities],
+    });
+    const after = await resolveApplicationQuestions({
+      correlationId: "authority-after-history-change",
+      userId: "candidate-1",
+      questions,
+      knowledge: [cyberHistory],
+    });
+    expect(candidateInterventionMetric(before)).toEqual({
+      totalEmployerSemanticDecisions: 2,
+      automaticallyResolved: 2,
+      oneClickProposals: 0,
+      candidateEnteredAnswers: 0,
+      employerSiteIrreducibleSteps: 0,
+    });
+    expect(candidateInterventionMetric(after)).toEqual({
+      totalEmployerSemanticDecisions: 2,
+      automaticallyResolved: 1,
+      oneClickProposals: 0,
+      candidateEnteredAnswers: 1,
+      employerSiteIrreducibleSteps: 0,
+    });
+    expect(after[0]).toMatchObject({
+      disposition: "CANDIDATE_REQUIRED",
+      value: null,
+    });
+    expect(after[1]).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: "Yes",
+    });
   });
 });

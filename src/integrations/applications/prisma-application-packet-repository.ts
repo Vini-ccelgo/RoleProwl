@@ -80,6 +80,10 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
             locations: true,
             preferredRequirements: true,
             requirements: true,
+            salaryCurrency: true,
+            salaryInterval: true,
+            salaryMax: true,
+            salaryMin: true,
             skills: true,
             title: true,
             sourceRecords: {
@@ -232,6 +236,13 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
     const applicationEmail = currentValue("APPLICATION_EMAIL");
     const phone = currentValue("PHONE");
     const location = currentValue("CURRENT_LOCATION");
+    const currentLocationKnowledge = knowledgeByConcept.get("CURRENT_LOCATION");
+    const countryCode =
+      currentLocationKnowledge?.status === "AVAILABLE" &&
+      !currentLocationKnowledge.conflict &&
+      typeof currentLocationKnowledge.value?.countryCode === "string"
+        ? currentLocationKnowledge.value.countryCode.toUpperCase()
+        : null;
     const professionalTitle = currentValue("TARGET_ROLE");
     const questionResolutions = await resolveApplicationQuestions({
       aiFactory: this.aiProvider,
@@ -250,6 +261,10 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
         requirements: application.job.requirements,
         preferredRequirements: application.job.preferredRequirements,
         skills: application.job.skills,
+        salaryMin: application.job.salaryMin?.toNumber() ?? null,
+        salaryMax: application.job.salaryMax?.toNumber() ?? null,
+        salaryCurrency: application.job.salaryCurrency,
+        salaryInterval: application.job.salaryInterval,
       },
       questions: questions.map((question) => ({
         ...question,
@@ -266,14 +281,19 @@ export class PrismaApplicationPacketRepository implements ApplicationPacketRepos
           ? null
           : (user?.email ?? null),
       profile:
-        firstName || lastName || applicationEmail || phone || location
+        firstName ||
+        lastName ||
+        applicationEmail ||
+        phone ||
+        location ||
+        countryCode
           ? {
               firstName: firstName ?? "",
               lastName: lastName ?? "",
               applicationEmail,
               phone,
               location,
-              countryCode: null,
+              countryCode,
               professionalTitle,
             }
           : null,
