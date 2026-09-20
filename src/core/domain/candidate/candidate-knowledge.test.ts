@@ -3,6 +3,7 @@ import {
   buildCandidateKnowledgeCoverage,
   candidateKnowledgeConflictSourceLabels,
   candidateKnowledgeGapPrompts,
+  candidateKnowledgeProfileGroups,
   candidateKnowledgePolicy,
   employerSpecificConsentFromGeneralPreference,
   isCandidateKnowledgeConcept,
@@ -1027,5 +1028,51 @@ describe("candidate knowledge coverage", () => {
           item.concept === "WORK_AUTHORIZATION:US" && item.status === "KNOWN",
       ),
     ).toHaveLength(1);
+  });
+
+  it("rejects opaque employer option IDs while accepting semantic choice values", () => {
+    expect(
+      isValidCandidateKnowledgeAnswer("LANGUAGE_PROFICIENCY:english", {
+        text: "22503962005",
+      }),
+    ).toBe(false);
+    expect(
+      isValidCandidateKnowledgeAnswer("LANGUAGE_PROFICIENCY:english", {
+        text: "Fluent",
+      }),
+    ).toBe(true);
+    expect(
+      isValidCandidateKnowledgeAnswer("NOTICE_PERIOD", { text: "30 days" }),
+    ).toBe(true);
+  });
+
+  it("derives known, recommended, optional, and attention groups from coverage once", () => {
+    const coverage = buildCandidateKnowledgeCoverage({
+      evidence: [
+        item({
+          concept: "TARGET_ROLE",
+          value: { text: "Security engineer" },
+          source: "ANSWER_MEMORY",
+        }),
+        item({
+          concept: "NOTICE_PERIOD",
+          value: { text: "30 days" },
+          source: "ANSWER_MEMORY",
+          confirmedAt: new Date("2026-01-01T00:00:00.000Z"),
+        }),
+      ],
+      now,
+    });
+    const groups = candidateKnowledgeProfileGroups(coverage);
+    expect(groups.KNOWN.map((entry) => entry.concept)).toContain("TARGET_ROLE");
+    expect(groups.ATTENTION.map((entry) => entry.concept)).toContain(
+      "NOTICE_PERIOD",
+    );
+    expect(groups.RECOMMENDED.map((entry) => entry.concept)).toContain(
+      "START_AVAILABILITY",
+    );
+    expect(groups.OPTIONAL.map((entry) => entry.concept)).toContain(
+      "DESIRED_SALARY",
+    );
   });
 });

@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { NotFoundError } from "@/core/errors/application-errors";
+import {
+  NotFoundError,
+  ValidationError,
+} from "@/core/errors/application-errors";
+import { buildApplicationPacket } from "@/core/domain/applications/application-packet";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/db/client", () => ({ databaseClient: vi.fn() }));
@@ -62,6 +66,7 @@ function database(proposalUserId = "candidate-a") {
 }
 
 function snapshotDatabase(input?: {
+  applicationSnapshots?: Array<Record<string, unknown>>;
   memories?: Array<Record<string, unknown>>;
   narratives?: Array<Record<string, unknown>>;
   profile?: Record<string, unknown> | null;
@@ -92,6 +97,20 @@ function snapshotDatabase(input?: {
             memory.userId !== where.userId || memory.concept !== where.concept,
         );
         return { count: before - memories.length };
+      }),
+      updateMany: vi.fn(async ({ where, data }) => {
+        let count = 0;
+        memories = memories.map((memory) => {
+          if (
+            memory.id !== where.id ||
+            memory.userId !== where.userId ||
+            memory.concept !== where.concept
+          )
+            return memory;
+          count += 1;
+          return { ...memory, ...data };
+        });
+        return { count };
       }),
       upsert: vi.fn(async () => ({ id: "memory-upserted" })),
     },
@@ -129,8 +148,64 @@ function snapshotDatabase(input?: {
       ),
     },
     candidateKnowledgeProposal: { findMany: vi.fn(async () => []) },
+    application: {
+      findMany: vi.fn(async ({ where }) =>
+        where.userId === "candidate-a"
+          ? (input?.applicationSnapshots ?? []).map(
+              (submissionPayloadSnapshot) => ({ submissionPayloadSnapshot }),
+            )
+          : [],
+      ),
+    },
   };
   return { candidateFactDelete, client, transaction };
+}
+
+function languageApplicationPacket(rawValue: string, label: string) {
+  return buildApplicationPacket({
+    reviewed: false,
+    source: {
+      accountEmail: "candidate@example.test",
+      profile: null,
+      verifiedResumeFacts: [],
+      experience: [],
+      education: [],
+      credentials: [],
+      skills: [],
+      languages: [],
+      workAuthorization: null,
+      sponsorshipRequired: null,
+      answerMemories: [],
+      selectedResume: null,
+      coverLetter: null,
+      questions: [
+        {
+          id: "english-proficiency",
+          source: "GREENHOUSE",
+          group: "STANDARD",
+          label: "English proficiency",
+          required: true,
+          fieldNames: ["english_proficiency"],
+          fieldTypes: ["multi_value_single_select"],
+          options: [label],
+          optionIdentities: [{ label, value: rawValue }],
+        },
+      ],
+      questionResolutions: [
+        {
+          questionId: "english-proficiency",
+          canonicalConcept: "LANGUAGE_PROFICIENCY:english",
+          disposition: "AUTO_RESOLVED",
+          value: rawValue,
+          candidateKnowledgeReferences: ["memory-language"],
+          reasonCode: "APPROVED_REUSABLE_KNOWLEDGE",
+        },
+      ],
+      questionInspection: "AVAILABLE",
+      sourceName: "GREENHOUSE",
+      targetRole: "Engineer",
+    },
+  });
 }
 
 describe("candidate knowledge proposal review persistence", () => {
@@ -392,6 +467,104 @@ describe("candidate knowledge proposal review persistence", () => {
     expect(snapshot.narratives[0]?.content).toBe(
       "My current recurring details.",
     );
+  });
+
+  it("repairs a historical employer option ID from retained packet semantics", async () => {
+    const verifiedAt = new Date("2026-09-14T12:00:00Z");
+    const db = snapshotDatabase({
+      memories: [
+        {
+          id: "memory-language",
+          userId: "candidate-a",
+          concept: "LANGUAGE_PROFICIENCY:english",
+          answer: { text: "22503962005" },
+          autoAnswerAllowed: true,
+          origin: "EXPLICIT",
+          candidateApproved: true,
+          reusable: true,
+          verifiedAt,
+        },
+      ],
+      applicationSnapshots: [
+        { packet: languageApplicationPacket("22503962005", "Fluent") },
+      ],
+    });
+    const snapshot = await getCandidateKnowledgeSnapshot(
+      "candidate-a",
+      verifiedAt,
+      db.client as never,
+    );
+    expect(
+      snapshot.coverage.find(
+        (item) => item.concept === "LANGUAGE_PROFICIENCY:english",
+      )?.result.value,
+    ).toEqual({ text: "Fluent" });
+    expect(db.transaction.answerMemory.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "memory-language",
+        userId: "candidate-a",
+        concept: "LANGUAGE_PROFICIENCY:english",
+      },
+      data: { answer: { text: "Fluent" } },
+    });
+    const audit = JSON.stringify(db.transaction.auditEvent.create.mock.calls);
+    expect(audit).toContain("SEMANTIC_REPAIR");
+    expect(audit).not.toContain("22503962005");
+    expect(audit).not.toContain("Fluent");
+  });
+
+  it("removes an unrecoverable opaque choice ID and requires reconfirmation", async () => {
+    const verifiedAt = new Date("2026-09-14T12:00:00Z");
+    const db = snapshotDatabase({
+      memories: [
+        {
+          id: "memory-language",
+          userId: "candidate-a",
+          concept: "LANGUAGE_PROFICIENCY:spanish",
+          answer: { text: "22503965005" },
+          autoAnswerAllowed: true,
+          origin: "EXPLICIT",
+          candidateApproved: true,
+          reusable: true,
+          verifiedAt,
+        },
+      ],
+    });
+    const snapshot = await getCandidateKnowledgeSnapshot(
+      "candidate-a",
+      verifiedAt,
+      db.client as never,
+    );
+    expect(snapshot.invalidatedReusableConcepts).toEqual([
+      "LANGUAGE_PROFICIENCY:spanish",
+    ]);
+    expect(
+      snapshot.coverage.find(
+        (item) => item.concept === "LANGUAGE_PROFICIENCY:spanish",
+      ),
+    ).toBeUndefined();
+    expect(db.transaction.answerMemory.deleteMany).toHaveBeenCalledWith({
+      where: {
+        id: "memory-language",
+        userId: "candidate-a",
+        concept: "LANGUAGE_PROFICIENCY:spanish",
+      },
+    });
+  });
+
+  it("rejects opaque employer identities at the reusable-memory boundary", async () => {
+    const db = database();
+    await expect(
+      saveDirectCandidateKnowledge(
+        {
+          userId: "candidate-a",
+          concept: "LANGUAGE_PROFICIENCY:english",
+          answer: { text: "22503962005" },
+        },
+        db.client as never,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(db.transaction.answerMemory.upsert).not.toHaveBeenCalled();
   });
 
   it("stores optional current compensation with explicit structure and confirmation time", async () => {

@@ -3,15 +3,15 @@
 import { useSyncExternalStore } from "react";
 
 export const PROFILE_SECTIONS = [
-  { id: "recurring-details", label: "Recurring details" },
-  { id: "details", label: "Details" },
-  { id: "resume-facts", label: "Résumé facts" },
-  { id: "experience", label: "Experience" },
+  { id: "recurring-details", label: "Reusable details" },
+  { id: "details", label: "Identity & contact" },
+  { id: "resume-facts", label: "Résumé evidence" },
+  { id: "experience", label: "Professional history" },
   { id: "education", label: "Education" },
-  { id: "skills", label: "Skills" },
-  { id: "projects", label: "Projects" },
-  { id: "authorization", label: "Authorization" },
-  { id: "preferences", label: "Preferences" },
+  { id: "skills", label: "Skills & languages" },
+  { id: "projects", label: "Projects & credentials" },
+  { id: "authorization", label: "Work authorization" },
+  { id: "preferences", label: "Work preferences" },
 ] as const;
 
 function subscribeToHashChange(onStoreChange: () => void) {

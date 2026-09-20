@@ -87,8 +87,8 @@ describe("candidate knowledge profile gaps", () => {
       }),
     );
     expect(markup).toContain("Professional-history authority");
-    expect(markup).toContain("Completeness: Active");
-    expect(markup).toContain("Negative experience inference: Active");
+    expect(markup).toContain("Completeness · Active");
+    expect(markup).toContain("Negative inference · Active");
     expect(markup).toContain('name="completeProfessionalHistory"');
     expect(markup).toContain('name="negativeHistoryInference"');
     expect(markup).toContain("Employment-history changes clear both");
@@ -145,8 +145,68 @@ describe("candidate knowledge profile gaps", () => {
     expect(markup).toContain("30 days");
     expect(markup).toContain("Confirmed Sep 14, 2026");
     expect(markup).toContain("Remove saved answer");
+    expect(markup).toContain('data-requires-confirmation="true"');
+    expect(markup).toMatch(
+      /<button[^>]*type="button"[^>]*>Remove saved answer/u,
+    );
+    expect(markup).not.toContain("Confirm removal");
     expect(gapSelect).not.toContain("NOTICE_PERIOD");
     expect(markup).not.toContain(">NOTICE_PERIOD<");
+  });
+
+  it("derives actionable status links and guided selector groups from the same coverage", () => {
+    const coverage = buildCandidateKnowledgeCoverage({
+      evidence: [evidence("TARGET_ROLE", { text: "Security engineer" })],
+      now: confirmedAt,
+    });
+    const target = coverage.find((item) => item.concept === "TARGET_ROLE")!;
+    const markup = renderSnapshot({ coverage, currentDetails: [target] });
+    expect(markup).toContain('href="#profile-known"');
+    expect(markup).toContain('href="#profile-recommended"');
+    expect(markup).toContain('href="#profile-optional"');
+    expect(markup).toContain('optgroup label="Recommended to complete"');
+    expect(markup).toContain('optgroup label="Other reusable details"');
+    expect(markup).toContain("Already saved");
+    expect(markup).toContain("Target role");
+  });
+
+  it("never renders an opaque employer option ID as a profile fact", () => {
+    const coverage = buildCandidateKnowledgeCoverage({
+      evidence: [
+        evidence("LANGUAGE_PROFICIENCY:english", { text: "22503962005" }),
+      ],
+      now: confirmedAt,
+    });
+    const proficiency = coverage.find(
+      (item) => item.concept === "LANGUAGE_PROFICIENCY:english",
+    )!;
+    const markup = renderSnapshot({
+      coverage,
+      currentDetails: [proficiency],
+    });
+    expect(markup).toContain("Needs reconfirmation");
+    expect(markup).not.toContain("22503962005");
+  });
+
+  it("links conflicts to a comparison of the retained and competing values", () => {
+    const coverage = buildCandidateKnowledgeCoverage({
+      evidence: [
+        evidence("TARGET_ROLE", { text: "Security engineer" }),
+        evidence(
+          "TARGET_ROLE",
+          { text: "Application security engineer" },
+          { source: "CANDIDATE_DIRECT" },
+        ),
+      ],
+      now: confirmedAt,
+    });
+    const target = coverage.find((item) => item.concept === "TARGET_ROLE")!;
+    const markup = renderSnapshot({ coverage, currentDetails: [target] });
+    expect(markup).toContain('href="#candidate-detail-TARGET_ROLE"');
+    expect(markup).toContain("Compare conflicting sources");
+    expect(markup).toContain("Security engineer");
+    expect(markup).toContain("Application security engineer");
+    expect(markup).toContain("will not overwrite either source automatically");
   });
 
   it("marks stale memory and offers reconfirmation without re-entry", () => {

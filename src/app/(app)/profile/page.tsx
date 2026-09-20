@@ -36,16 +36,16 @@ export default async function ProfilePage() {
       />
       <ProfileSectionNavigation />
       <div className="vault-sections">
-        <div id="recurring-details">
+        <div className="profile-section-wide" id="recurring-details">
           <CandidateKnowledgeSection snapshot={knowledge} />
         </div>
         <div id="details">
           <ProfileDetailsSection vault={vault} />
         </div>
-        <div id="resume-facts">
+        <div className="profile-section-wide" id="resume-facts">
           <VerifiedResumeFactsSection vault={vault} />
         </div>
-        <div id="experience">
+        <div className="profile-section-wide" id="experience">
           <ProfessionalHistoryAuthorityControls snapshot={knowledge} />
           <ExperienceSection vault={vault} />
         </div>

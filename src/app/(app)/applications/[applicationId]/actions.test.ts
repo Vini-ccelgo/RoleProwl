@@ -796,6 +796,62 @@ describe("application packet actions", () => {
     expect(saveApplicationOverrides).not.toHaveBeenCalled();
   });
 
+  it("stores a semantic proficiency label while retaining the employer identity in the packet", async () => {
+    const packet = packetForResolution({
+      concept: "LANGUAGE_PROFICIENCY:english",
+      disposition: "CANDIDATE_REQUIRED",
+      reasonCode: "CANDIDATE_KNOWLEDGE_MISSING",
+      value: null,
+      fieldTypes: ["multi_value_single_select"],
+      options: ["Professional working", "Fluent"],
+      optionIdentities: [
+        { label: "Professional working", value: "22503961005" },
+        { label: "Fluent", value: "22503962005" },
+      ],
+    });
+    findFirst.mockResolvedValue({ submissionPayloadSnapshot: { packet } });
+    const value = form();
+    value.set("answer:question-42", "22503962005");
+    await saveApplicationOverridesAction(value);
+    expect(packet.answers[0]?.optionIdentities).toContainEqual({
+      label: "Fluent",
+      value: "22503962005",
+    });
+    expect(saveDirectCandidateKnowledgeBatch).toHaveBeenCalledWith([
+      {
+        userId: "user-1",
+        concept: "LANGUAGE_PROFICIENCY:english",
+        answer: { text: "Fluent" },
+        resolvesConflicts: false,
+      },
+    ]);
+  });
+
+  it("keeps a choice without a semantic label application-scoped instead of polluting memory", async () => {
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: {
+        packet: packetForResolution({
+          concept: "LANGUAGE_PROFICIENCY:english",
+          disposition: "CANDIDATE_REQUIRED",
+          reasonCode: "CANDIDATE_KNOWLEDGE_MISSING",
+          value: null,
+          fieldTypes: ["multi_value_single_select"],
+          options: ["22503962005"],
+          optionIdentities: [{ label: "22503962005", value: "22503962005" }],
+        }),
+      },
+    });
+    const value = form();
+    value.set("answer:question-42", "22503962005");
+    await saveApplicationOverridesAction(value);
+    expect(saveDirectCandidateKnowledgeBatch).not.toHaveBeenCalled();
+    expect(saveApplicationOverrides).toHaveBeenCalledWith(
+      expect.objectContaining({
+        answers: [{ key: "question-42", value: "22503962005" }],
+      }),
+    );
+  });
+
   it("keeps contextual relevant-experience answers Application-scoped", async () => {
     findFirst.mockResolvedValue({
       submissionPayloadSnapshot: {

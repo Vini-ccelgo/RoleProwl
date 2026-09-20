@@ -74,12 +74,12 @@ describe("application packet summary", () => {
       }),
     );
     expect(markup).toMatch(/>5<\/strong><p[^>]*>Automatically prepared<\/p>/u);
-    expect(markup).toMatch(/>0<\/strong><p[^>]*>Needs your answer<\/p>/u);
-    expect(markup).toContain("Inspect or change prepared values");
+    expect(markup).toMatch(/>0<\/strong><p[^>]*>Needs you<\/p>/u);
+    expect(markup).toContain("Review or override prepared values");
     expect(markup).toContain('name="answer:first_name"');
     expect(markup).toContain('value="MAYA"');
     expect(markup).toContain('name="answer:linkedin"');
-    expect(markup).toContain("without changing Career Profile");
+    expect(markup).toContain("without silently changing Career Profile");
   });
 
   it("shows functional fields and download access without private storage keys", () => {
@@ -141,9 +141,9 @@ describe("application packet summary", () => {
     expect(markup).toContain("Incident response");
     expect(markup).toContain("Application question 8");
     expect(markup).toContain("Automatically prepared");
-    expect(markup).toContain("Needs your answer");
+    expect(markup).toContain("Needs you");
     expect(markup).toContain("Complete on employer site");
-    expect(markup).toContain("Completed fields and packet details");
+    expect(markup).toContain("Ready / prepared");
     expect(markup).toContain("<details");
     expect(markup).toContain("/api/applications/application-1/resume");
     expect(markup).toContain("card grid gap-3 self-start p-5");
@@ -212,7 +212,7 @@ describe("application packet summary", () => {
         confirmKnowledgeAction: async () => undefined,
       }),
     );
-    expect(markup).toContain("Quick confirmations");
+    expect(markup).toContain("Reconfirm saved details");
     expect(markup).toContain("Still true");
     expect(markup).toContain("Confirm selected answers");
     expect(markup).toContain('name="questionId"');
@@ -315,10 +315,170 @@ describe("application packet summary", () => {
         saveAction: async () => undefined,
       }),
     );
-    expect(markup).toContain("Needs your input");
+    expect(markup).toContain("Needs you");
     expect(markup).toContain('name="identity:phone"');
     expect(markup).toContain("Save and re-check application");
     expect(markup).not.toContain(">resolved<");
+  });
+
+  it("keeps prepared controls out of the primary unresolved task queue", () => {
+    const questions = [
+      {
+        id: "country",
+        source: "GREENHOUSE" as const,
+        group: "STANDARD" as const,
+        label: "Country",
+        required: true,
+        fieldNames: ["country"],
+        fieldTypes: ["multi_value_single_select"],
+        options: ["Brazil", "United States"],
+      },
+      {
+        id: "notice",
+        source: "GREENHOUSE" as const,
+        group: "STANDARD" as const,
+        label: "Notice period",
+        required: true,
+        fieldNames: ["notice_period"],
+        fieldTypes: ["multi_value_single_select"],
+        options: ["Immediately", "30 days"],
+      },
+    ];
+    const packet = buildApplicationPacket({
+      reviewed: false,
+      source: {
+        accountEmail: "candidate@example.test",
+        profile: null,
+        verifiedResumeFacts: [],
+        experience: [],
+        education: [],
+        credentials: [],
+        skills: [],
+        languages: [],
+        workAuthorization: null,
+        sponsorshipRequired: null,
+        answerMemories: [],
+        selectedResume: null,
+        coverLetter: null,
+        questions,
+        questionResolutions: [
+          {
+            questionId: "country",
+            canonicalConcept: "CURRENT_LOCATION",
+            disposition: "AUTO_RESOLVED",
+            value: "Brazil",
+            candidateKnowledgeReferences: ["profile-location"],
+            reasonCode: "SAME_FORM_CURRENT_RESIDENCE_CONTEXT",
+          },
+          {
+            questionId: "notice",
+            canonicalConcept: "NOTICE_PERIOD",
+            disposition: "CANDIDATE_REQUIRED",
+            value: null,
+            candidateKnowledgeReferences: [],
+            reasonCode: "CANDIDATE_KNOWLEDGE_MISSING",
+          },
+        ],
+        questionInspection: "AVAILABLE",
+        sourceName: "GREENHOUSE",
+        targetRole: "Account Executive",
+      },
+    });
+    const markup = renderToStaticMarkup(
+      createElement(ApplicationPacketSummary, {
+        applicationId: "application-1",
+        packet,
+        saveAction: async () => undefined,
+      }),
+    );
+    const needsStart = markup.indexOf('id="needs-you"');
+    const preparedStart = markup.indexOf('id="prepared-fields"');
+    const needsMarkup = markup.slice(needsStart, preparedStart);
+    expect(needsMarkup).toContain("Notice period");
+    expect(needsMarkup).toContain("not currently saved in your Career Profile");
+    expect(needsMarkup).toContain("Reusable answer");
+    expect(needsMarkup).not.toContain('name="answer:country"');
+    expect(markup.slice(preparedStart)).toContain('name="answer:country"');
+    expect(markup).toContain("Go to first");
+  });
+
+  it("explains incompatible compensation and labels a posted-range proposal", () => {
+    const question = {
+      id: "compensation",
+      source: "GREENHOUSE" as const,
+      group: "STANDARD" as const,
+      label: "Expected annual base compensation (USD)",
+      required: true,
+      fieldNames: ["expected_compensation"],
+      fieldTypes: ["input_text"],
+      options: [],
+    };
+    const packet = buildApplicationPacket({
+      reviewed: false,
+      source: {
+        accountEmail: "candidate@example.test",
+        profile: null,
+        verifiedResumeFacts: [],
+        experience: [],
+        education: [],
+        credentials: [],
+        skills: [],
+        languages: [],
+        workAuthorization: null,
+        sponsorshipRequired: null,
+        answerMemories: [],
+        selectedResume: null,
+        coverLetter: null,
+        questions: [question],
+        questionResolutions: [
+          {
+            questionId: question.id,
+            canonicalConcept: "DESIRED_SALARY",
+            disposition: "PROPOSED_FOR_CANDIDATE",
+            value: "USD 150,000 annual",
+            candidateKnowledgeReferences: ["job:posted-compensation"],
+            reasonCode: "EMPLOYER_POSTED_COMPENSATION_PROPOSAL",
+          },
+        ],
+        questionInspection: "AVAILABLE",
+        sourceName: "GREENHOUSE",
+        targetRole: "Account Executive",
+      },
+    });
+    const markup = renderToStaticMarkup(
+      createElement(ApplicationPacketSummary, {
+        applicationId: "application-1",
+        packet,
+        saveAction: async () => undefined,
+      }),
+    );
+    expect(markup).toContain(
+      "This job provides a compatible compensation range",
+    );
+    expect(markup).toContain("Based on compensation published with this job");
+    expect(markup).toContain("requires your confirmation");
+    expect(markup).toContain("Reusable answer");
+    const mismatchMarkup = renderToStaticMarkup(
+      createElement(ApplicationPacketSummary, {
+        applicationId: "application-2",
+        packet: {
+          ...packet,
+          answers: packet.answers.map((answer) => ({
+            ...answer,
+            value: null,
+            resolutionDisposition: "CANDIDATE_REQUIRED",
+            resolutionReasonCode: "COMPENSATION_CURRENCY_MISMATCH",
+          })),
+        },
+        saveAction: async () => undefined,
+      }),
+    );
+    expect(mismatchMarkup).toContain(
+      "No compatible reusable compensation preference is saved in the employer&#x27;s requested currency",
+    );
+    expect(mismatchMarkup).toContain(
+      "does not perform hidden currency conversion",
+    );
   });
 
   it("keeps resolved Application overrides editable for later review invalidation", () => {
@@ -379,7 +539,7 @@ describe("application packet summary", () => {
         saveAction: async () => undefined,
       }),
     );
-    expect(markup).toContain("Application-specific values");
+    expect(markup).toContain("Review or override prepared values");
     expect(markup).toContain('name="identity:phone"');
     expect(markup).toContain('value="+55 51 5555 0100"');
     expect(markup).toContain("disabled");
@@ -624,7 +784,7 @@ describe("application packet summary", () => {
         saveAction: async () => undefined,
       }),
     );
-    expect(markup).toMatch(/>1<\/strong><p[^>]*>Needs your answer<\/p>/u);
+    expect(markup).toMatch(/>1<\/strong><p[^>]*>Needs you<\/p>/u);
     expect(markup).toContain('name="answer:first_name"');
     expect(markup).not.toContain('name="answer:nome"');
     expect(markup).not.toContain('name="identity:firstName"');

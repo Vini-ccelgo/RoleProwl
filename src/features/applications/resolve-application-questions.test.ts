@@ -360,6 +360,34 @@ describe("application question resolver", () => {
     expect(fake.generateStructured).not.toHaveBeenCalled();
   });
 
+  it("reuses one semantic proficiency across an employer with different raw IDs", async () => {
+    const [result] = await resolveApplicationQuestions({
+      correlationId: "application-second-employer",
+      userId: "candidate-1",
+      questions: [
+        question("English proficiency", {
+          fieldTypes: ["multi_value_single_select"],
+          options: ["Basic", "Fluent"],
+          optionIdentities: [
+            { label: "Basic", value: "employer-b-basic" },
+            { label: "Fluent", value: "employer-b-fluent" },
+          ],
+        }),
+      ],
+      knowledge: [
+        knowledge(
+          "LANGUAGE_PROFICIENCY:english",
+          { text: "Fluent" },
+          { freshness: "NOT_APPLICABLE" },
+        ),
+      ],
+    });
+    expect(result).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: "employer-b-fluent",
+    });
+  });
+
   it("faithfully adapts explicit authorization and sponsorship booleans", async () => {
     const results = await resolveApplicationQuestions({
       correlationId: "application-1",

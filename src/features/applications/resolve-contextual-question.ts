@@ -204,13 +204,30 @@ function sameFormResidenceContext(input: {
     (question) => residenceQuestionKind(question) === "CLEAR",
   );
   if (!explicitResidence) return false;
-  const competingSemantics = otherQuestions.some((question) =>
-    /\b(?:citizenship|citizen|nationality|tax residence|tax residency|work authorization|authorized to work|sponsorship|sponsoring country|office location|office country|country of employment|cidadania|nacionalidade|residencia fiscal|autorizacao para trabalhar|patrocinio)\b/u.test(
-      normalizedChoiceText(
-        `${question.label} ${question.fieldNames.join(" ")}`,
-      ),
-    ),
-  );
+  const competingSemantics = otherQuestions.some((question) => {
+    const value = normalizedChoiceText(
+      `${question.label} ${question.fieldNames.join(" ")}`,
+    );
+    if (
+      /\b(?:citizenship|citizen|nationality|tax residence|tax residency|office location|office country|country of employment|cidadania|nacionalidade|residencia fiscal)\b/u.test(
+        value,
+      )
+    )
+      return true;
+    const jurisdictionSensitive =
+      /\b(?:work authorization|authorized to work|sponsorship|sponsor|autorizacao para trabalhar|patrocinio)\b/u.test(
+        value,
+      );
+    if (!jurisdictionSensitive) return false;
+    const explicitlySelectsJurisdiction =
+      /\b(?:country|countries|jurisdiction|location|where|which country|pais|paises|jurisdicao|localizacao)\b/u.test(
+        value,
+      ) ||
+      question.options.some(
+        (option) => countryCodesExplicitlyNamed(option).length > 0,
+      );
+    return explicitlySelectsJurisdiction;
+  });
   return !competingSemantics;
 }
 

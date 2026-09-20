@@ -2,14 +2,19 @@ import "server-only";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import {
   buildCandidateKnowledgeCoverage,
+  candidateKnowledgeAnswerTextValues,
   candidateKnowledgeGapPrompts,
+  candidateKnowledgeProfileGroups,
   candidateKnowledgePolicy,
+  isOpaqueEmployerOptionAnswer,
   isCandidateKnowledgeConcept,
+  isReusableChoiceConcept,
   isValidCandidateKnowledgeAnswer,
   PROFESSIONAL_HISTORY_AUTHORITY_CONCEPTS,
   resolveCandidateKnowledge,
   type CandidateKnowledgeConcept,
 } from "@/core/domain/candidate/candidate-knowledge";
+import { isApplicationPacket } from "@/core/domain/applications/application-packet";
 import type { CandidateNarrativeProposalDraft } from "@/features/candidate/candidate-narrative-extraction";
 import { evidenceFromCandidateSources } from "@/features/candidate/candidate-knowledge-evidence";
 import {
@@ -19,6 +24,132 @@ import {
 } from "@/core/errors/application-errors";
 import { databaseClient } from "@/lib/db/client";
 import { invalidateReadyApplicationPackets } from "@/integrations/applications/invalidate-application-packets";
+
+interface StoredCandidateMemory {
+  readonly id: string;
+  readonly userId: string;
+  readonly concept: string;
+  readonly answer: unknown;
+  readonly autoAnswerAllowed: boolean;
+  readonly origin: "EXPLICIT" | "DERIVED";
+  readonly candidateApproved: boolean;
+  readonly reusable: boolean;
+  readonly verifiedAt: Date;
+}
+
+function record(value: unknown): Readonly<Record<string, unknown>> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Readonly<Record<string, unknown>>)
+    : null;
+}
+
+function semanticLabelsFromPackets(input: {
+  readonly concept: CandidateKnowledgeConcept;
+  readonly rawValues: readonly string[];
+  readonly snapshots: readonly Prisma.JsonValue[];
+}) {
+  return input.rawValues.map((rawValue) => {
+    const labels = new Set<string>();
+    for (const snapshot of input.snapshots) {
+      const payload = record(snapshot);
+      const packet = isApplicationPacket(payload?.packet)
+        ? payload.packet
+        : null;
+      for (const answer of packet?.answers ?? []) {
+        if (answer.canonicalConcept !== input.concept) continue;
+        for (const option of answer.optionIdentities ?? [])
+          if (option.value === rawValue && option.label.trim())
+            labels.add(option.label.trim());
+      }
+    }
+    return labels.size === 1 ? [...labels][0]! : null;
+  });
+}
+
+async function repairReusableChoiceMemories(
+  userId: string,
+  memories: readonly StoredCandidateMemory[],
+  database: PrismaClient,
+) {
+  const choiceMemories = memories.filter(
+    (memory) =>
+      isCandidateKnowledgeConcept(memory.concept) &&
+      isReusableChoiceConcept(memory.concept),
+  );
+  if (!choiceMemories.length)
+    return { memories, removedConcepts: [] as CandidateKnowledgeConcept[] };
+  const applications = await database.application.findMany({
+    where: { userId },
+    select: { submissionPayloadSnapshot: true },
+  });
+  const snapshots = applications.map(
+    (application) => application.submissionPayloadSnapshot,
+  );
+  const repaired = new Map<string, Readonly<Record<string, unknown>>>();
+  const removed = new Set<string>();
+  for (const memory of choiceMemories) {
+    const concept = memory.concept as CandidateKnowledgeConcept;
+    const answer = record(memory.answer);
+    if (!answer) continue;
+    const rawValues = candidateKnowledgeAnswerTextValues(answer);
+    if (!rawValues.length) continue;
+    const labels = semanticLabelsFromPackets({ concept, rawValues, snapshots });
+    const hasRecoverableRawIdentity = labels.every(Boolean);
+    const changesMeaningfulRepresentation = labels.some(
+      (label, index) => label !== rawValues[index],
+    );
+    if (hasRecoverableRawIdentity && changesMeaningfulRepresentation) {
+      repaired.set(memory.id, { text: labels.join(", ") });
+      continue;
+    }
+    if (isOpaqueEmployerOptionAnswer(concept, answer)) removed.add(memory.id);
+  }
+  if (!repaired.size && !removed.size)
+    return { memories, removedConcepts: [] as CandidateKnowledgeConcept[] };
+  await database.$transaction(async (transaction) => {
+    for (const memory of choiceMemories) {
+      const repairedAnswer = repaired.get(memory.id);
+      const remove = removed.has(memory.id);
+      if (!repairedAnswer && !remove) continue;
+      if (repairedAnswer)
+        await transaction.answerMemory.updateMany({
+          where: { id: memory.id, userId, concept: memory.concept },
+          data: { answer: repairedAnswer as Prisma.InputJsonObject },
+        });
+      else
+        await transaction.answerMemory.deleteMany({
+          where: { id: memory.id, userId, concept: memory.concept },
+        });
+      await transaction.auditEvent.create({
+        data: {
+          actorUserId: userId,
+          action: "POLICY_CHANGED",
+          entityType: "answerMemory",
+          entityId: memory.id,
+          metadata: {
+            concept: memory.concept,
+            operation: repairedAnswer ? "SEMANTIC_REPAIR" : "REMOVED",
+            reason: "EMPLOYER_OPTION_ID_NOT_REUSABLE",
+          },
+        },
+      });
+    }
+    await invalidateReadyApplicationPackets(transaction, userId);
+  });
+  const removedConcepts = choiceMemories.flatMap((memory) =>
+    removed.has(memory.id) && isCandidateKnowledgeConcept(memory.concept)
+      ? [memory.concept]
+      : [],
+  );
+  return {
+    memories: memories.flatMap((memory) => {
+      if (removed.has(memory.id)) return [];
+      const answer = repaired.get(memory.id);
+      return answer ? [{ ...memory, answer }] : [memory];
+    }),
+    removedConcepts,
+  };
+}
 
 export async function getCandidateKnowledgeSnapshot(
   userId: string,
@@ -59,6 +190,11 @@ export async function getCandidateKnowledgeSnapshot(
       orderBy: { createdAt: "asc" },
     }),
   ]);
+  const normalizedMemories = await repairReusableChoiceMemories(
+    userId,
+    memories,
+    database,
+  );
   const evidence = evidenceFromCandidateSources({
     profile,
     experiences,
@@ -69,7 +205,7 @@ export async function getCandidateKnowledgeSnapshot(
     verifiedResumeFacts,
     preferences,
     authorization,
-    memories,
+    memories: normalizedMemories.memories,
   });
   const coverage = buildCandidateKnowledgeCoverage({ evidence, now });
   const reusableDetailCoverage = coverage.filter(
@@ -77,6 +213,7 @@ export async function getCandidateKnowledgeSnapshot(
       item.concept !== "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION" &&
       item.concept !== "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
   );
+  const profileGroups = candidateKnowledgeProfileGroups(coverage);
   const currentDetails = coverage.filter(
     (item) =>
       item.result.value !== null &&
@@ -130,22 +267,15 @@ export async function getCandidateKnowledgeSnapshot(
     gapPrompts: candidateKnowledgeGapPrompts(coverage),
     narratives,
     proposals,
+    invalidatedReusableConcepts: normalizedMemories.removedConcepts,
     counts: {
-      known: reusableDetailCoverage.filter((item) => item.status === "KNOWN")
-        .length,
-      worthCompleting: reusableDetailCoverage.filter(
-        (item) =>
-          (item.status === "MISSING" || item.status === "PARTIAL") &&
-          !candidateKnowledgePolicy(item.concept)?.candidateInputOptional,
-      ).length,
-      optional: reusableDetailCoverage.filter(
-        (item) =>
-          item.status === "MISSING" &&
-          candidateKnowledgePolicy(item.concept)?.candidateInputOptional,
-      ).length,
+      known: profileGroups.KNOWN.length,
+      worthCompleting: profileGroups.RECOMMENDED.length,
+      optional: profileGroups.OPTIONAL.length,
       conflicts: reusableDetailCoverage.filter(
         (item) => item.status === "CONFLICT",
       ).length,
+      attention: profileGroups.ATTENTION.length,
     },
   };
 }

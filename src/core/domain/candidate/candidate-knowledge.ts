@@ -173,12 +173,62 @@ export function isValidCandidateKnowledgeAnswer(
   answer: Readonly<Record<string, unknown>>,
 ) {
   if (!isProfessionalHistoryAuthorityConcept(concept))
-    return Object.keys(answer).length > 0;
+    return (
+      Object.keys(answer).length > 0 &&
+      !isOpaqueEmployerOptionAnswer(concept, answer)
+    );
   const expectedKey =
     concept === "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION"
       ? "attested"
       : "authorized";
   return Object.keys(answer).length === 1 && answer[expectedKey] === true;
+}
+
+const REUSABLE_CHOICE_CONCEPTS = new Set<CandidateKnowledgeConcept>([
+  "CURRENT_EMPLOYMENT_STATUS",
+  "NOTICE_PERIOD",
+  "REMOTE_PREFERENCE",
+  "WILLING_TO_RELOCATE",
+  "TRAVEL_AVAILABILITY",
+  "START_AVAILABILITY",
+  "WORK_ENVIRONMENT_PREFERENCE",
+  "AI_HIRING_PROCESS_PREFERENCE",
+  "GENERAL_DATA_USE_PREFERENCE",
+]);
+
+export function isReusableChoiceConcept(concept: CandidateKnowledgeConcept) {
+  return (
+    REUSABLE_CHOICE_CONCEPTS.has(concept) ||
+    concept.startsWith("LANGUAGE_PROFICIENCY:")
+  );
+}
+
+export function candidateKnowledgeAnswerTextValues(
+  answer: Readonly<Record<string, unknown>>,
+) {
+  const text = typeof answer.text === "string" ? answer.text.trim() : "";
+  if (!text) return [];
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (
+      Array.isArray(parsed) &&
+      parsed.length > 0 &&
+      parsed.every((item) => typeof item === "string" && item.trim())
+    )
+      return parsed.map((item) => item.trim());
+  } catch {
+    // A semantic scalar is intentionally kept as one value.
+  }
+  return [text];
+}
+
+export function isOpaqueEmployerOptionAnswer(
+  concept: CandidateKnowledgeConcept,
+  answer: Readonly<Record<string, unknown>>,
+) {
+  if (!isReusableChoiceConcept(concept)) return false;
+  const values = candidateKnowledgeAnswerTextValues(answer);
+  return values.length > 0 && values.every((value) => /^\d{8,}$/u.test(value));
 }
 
 export function normalizeLanguageKey(language: string) {
@@ -668,6 +718,44 @@ export function buildCandidateKnowledgeCoverage(input: {
             : "MISSING",
     };
   });
+}
+
+export type CandidateKnowledgeProfileStatus =
+  "KNOWN" | "RECOMMENDED" | "OPTIONAL" | "ATTENTION";
+
+export function candidateKnowledgeProfileStatus(
+  item: CandidateKnowledgeCoverageItem,
+): CandidateKnowledgeProfileStatus | null {
+  const policy = candidateKnowledgePolicy(item.concept);
+  if (!policy || policy.class === "CANDIDATE_AUTHORITY") return null;
+  if (
+    item.status === "CONFLICT" ||
+    (item.result.value !== null &&
+      (item.result.freshness === "STALE" ||
+        item.result.status === "STALE_CONFIRMATION_REQUIRED"))
+  )
+    return "ATTENTION";
+  if (item.status === "KNOWN") return "KNOWN";
+  return policy.candidateInputOptional ? "OPTIONAL" : "RECOMMENDED";
+}
+
+export function candidateKnowledgeProfileGroups(
+  coverage: readonly CandidateKnowledgeCoverageItem[],
+) {
+  const groups: Record<
+    CandidateKnowledgeProfileStatus,
+    CandidateKnowledgeCoverageItem[]
+  > = {
+    KNOWN: [],
+    RECOMMENDED: [],
+    OPTIONAL: [],
+    ATTENTION: [],
+  };
+  for (const item of coverage) {
+    const status = candidateKnowledgeProfileStatus(item);
+    if (status) groups[status].push(item);
+  }
+  return groups;
 }
 
 export const CANDIDATE_NARRATIVE_PROMPTS = [

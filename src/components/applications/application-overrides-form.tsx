@@ -15,8 +15,100 @@ import {
   exclusiveChoiceValues,
   normalizedChoiceText,
 } from "@/core/domain/applications/choice-taxonomy";
+import {
+  candidateKnowledgePolicy,
+  type CandidateKnowledgeConcept,
+} from "@/core/domain/candidate/candidate-knowledge";
 
 type EditableField = ApplicationPacketField | ApplicationPacketAnswer;
+
+function recurringConceptLabel(concept: CandidateKnowledgeConcept) {
+  if (concept === "NOTICE_PERIOD") return "Notice period";
+  if (concept === "DESIRED_SALARY") return "Desired compensation";
+  if (concept.startsWith("LANGUAGE_PROFICIENCY:"))
+    return `${concept.slice("LANGUAGE_PROFICIENCY:".length).replaceAll("-", " ")} proficiency`;
+  return concept.toLocaleLowerCase("en-US").replaceAll("_", " ");
+}
+
+function taskExplanation(field: EditableField) {
+  if (!("questionId" in field))
+    return "This required applicant detail is not available from your Career Profile.";
+  const concept = field.canonicalConcept;
+  if (field.resolutionReasonCode === "COMPENSATION_CURRENCY_MISMATCH")
+    return "No compatible reusable compensation preference is saved in the employer's requested currency. RoleProwl does not perform hidden currency conversion.";
+  if (field.resolutionReasonCode === "EMPLOYER_POSTED_COMPENSATION_PROPOSAL")
+    return "This job provides a compatible compensation range. The displayed value is a proposal from that posting and still requires your confirmation.";
+  if (field.resolutionReasonCode === "CANDIDATE_KNOWLEDGE_STALE")
+    return "The saved reusable detail needs reconfirmation before RoleProwl can use it automatically.";
+  if (field.resolutionReasonCode === "CANDIDATE_KNOWLEDGE_CONFLICT")
+    return "Candidate-approved memory and Career Profile evidence disagree. Confirm the value for this application.";
+  if (field.resolutionReasonCode === "FIELD_TAXONOMY_MISMATCH")
+    return "The employer's choices do not faithfully represent the saved candidate value.";
+  if (field.resolutionReasonCode === "CANDIDATE_KNOWLEDGE_MISSING" && concept)
+    return `${recurringConceptLabel(concept)} is not currently saved in your Career Profile.`;
+  if (field.resolutionDisposition === "PROPOSED_FOR_CANDIDATE")
+    return "RoleProwl found a bounded evidence-backed suggestion, but your confirmation is required.";
+  return field.required
+    ? "RoleProwl does not have enough current, compatible evidence to answer this required question safely."
+    : "This optional employer question needs your decision if you want to answer it.";
+}
+
+function canReuse(field: EditableField) {
+  if (!("questionId" in field) || !field.canonicalConcept) return false;
+  return Boolean(
+    candidateKnowledgePolicy(field.canonicalConcept)
+      ?.reusableForEmployerQuestions,
+  );
+}
+
+function TaskField({
+  field,
+  index,
+}: {
+  readonly field: EditableField;
+  readonly index: number;
+}) {
+  return (
+    <article
+      className="application-task-card min-w-0"
+      id={`application-task-${index + 1}`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="badge">
+          {field.required ? "Required" : "Optional"}
+        </span>
+        {canReuse(field) ? (
+          <span className="text-xs text-foreground-muted">Reusable answer</span>
+        ) : null}
+      </div>
+      <p className="m-0 text-sm text-foreground-muted">
+        {taskExplanation(field)}
+      </p>
+      <OverrideInput field={field} />
+      {canReuse(field) ? (
+        <p className="m-0 text-xs text-foreground-muted">
+          Your confirmed answer will be saved semantically for compatible future
+          applications.
+        </p>
+      ) : null}
+      {"questionId" in field ? (
+        <details className="text-xs text-foreground-muted">
+          <summary>Why?</summary>
+          <p className="mb-0 break-words">
+            Resolution reason:{" "}
+            {(field.resolutionReasonCode ?? "CANDIDATE_DECISION_REQUIRED")
+              .replaceAll("_", " ")
+              .toLocaleLowerCase("en-US")}
+            .
+            {(field.provenance ?? []).length
+              ? ` Evidence: ${(field.provenance ?? []).map((item) => item.label).join(", ")}.`
+              : " No compatible reusable evidence was available."}
+          </p>
+        </details>
+      ) : null}
+    </article>
+  );
+}
 
 export function applicationOverridesAreDirty(
   initial: Readonly<Record<string, unknown>>,
@@ -551,10 +643,12 @@ function SaveButton({ dirty }: { readonly dirty: boolean }) {
 export function ApplicationOverridesForm({
   applicationId,
   fields,
+  mode = "REVIEW",
   saveAction,
 }: {
   readonly applicationId: string;
   readonly fields: readonly EditableField[];
+  readonly mode?: "REVIEW" | "TASKS";
   readonly saveAction: (formData: FormData) => Promise<void>;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
@@ -588,10 +682,20 @@ export function ApplicationOverridesForm({
       ref={formRef}
     >
       <input name="applicationId" type="hidden" value={applicationId} />
-      <div className="grid min-w-0 gap-4 md:grid-cols-2">
-        {fields.map((field) => (
-          <OverrideInput field={field} key={field.key} />
-        ))}
+      <div
+        className={
+          mode === "TASKS"
+            ? "grid min-w-0 gap-3"
+            : "grid min-w-0 gap-4 md:grid-cols-2"
+        }
+      >
+        {fields.map((field, index) =>
+          mode === "TASKS" ? (
+            <TaskField field={field} index={index} key={field.key} />
+          ) : (
+            <OverrideInput field={field} key={field.key} />
+          ),
+        )}
       </div>
       <SaveButton dirty={dirty} />
     </form>

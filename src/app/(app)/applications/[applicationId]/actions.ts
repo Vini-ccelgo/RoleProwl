@@ -109,16 +109,19 @@ function reusableAnswerText(answer: ApplicationPacketAnswer, value: string) {
     }
   })();
   const identities = answer.optionIdentities ?? [];
-  const labels = values.map(
-    (candidate) =>
-      identities.find((option) => option.value === candidate)?.label ??
-      candidate,
-  );
+  const labels = values.map((candidate) => {
+    const identity = identities.find((option) => option.value === candidate);
+    if (identity && identity.label === candidate && /^\d{8,}$/u.test(candidate))
+      return null;
+    return identity?.label ?? (identities.length ? null : candidate);
+  });
+  if (labels.some((label) => !label)) return null;
   return labels.join(", ");
 }
 
 function reusableAnswerPayload(answer: ApplicationPacketAnswer, value: string) {
   const text = reusableAnswerText(answer, value);
+  if (!text) return null;
   if (
     answer.canonicalConcept !== "CURRENT_COMPENSATION" &&
     answer.canonicalConcept !== "DESIRED_SALARY"
@@ -473,8 +476,13 @@ export async function saveApplicationOverridesAction(formData: FormData) {
       concept && isCandidateKnowledgeConcept(concept)
         ? candidateKnowledgePolicy(concept)
         : null;
+    const reusablePayload =
+      answer.value && packetAnswer
+        ? reusableAnswerPayload(packetAnswer, answer.value)
+        : null;
     return answer.value &&
       concept &&
+      reusablePayload &&
       policy?.reusableForEmployerQuestions &&
       packetAnswer?.resolutionReasonCode !== "EMPLOYER_SPECIFIC_ANSWER" &&
       packetAnswer?.resolutionReasonCode !==
@@ -486,7 +494,7 @@ export async function saveApplicationOverridesAction(formData: FormData) {
           {
             userId: actor.id,
             concept,
-            answer: reusableAnswerPayload(packetAnswer, answer.value),
+            answer: reusablePayload,
             resolvesConflicts:
               packetAnswer.resolutionReasonCode ===
               "CANDIDATE_KNOWLEDGE_CONFLICT",

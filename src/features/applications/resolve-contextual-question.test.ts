@@ -203,6 +203,40 @@ describe("known contextual application questions", () => {
     ).toBe("AMBIGUOUS_COUNTRY_CONTEXT_REQUIRED");
   });
 
+  it("does not treat boolean authorization and sponsorship controls as competing country selectors", () => {
+    const country = question("Country", {
+      fieldTypes: ["multi_value_single_select"],
+      options: ["Brazil", "United States"],
+    });
+    const residence = question("Which country do you currently reside in?", {
+      fieldTypes: ["multi_value_single_select"],
+      options: ["Brazil", "United States"],
+    });
+    const authorization = question(
+      "Are you authorized to work in the United States?",
+      { fieldTypes: ["input_radio"], options: ["Yes", "No"] },
+    );
+    const sponsorship = question(
+      "Will you now or in the future require sponsorship?",
+      { fieldTypes: ["input_radio"], options: ["Yes", "No"] },
+    );
+    const result = resolveKnownContextualQuestion({
+      question: country,
+      questions: [residence, authorization, sponsorship, country],
+      knowledge: knowledgeMap(
+        knowledge("CURRENT_LOCATION", {
+          text: "São Paulo, Brazil",
+          countryCode: "BR",
+        }),
+      ),
+    });
+    expect(result?.resolution).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: "Brazil",
+      reasonCode: "SAME_FORM_CURRENT_RESIDENCE_CONTEXT",
+    });
+  });
+
   it("converts same-currency monthly and annual compensation by code", () => {
     expect(
       convertCompensationBasis(

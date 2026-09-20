@@ -9,14 +9,17 @@ import {
 import {
   CANDIDATE_NARRATIVE_PROMPTS,
   candidateKnowledgeConflictSourceLabels,
+  candidateKnowledgeProfileGroups,
   candidateKnowledgePolicy,
   candidateKnowledgeSourceLabel,
+  isOpaqueEmployerOptionAnswer,
   type CandidateKnowledgeConcept,
 } from "@/core/domain/candidate/candidate-knowledge";
 import type { getCandidateKnowledgeSnapshot } from "@/integrations/candidate/prisma-candidate-knowledge";
 import { TextAreaField, TextField } from "./vault-fields";
 import { VaultForm } from "./vault-form";
 import { CandidateKnowledgeReviewForm } from "./candidate-knowledge-review-form";
+import { CandidateKnowledgeRemovalForm } from "./candidate-knowledge-removal-form";
 
 type Snapshot = Awaited<ReturnType<typeof getCandidateKnowledgeSnapshot>>;
 type CoverageItem = Snapshot["coverage"][number];
@@ -54,6 +57,31 @@ function label(concept: CandidateKnowledgeConcept) {
   );
 }
 
+function profileTarget(concept: CandidateKnowledgeConcept) {
+  if (
+    [
+      "FIRST_NAME",
+      "LAST_NAME",
+      "APPLICATION_EMAIL",
+      "PHONE",
+      "CURRENT_LOCATION",
+      "WEBSITE_URL",
+      "LINKEDIN_URL",
+    ].includes(concept)
+  )
+    return "#details";
+  if (concept === "EMPLOYMENT_HISTORY") return "#experience";
+  if (concept === "EDUCATION_HISTORY") return "#education";
+  if (concept === "SKILLS" || concept.startsWith("LANGUAGE")) return "#skills";
+  if (["PROJECTS", "CERTIFICATIONS"].includes(concept)) return "#projects";
+  if (
+    concept.startsWith("WORK_AUTHORIZATION:") ||
+    concept.startsWith("SPONSORSHIP_REQUIREMENT:")
+  )
+    return "#authorization";
+  return "#profile-optional";
+}
+
 function record(value: unknown): Readonly<Record<string, unknown>> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Readonly<Record<string, unknown>>)
@@ -80,6 +108,11 @@ function compensationValue(value: unknown) {
 }
 
 function displayValue(item: CoverageItem) {
+  if (
+    item.result.value &&
+    isOpaqueEmployerOptionAnswer(item.concept, item.result.value)
+  )
+    return "Needs reconfirmation";
   const compensation = compensationValue(item.result.value);
   if (typeof compensation.amount === "number")
     return [
@@ -139,6 +172,7 @@ export function CandidateKnowledgeSection({
 }: {
   snapshot: Snapshot;
 }) {
+  const profileGroups = candidateKnowledgeProfileGroups(snapshot.coverage);
   const directGaps = snapshot.coverage.filter((item) => {
     const policy = candidateKnowledgePolicy(item.concept);
     return (
@@ -148,6 +182,23 @@ export function CandidateKnowledgeSection({
         item.concept.startsWith("LANGUAGE_PROFICIENCY:"))
     );
   });
+  const staleGaps = directGaps.filter(
+    (item) =>
+      item.result.value !== null &&
+      (item.result.freshness === "STALE" ||
+        item.result.status === "STALE_CONFIRMATION_REQUIRED"),
+  );
+  const recommendedGaps = directGaps.filter(
+    (item) =>
+      !staleGaps.includes(item) &&
+      candidateKnowledgePolicy(item.concept)?.candidateInputOptional === false,
+  );
+  const optionalGaps = directGaps.filter(
+    (item) =>
+      !staleGaps.includes(item) &&
+      candidateKnowledgePolicy(item.concept)?.candidateInputOptional === true,
+  );
+  const attentionItems = profileGroups.ATTENTION;
   return (
     <section className="vault-section candidate-knowledge-section">
       <header>
@@ -161,24 +212,65 @@ export function CandidateKnowledgeSection({
         </div>
       </header>
       <div className="vault-section-body">
-        <div
+        <nav
           className="candidate-knowledge-counts"
           aria-label="Recurring detail coverage"
         >
-          <div>
-            <strong>{snapshot.counts.known}</strong>
-            <span>Already known</span>
+          {(
+            [
+              [profileGroups.KNOWN.length, "Already known", "#profile-known"],
+              [
+                profileGroups.RECOMMENDED.length,
+                "Worth completing",
+                "#profile-recommended",
+              ],
+              [profileGroups.OPTIONAL.length, "Optional", "#profile-optional"],
+              [
+                attentionItems.length,
+                "Conflicts / stale",
+                "#profile-attention",
+              ],
+            ] satisfies readonly (readonly [number, string, string])[]
+          ).map(([count, text, href]) => (
+            <a href={href} key={text}>
+              <strong>{count}</strong>
+              <span>{text}</span>
+            </a>
+          ))}
+        </nav>
+        {attentionItems.length > 0 ? (
+          <section
+            className="candidate-knowledge-guidance"
+            id="profile-attention"
+          >
+            <h3>Needs attention</h3>
+            <ul className="candidate-knowledge-inventory">
+              {attentionItems.map((item) => (
+                <li key={item.concept}>
+                  <a href={`#candidate-detail-${item.concept}`}>
+                    {label(item.concept)}
+                  </a>
+                  <span className="badge">
+                    {item.status === "CONFLICT"
+                      ? "Conflict"
+                      : "Needs reconfirmation"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+        {(snapshot.invalidatedReusableConcepts ?? []).length > 0 ? (
+          <div className="candidate-knowledge-conflict">
+            <strong>Reconfirmation required</strong>
+            <p className="mb-0">
+              An older saved answer contained an employer-specific option ID and
+              could not be recovered safely. Re-enter:{" "}
+              {snapshot.invalidatedReusableConcepts.map(label).join(", ")}.
+            </p>
           </div>
-          <div>
-            <strong>{snapshot.counts.worthCompleting}</strong>
-            <span>Worth completing</span>
-          </div>
-          <div>
-            <strong>{snapshot.counts.optional}</strong>
-            <span>Optional</span>
-          </div>
-        </div>
-        {snapshot.counts.conflicts > 0 ? (
+        ) : null}
+        {attentionItems.some((item) => item.status === "CONFLICT") ? (
           <div className="candidate-knowledge-conflict">
             <strong>Conflicting details need attention</strong>
             <ul>
@@ -186,7 +278,10 @@ export function CandidateKnowledgeSection({
                 .filter((item) => item.status === "CONFLICT")
                 .map((item) => (
                   <li key={item.concept}>
-                    {label(item.concept)}: the current{" "}
+                    <a href={`#candidate-detail-${item.concept}`}>
+                      {label(item.concept)}
+                    </a>
+                    : the current{" "}
                     {item.result.provenance?.source
                       ? candidateKnowledgeSourceLabel(
                           item.result.provenance.source,
@@ -196,14 +291,53 @@ export function CandidateKnowledgeSection({
                     {candidateKnowledgeConflictSourceLabels(item.result).join(
                       ", ",
                     )}{" "}
-                    evidence.
+                    evidence. Current value: {displayValue(item)}. Competing
+                    value
+                    {item.result.conflictingEvidence.length === 1
+                      ? ""
+                      : "s"}:{" "}
+                    {item.result.conflictingEvidence
+                      .map(
+                        (evidence) => editableValue(evidence.value) || "Saved",
+                      )
+                      .join(", ")}
+                    .
                   </li>
                 ))}
             </ul>
           </div>
         ) : null}
 
-        <div className="candidate-knowledge-current">
+        <section
+          className="candidate-knowledge-guidance"
+          id="profile-recommended"
+        >
+          <div>
+            <h3>Worth completing next</h3>
+            <p className="candidate-knowledge-prompt">
+              These current gaps are most likely to reduce repeated application
+              work.
+            </p>
+          </div>
+          {profileGroups.RECOMMENDED.length ? (
+            <ul className="candidate-knowledge-inventory">
+              {profileGroups.RECOMMENDED.map((item) => (
+                <li key={item.concept}>
+                  <a href={profileTarget(item.concept)}>
+                    {label(item.concept)}
+                  </a>
+                  <span className="badge">Recommended</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="m-0 text-sm text-foreground-muted">
+              No recommended gaps remain.
+            </p>
+          )}
+        </section>
+
+        <div className="candidate-knowledge-current" id="profile-known">
           <div>
             <h3>Your current reusable details</h3>
             <p className="candidate-knowledge-prompt">
@@ -214,14 +348,67 @@ export function CandidateKnowledgeSection({
           {snapshot.currentDetails.length > 0 ? (
             snapshot.currentDetails.map((item) => {
               const compensation = compensationValue(item.result.value);
+              const opaqueEmployerIdentity = Boolean(
+                item.result.value &&
+                isOpaqueEmployerOptionAnswer(item.concept, item.result.value),
+              );
               const freshness = confirmedLabel(item);
               const removable =
                 item.result.provenance?.source === "ANSWER_MEMORY";
               return (
-                <article className="vault-record" key={item.concept}>
-                  <strong>{label(item.concept)}</strong>
+                <article
+                  className="vault-record"
+                  id={`candidate-detail-${item.concept}`}
+                  key={item.concept}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <strong>{label(item.concept)}</strong>
+                    <span className="badge">
+                      {item.status === "CONFLICT"
+                        ? "Conflict"
+                        : item.result.freshness === "STALE"
+                          ? "Needs reconfirmation"
+                          : "Known"}
+                    </span>
+                  </div>
                   <span>{displayValue(item)}</span>
                   {freshness ? <small>{freshness}</small> : null}
+                  {item.result.conflictingEvidence.length > 0 ? (
+                    <details>
+                      <summary>Compare conflicting sources</summary>
+                      <div className="grid gap-2 pt-2 text-xs">
+                        <p className="m-0">
+                          <strong>
+                            Current{" "}
+                            {item.result.provenance?.source
+                              ? candidateKnowledgeSourceLabel(
+                                  item.result.provenance.source,
+                                )
+                              : "candidate"}{" "}
+                            value:
+                          </strong>{" "}
+                          {displayValue(item)}
+                        </p>
+                        {item.result.conflictingEvidence.map(
+                          (evidence, index) => (
+                            <p className="m-0" key={`${item.concept}-${index}`}>
+                              <strong>
+                                {candidateKnowledgeSourceLabel(
+                                  evidence.provenance.source,
+                                )}{" "}
+                                evidence:
+                              </strong>{" "}
+                              {editableValue(evidence.value) || "Saved"}
+                            </p>
+                          ),
+                        )}
+                        <p className="m-0">
+                          Edit and save the intended value; RoleProwl will not
+                          overwrite either source automatically.
+                        </p>
+                      </div>
+                    </details>
+                  ) : null}
                   <details>
                     <summary>Edit</summary>
                     <VaultForm
@@ -239,7 +426,9 @@ export function CandidateKnowledgeSection({
                         defaultValue={
                           typeof compensation.amount === "number"
                             ? compensation.amount
-                            : editableValue(item.result.value)
+                            : opaqueEmployerIdentity
+                              ? ""
+                              : editableValue(item.result.value)
                         }
                         required
                       />
@@ -283,17 +472,10 @@ export function CandidateKnowledgeSection({
                     </VaultForm>
                   ) : null}
                   {removable ? (
-                    <VaultForm
+                    <CandidateKnowledgeRemovalForm
                       action={removeCandidateKnowledgeAnswer}
-                      className="candidate-knowledge-inline-action"
-                      submitLabel="Remove saved answer"
-                    >
-                      <input
-                        name="concept"
-                        type="hidden"
-                        value={item.concept}
-                      />
-                    </VaultForm>
+                      concept={item.concept}
+                    />
                   ) : null}
                 </article>
               );
@@ -306,8 +488,8 @@ export function CandidateKnowledgeSection({
         </div>
 
         {directGaps.length > 0 ? (
-          <details open>
-            <summary>Complete one recurring detail</summary>
+          <details open id="profile-optional">
+            <summary>Add a recurring detail</summary>
             <VaultForm
               action={saveCandidateKnowledgeAnswer}
               resetOnSuccess
@@ -317,15 +499,33 @@ export function CandidateKnowledgeSection({
                 <span>Missing or stale detail</span>
                 <select name="concept" required>
                   <option value="">Select…</option>
-                  {directGaps.map((item) => (
-                    <option key={item.concept} value={item.concept}>
-                      {label(item.concept)}
-                      {candidateKnowledgePolicy(item.concept)
-                        ?.candidateInputOptional
-                        ? " (optional)"
-                        : ""}
-                    </option>
-                  ))}
+                  {recommendedGaps.length ? (
+                    <optgroup label="Recommended to complete">
+                      {recommendedGaps.map((item) => (
+                        <option key={item.concept} value={item.concept}>
+                          {label(item.concept)} — missing
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
+                  {staleGaps.length ? (
+                    <optgroup label="Needs reconfirmation">
+                      {staleGaps.map((item) => (
+                        <option key={item.concept} value={item.concept}>
+                          {label(item.concept)} — saved but stale
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
+                  {optionalGaps.length ? (
+                    <optgroup label="Other reusable details">
+                      {optionalGaps.map((item) => (
+                        <option key={item.concept} value={item.concept}>
+                          {label(item.concept)} — optional
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
                 </select>
               </label>
               <TextField name="answer" label="Your answer or amount" required />
@@ -340,6 +540,29 @@ export function CandidateKnowledgeSection({
                 placeholder="monthly or annual"
               />
             </VaultForm>
+            {profileGroups.KNOWN.length ? (
+              <details className="mt-3">
+                <summary>Already saved · {profileGroups.KNOWN.length}</summary>
+                <ul className="candidate-knowledge-inventory">
+                  {profileGroups.KNOWN.map((item) => (
+                    <li key={item.concept}>
+                      <a
+                        href={
+                          snapshot.currentDetails.some(
+                            (detail) => detail.concept === item.concept,
+                          )
+                            ? `#candidate-detail-${item.concept}`
+                            : profileTarget(item.concept)
+                        }
+                      >
+                        {label(item.concept)}
+                      </a>
+                      <span className="badge">Known</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
           </details>
         ) : (
           <p className="m-0 text-sm text-foreground-muted">
@@ -589,23 +812,33 @@ export function ProfessionalHistoryAuthorityControls({
           </p>
         </div>
       </header>
-      <div className="vault-section-body">
-        <p className="candidate-knowledge-prompt">
-          Completeness: {completenessActive ? "Active" : "Inactive"}. Negative
-          experience inference: {negativeActive ? "Active" : "Inactive"}.
+      <div className="vault-section-body professional-history-authority-body">
+        <div className="professional-history-authority-status">
+          <span className="badge">
+            Completeness · {completenessActive ? "Active" : "Inactive"}
+          </span>
+          <span className="badge">
+            Negative inference · {negativeActive ? "Active" : "Inactive"}
+          </span>
+          {latestConfirmation ? (
+            <small>
+              Last confirmed{" "}
+              {new Intl.DateTimeFormat("en-US", {
+                dateStyle: "medium",
+                timeZone: "UTC",
+              }).format(latestConfirmation)}
+            </small>
+          ) : null}
+        </div>
+        <p className="candidate-knowledge-prompt m-0">
           {completenessStored && !completenessActive
-            ? " Your completeness confirmation needs renewal."
+            ? "Your completeness confirmation needs renewal. "
             : ""}
           {negativeStored &&
           negativeInference?.result.status === "STALE_CONFIRMATION_REQUIRED"
-            ? " Your negative-inference permission needs renewal."
+            ? "Your negative-inference permission needs renewal. "
             : ""}
-          {latestConfirmation
-            ? ` Last confirmed ${new Intl.DateTimeFormat("en-US", {
-                dateStyle: "medium",
-                timeZone: "UTC",
-              }).format(latestConfirmation)}.`
-            : ""}
+          Employment-history changes clear both permissions.
         </p>
         <VaultForm
           action={saveProfessionalHistoryAuthorities}
@@ -615,33 +848,43 @@ export function ProfessionalHistoryAuthorityControls({
               : "Save authority"
           }
         >
-          <label className="field">
-            <span>
+          <fieldset className="professional-history-authority-options">
+            <legend className="sr-only">
+              Professional-history permissions
+            </legend>
+            <label className="professional-history-authority-option">
               <input
                 defaultChecked={completenessStored}
                 name="completeProfessionalHistory"
                 type="checkbox"
-              />{" "}
-              My Career Profile contains my complete professional history
-              through today.
-            </span>
-          </label>
-          <label className="field">
-            <span>
+              />
+              <span>
+                <strong>Complete professional history</strong>
+                <small>
+                  My Career Profile contains my complete professional history
+                  through today.
+                </small>
+              </span>
+            </label>
+            <label className="professional-history-authority-option">
               <input
                 defaultChecked={negativeStored}
                 name="negativeHistoryInference"
                 type="checkbox"
-              />{" "}
-              Allow RoleProwl to answer ordinary professional-experience
-              questions with “No” or “0 years” when this complete history has no
-              matching evidence.
-            </span>
-          </label>
+              />
+              <span>
+                <strong>Bounded negative experience answers</strong>
+                <small>
+                  Allow RoleProwl to answer ordinary professional-experience
+                  questions with “No” or “0 years” when this complete history
+                  has no matching evidence.
+                </small>
+              </span>
+            </label>
+          </fieldset>
           <small>
             The second permission is effective only while the completeness
-            confirmation is current. Employment-history changes clear both
-            permissions.
+            confirmation is current.
           </small>
         </VaultForm>
       </div>

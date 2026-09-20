@@ -1070,16 +1070,22 @@ p {
 }
 .candidate-knowledge-counts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.65rem;
 }
-.candidate-knowledge-counts > div {
+.candidate-knowledge-counts > a {
   display: grid;
   gap: 0.15rem;
   padding: 0.8rem;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--surface-muted);
+  color: inherit;
+}
+.candidate-knowledge-counts > a:hover,
+.candidate-knowledge-counts > a:focus-visible {
+  border-color: var(--brand);
+  background: var(--brand-soft);
 }
 .candidate-knowledge-counts strong {
   font-size: 1.25rem;
@@ -1099,14 +1105,34 @@ p {
 }
 .candidate-knowledge-proposals,
 .candidate-knowledge-review-form,
-.candidate-knowledge-current {
+.candidate-knowledge-current,
+.candidate-knowledge-guidance {
   display: grid;
   gap: 0.75rem;
 }
 .candidate-knowledge-proposals h3,
-.candidate-knowledge-current h3 {
+.candidate-knowledge-current h3,
+.candidate-knowledge-guidance h3 {
   margin: 0;
   font-size: 0.95rem;
+}
+.candidate-knowledge-inventory {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.candidate-knowledge-inventory li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.78rem;
 }
 .candidate-knowledge-current .vault-record {
   display: grid;
@@ -1128,6 +1154,103 @@ p {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+.candidate-knowledge-remove {
+  display: flex;
+  justify-content: flex-start;
+}
+.candidate-knowledge-remove-confirmation {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+}
+.button-danger-text {
+  width: fit-content;
+  min-height: auto;
+  padding: 0.25rem 0;
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+.button-danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: white;
+}
+.professional-history-authority-body {
+  gap: 0.7rem;
+}
+.professional-history-authority-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.professional-history-authority-status small {
+  color: var(--foreground-muted);
+}
+.professional-history-authority-options {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.professional-history-authority-option {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-muted);
+  cursor: pointer;
+}
+.professional-history-authority-option input {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+}
+.professional-history-authority-option span {
+  display: grid;
+  gap: 0.2rem;
+}
+.professional-history-authority-option small {
+  color: var(--foreground-muted);
+  line-height: 1.4;
+}
+.application-summary-link {
+  display: grid;
+  gap: 0.2rem;
+  color: inherit;
+  background: var(--surface-muted);
+}
+.application-summary-link:hover,
+.application-summary-link:focus-visible {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.application-task-card {
+  display: grid;
+  gap: 0.75rem;
+  scroll-margin-top: 5rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+.application-task-card .field,
+.application-task-card fieldset {
+  margin: 0;
 }
 .vault-form {
   display: grid;
@@ -1661,6 +1784,45 @@ p {
   .document-deletion-consequence-actions {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .candidate-knowledge-counts,
+  .professional-history-authority-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .application-task-card {
+    padding: 0.75rem;
+  }
+  .application-task-card .button,
+  .candidate-knowledge-remove-confirmation .button {
+    max-width: 100%;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 420px) {
+  .professional-history-authority-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 960px) {
+  .vault-sections {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .profile-section-wide {
+    grid-column: 1 / -1;
+  }
+  .candidate-knowledge-current {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .candidate-knowledge-current > div,
+  .candidate-knowledge-current > h3,
+  .candidate-knowledge-current > p {
+    grid-column: 1 / -1;
   }
 }
 @media (max-width: 560px) {

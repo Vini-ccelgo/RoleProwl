@@ -172,6 +172,21 @@ export function ApplicationPacketSummary({
         ["DOCUMENT", "PROFILE_FACT"].includes(field.classification)
       ),
   );
+  const staleQuestionIds = new Set(
+    staleAnswers.map((answer) => answer.questionId),
+  );
+  const taskEditableBlockers = editableBlockers.filter(
+    (field) =>
+      !(
+        "questionId" in field &&
+        typeof field.questionId === "string" &&
+        staleQuestionIds.has(field.questionId)
+      ),
+  );
+  const nonEditableBlockers = needsReview.filter(
+    (field) =>
+      !editableBlockers.some((candidate) => candidate.key === field.key),
+  );
   const rawApplicationSpecific = [...packet.identity, ...answers].filter(
     (field) =>
       (field.provenance ?? []).some(
@@ -225,11 +240,12 @@ export function ApplicationPacketSummary({
     ),
     ...editablePreparedAnswers,
   ];
-  const editableFields = [
+  const preparedReviewFields = [
     ...new Map(
-      [...editablePrepared, ...applicationSpecific, ...editableBlockers].map(
-        (field) => [field.key, field],
-      ),
+      [...editablePrepared, ...applicationSpecific].map((field) => [
+        field.key,
+        field,
+      ]),
     ).values(),
   ];
   const unresolvedResume = packet.documents.find(
@@ -275,89 +291,134 @@ export function ApplicationPacketSummary({
             review. Review the rebuilt packet again before handoff.
           </p>
         ) : null}
-        <div className="grid gap-3 sm:grid-cols-3">
-          {[
+        <nav
+          aria-label="Application packet filters"
+          className="grid gap-3 sm:grid-cols-3"
+        >
+          {(
             [
-              "Automatically prepared",
-              new Set(roleProwlPrepared.map(candidateDecisionKey)).size,
-            ],
-            ["Needs your answer", needsReview.length],
-            [
-              "Complete on employer site",
-              candidateRequired.length + generalHumanSteps.length,
-            ],
-          ].map(([label, count]) => (
-            <div className="border-border rounded-lg border p-3" key={label}>
+              [
+                "Automatically prepared",
+                new Set(roleProwlPrepared.map(candidateDecisionKey)).size,
+                "#prepared-fields",
+              ],
+              ["Needs you", needsReview.length, "#needs-you"],
+              [
+                "Complete on employer site",
+                candidateRequired.length + generalHumanSteps.length,
+                "#employer-site",
+              ],
+            ] satisfies readonly (readonly [string, number, string])[]
+          ).map(([label, count, href]) => (
+            <a
+              className="application-summary-link border-border rounded-lg border p-3"
+              href={href}
+              key={label}
+            >
               <strong className="text-xl text-brand">{count}</strong>
               <p className="m-0 text-xs">{label}</p>
-            </div>
+            </a>
           ))}
-        </div>
+        </nav>
+        {needsReview.length > 0 ? (
+          <p className="m-0 flex flex-wrap items-center gap-3 text-sm">
+            <strong>
+              {needsReview.length} decision{needsReview.length === 1 ? "" : "s"}{" "}
+              remaining
+            </strong>
+            <a className="font-semibold text-brand" href="#needs-you">
+              Go to first
+            </a>
+          </p>
+        ) : null}
       </div>
 
-      {staleAnswers.length > 0 && confirmKnowledgeAction ? (
-        <section className="card grid gap-3 border-brand p-5">
+      {(needsReview.length > 0 || unresolvedResume) && (
+        <section className="card grid gap-4 border-brand p-5" id="needs-you">
           <div>
-            <h2 className="text-base font-semibold">Quick confirmations</h2>
+            <h2 className="text-base font-semibold">Needs you</h2>
             <p className="m-0 text-sm text-foreground-muted">
-              These reusable answers are old enough to require confirmation.
-              Confirm the existing value or update it below.
+              Only unresolved candidate decisions appear here. Resolve an item,
+              save, and this list will rebuild around the work that remains.
             </p>
           </div>
-          <form action={confirmKnowledgeAction} className="grid gap-3">
-            <input name="applicationId" type="hidden" value={applicationId} />
-            <div className="grid gap-3 md:grid-cols-2">
-              {staleAnswers.map((answer) => (
-                <label
-                  className="border-border grid min-w-0 gap-2 rounded-lg border p-3"
-                  key={answer.questionId}
-                >
-                  <strong className="text-sm break-words">
-                    {answer.label}
-                  </strong>
-                  <span className="text-sm break-words">{answer.value}</span>
-                  <span className="flex items-center gap-2 text-sm">
-                    <input
-                      name="questionId"
-                      type="checkbox"
-                      value={answer.questionId}
-                    />
-                    Still true
-                  </span>
-                </label>
-              ))}
+          {staleAnswers.length > 0 && confirmKnowledgeAction ? (
+            <div className="grid gap-3">
+              <h3 className="m-0 text-sm font-semibold">
+                Reconfirm saved details
+              </h3>
+              <form action={confirmKnowledgeAction} className="grid gap-3">
+                <input
+                  name="applicationId"
+                  type="hidden"
+                  value={applicationId}
+                />
+                <div className="grid gap-3 md:grid-cols-2">
+                  {staleAnswers.map((answer) => (
+                    <label
+                      className="application-task-card grid min-w-0 gap-2"
+                      key={answer.questionId}
+                    >
+                      <strong className="text-sm break-words">
+                        {answer.label}
+                      </strong>
+                      <span className="text-sm break-words">
+                        {answer.value}
+                      </span>
+                      <small>
+                        This reusable detail is old enough to require
+                        confirmation.
+                      </small>
+                      <span className="flex items-center gap-2 text-sm">
+                        <input
+                          name="questionId"
+                          type="checkbox"
+                          value={answer.questionId}
+                        />
+                        Still true
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    className="button button-secondary w-fit"
+                    type="submit"
+                  >
+                    Confirm selected answers
+                  </button>
+                  <a
+                    className="text-sm font-semibold text-brand"
+                    href="/profile#recurring-details"
+                  >
+                    Update in Career Profile
+                  </a>
+                </div>
+              </form>
             </div>
-            <button className="button button-secondary w-fit" type="submit">
-              Confirm selected answers
-            </button>
-          </form>
-        </section>
-      ) : null}
-
-      {(editableFields.length > 0 || unresolvedResume) && (
-        <section className="card grid gap-4 border-brand p-5">
-          <div>
-            <h2 className="text-base font-semibold">
-              {editableBlockers.length > 0
-                ? "Needs your input"
-                : applicationSpecific.length > 0
-                  ? "Application-specific values"
-                  : "Inspect or change prepared values"}
-            </h2>
-            <p className="m-0 text-sm text-foreground-muted">
-              Answers to unresolved recurring questions update candidate memory.
-              Prepared values can be changed for this Application without
-              changing Career Profile. One compatible answer is applied to
-              equivalent employer controls.
-            </p>
-          </div>
-          {editableFields.length > 0 ? (
+          ) : null}
+          {taskEditableBlockers.length > 0 ? (
             <ApplicationOverridesForm
               applicationId={applicationId}
-              fields={editableFields}
+              fields={taskEditableBlockers}
               key={packet.builtAt}
+              mode="TASKS"
               saveAction={saveAction}
             />
+          ) : null}
+          {nonEditableBlockers.length > 0 ? (
+            <div className="grid gap-2 text-sm">
+              {nonEditableBlockers.map((field) => (
+                <p className="m-0" key={field.key}>
+                  <strong>{field.label}:</strong> update the corresponding
+                  source in{" "}
+                  <a className="font-semibold text-brand" href="/profile">
+                    Career Profile
+                  </a>
+                  .
+                </p>
+              ))}
+            </div>
           ) : null}
           {unresolvedResume ? (
             <p className="m-0 text-sm">
@@ -371,10 +432,34 @@ export function ApplicationPacketSummary({
         </section>
       )}
 
-      <details className="card min-w-0 overflow-hidden p-5">
+      <details
+        className="card min-w-0 overflow-hidden p-5"
+        id="prepared-fields"
+      >
         <summary className="cursor-pointer font-semibold">
-          Completed fields and packet details
+          Ready / prepared ·{" "}
+          {new Set(roleProwlPrepared.map(candidateDecisionKey)).size} fields
+          handled by RoleProwl
         </summary>
+        {preparedReviewFields.length > 0 ? (
+          <div className="border-border mt-5 grid gap-3 border-b pb-5">
+            <div>
+              <h2 className="text-base font-semibold">
+                Review or override prepared values
+              </h2>
+              <p className="m-0 text-sm text-foreground-muted">
+                These values are already prepared. Changes apply to this
+                Application without silently changing Career Profile.
+              </p>
+            </div>
+            <ApplicationOverridesForm
+              applicationId={applicationId}
+              fields={preparedReviewFields}
+              key={`prepared-${packet.builtAt}`}
+              saveAction={saveAction}
+            />
+          </div>
+        ) : null}
         <div className="mt-5 grid min-w-0 gap-5 lg:grid-cols-2">
           <section className="card min-w-0 p-5">
             <h2 className="text-base font-semibold">
@@ -454,11 +539,16 @@ export function ApplicationPacketSummary({
 
           <section className="card p-5">
             <h2 className="text-base font-semibold">Application answers</h2>
-            {answers.length ? (
+            {roleProwlPrepared.some((field) => "questionId" in field) ? (
               <ul className="m-0 grid list-none gap-3 p-0">
-                {answers.map((answer) => (
-                  <Field field={answer} key={answer.questionId} />
-                ))}
+                {roleProwlPrepared
+                  .filter(
+                    (field): field is ApplicationPacketAnswer =>
+                      "questionId" in field,
+                  )
+                  .map((answer) => (
+                    <Field field={answer} key={answer.questionId} />
+                  ))}
               </ul>
             ) : (
               <p className="m-0 text-sm text-foreground-muted">
@@ -471,7 +561,10 @@ export function ApplicationPacketSummary({
       </details>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <section className="card grid gap-3 border-brand p-5">
+        <section
+          className="card grid gap-3 border-brand p-5"
+          id="employer-site"
+        >
           <h2 className="text-base font-semibold">
             Complete on the employer form
           </h2>
@@ -488,24 +581,6 @@ export function ApplicationPacketSummary({
               <li key={step.label}>{step.label}</li>
             ))}
           </ul>
-        </section>
-
-        <section className="card grid gap-3 border-brand p-5">
-          <h2 className="text-base font-semibold">Needs review</h2>
-          {needsReview.length ? (
-            <ul className="m-0 grid gap-1 pl-5 text-sm">
-              {needsReview.map((field) => (
-                <li key={field.key}>
-                  {field.label} ·{" "}
-                  {field.status.replaceAll("_", " ").toLowerCase()}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="m-0 text-sm">
-              No RoleProwl-resolvable required field remains unresolved.
-            </p>
-          )}
         </section>
 
         <section className="card grid gap-3 p-5">
