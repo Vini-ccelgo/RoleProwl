@@ -19,6 +19,14 @@ export interface ApplicationQuestionResolution {
   readonly candidateKnowledgeReferences: readonly string[];
   readonly reasonCode: string;
   readonly alternatives?: readonly string[];
+  readonly resolutionMetadata?: {
+    readonly method: "SEMANTIC_AI";
+    readonly taskVersion: string;
+    readonly provider?: string;
+    readonly model?: string;
+    readonly jobEvidenceReferences: readonly string[];
+    readonly employerOptionTargets: readonly string[];
+  };
 }
 
 export interface ResolvableApplicationQuestion extends PublicApplicationQuestion {

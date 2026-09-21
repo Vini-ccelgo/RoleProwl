@@ -520,15 +520,10 @@ export async function saveApplicationOverridesAction(formData: FormData) {
   );
   if (uniqueReusableAnswers.length)
     await saveDirectCandidateKnowledgeBatch(uniqueReusableAnswers);
-  const reusableConcepts = new Set(
-    uniqueReusableAnswers.map((answer) => answer.concept),
-  );
-  const applicationAnswers = answers.filter((answer) => {
-    const concept = packet?.answers.find(
-      (candidate) => candidate.questionId === answer.key,
-    )?.canonicalConcept;
-    return !concept || !reusableConcepts.has(concept);
-  });
+  // A reusable memory and an explicit answer to this application have
+  // different authority. Keep the submitted application override even when
+  // the same value was also accepted for future reuse.
+  const applicationAnswers = answers;
   if (identity.length || applicationAnswers.length)
     await saveApplicationOverrides({
       applicationId,

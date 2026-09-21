@@ -84,6 +84,7 @@ export interface ApplicationPacketAnswer extends ApplicationPacketField {
   readonly canonicalConcept?: CandidateKnowledgeConcept | null;
   readonly resolutionReasonCode?: string;
   readonly candidateKnowledgeReferences?: readonly string[];
+  readonly resolutionMetadata?: ApplicationQuestionResolution["resolutionMetadata"];
 }
 
 const IDENTITY_CONCEPTS: Readonly<
@@ -950,6 +951,9 @@ function packetFieldForQuestion(
       canonicalConcept: authoritative.canonicalConcept,
       resolutionReasonCode: authoritative.reasonCode,
       candidateKnowledgeReferences: authoritative.candidateKnowledgeReferences,
+      ...(authoritative.resolutionMetadata
+        ? { resolutionMetadata: authoritative.resolutionMetadata }
+        : {}),
     };
   }
 

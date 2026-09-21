@@ -116,7 +116,7 @@ export function isEmployerRelationshipTaxonomy(
   question: ResolvableApplicationQuestion,
 ) {
   const value = normalizedChoiceText(question.label);
-  return /\b(?:know|conhece).{0,40}(?:employee|works at|funcionario|trabalha)|(?:spouse|family member|friend|former work colleague|conjuge|familiar|amigo|ex colega)\b/u.test(
+  return /\b(?:know|conhece).{0,40}(?:employee|works at|funcionario|trabalha)|\b(?:spouse|family member|friend|former work colleague|conjuge|familiar|amigo|ex colega)\b/u.test(
     value,
   );
 }

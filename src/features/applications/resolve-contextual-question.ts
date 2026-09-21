@@ -30,7 +30,14 @@ export interface ApplicationJobContext {
 
 export interface ContextualEvidence {
   readonly id: string;
-  readonly type: "EXPERIENCE" | "SKILL" | "PROJECT" | "CERTIFICATION";
+  readonly type:
+    | "EXPERIENCE"
+    | "SKILL"
+    | "PROJECT"
+    | "CERTIFICATION"
+    | "EDUCATION"
+    | "LANGUAGE"
+    | "FACT";
   readonly summary: string;
   readonly startDate?: string;
   readonly endDate?: string;
@@ -869,7 +876,7 @@ function activeAuthority(
     : null;
 }
 
-function professionalHistoryNegativeAuthority(
+export function professionalHistoryNegativeAuthority(
   knowledge: ReadonlyMap<
     CandidateKnowledgeConcept,
     CandidateKnowledgeQueryResult
@@ -1172,6 +1179,7 @@ export function semanticExperienceYesResolution(input: {
   readonly question: ResolvableApplicationQuestion;
   readonly evidence: readonly ContextualEvidence[];
   readonly selectedEvidenceIds: readonly string[];
+  readonly automatic?: boolean;
 }) {
   const selected = new Set(input.selectedEvidenceIds);
   if (
@@ -1183,6 +1191,10 @@ export function semanticExperienceYesResolution(input: {
   return yesResolution({
     question: input.question,
     references: [...selected],
-    automatic: false,
+    automatic:
+      input.automatic === true &&
+      input.evidence
+        .filter((item) => selected.has(item.id))
+        .every((item) => item.autoResolve),
   });
 }

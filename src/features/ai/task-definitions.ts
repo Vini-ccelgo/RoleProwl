@@ -137,32 +137,44 @@ export const aiTaskDefinitions = {
     }),
   },
   APPLICATION_QUESTION_RESOLUTION: {
-    promptVersion: "application-question-resolution-v3",
+    promptVersion: "application-question-resolution-v4",
     schemaName: "application_question_resolutions",
     system:
-      "Map only the supplied ordinary employer questions to supplied evidence. For CHOICE_TAXONOMY mode, select only exact supplied raw option values. For CONTEXTUAL_ORDINARY experience questions, return supported=true only when the proposition is supported by supplied evidence IDs; select existing experience IDs for relevance, but never calculate or emit duration. A proposed value must be a faithful direct value or bounded reformulation supported by every listed reference. Never invent facts, evidence IDs, dates, duration, qualifications, completion, proficiency, negative personal facts, compensation, authorization, sponsorship, consent, or employer relationships. Return supported=false or no resolution when evidence is insufficient.",
+      "Resolve only the supplied ordinary employer questions from the supplied bounded evidence. Cite only supplied candidate and job evidence IDs. For experience duration, identify relevant experience IDs but never calculate duration. For employer choices, return exact supplied option labels as semantic targets and never return or infer raw option IDs. A canonical answer must be a faithful fact, bounded reformulation, or professional predicate supported by every citation. A negative professional-history predicate is allowed only when both supplied authority items explicitly establish complete history and authorize bounded negative inference; otherwise absence is not No. Never invent history, dates, qualifications, completion, proficiency, compensation, preferences, authorization, sponsorship, consent, sensitive attributes, negative facts, or evidence IDs. Mark candidate decisions, conflicts, and insufficient evidence explicitly rather than guessing.",
     schema: z.object({
       resolutions: z
         .array(
           z.object({
             questionId: z.string().max(500),
+            resolutionClass: z.enum([
+              "FACTUAL_VALUE",
+              "PROFESSIONAL_PREDICATE",
+              "EXPERIENCE_DURATION",
+              "TAXONOMY_TARGET",
+              "CANDIDATE_DECISION_REQUIRED",
+              "UNSUPPORTED",
+            ]),
             canonicalConcept: z.string().max(128).nullable(),
-            proposedValue: z.string().max(4_000).nullable(),
-            selectedOptionValues: z
-              .array(z.string().max(500))
-              .max(8)
-              .optional(),
-            requiresCandidateConfirmation: z.boolean().optional(),
-            contextualKind: z
-              .enum(["RELEVANT_EXPERIENCE", "EXPERIENCE_PREDICATE"])
-              .optional(),
-            proposition: z.string().max(1_000).optional(),
-            supported: z.boolean().optional(),
-            candidateKnowledgeReferences: z.array(z.string().max(512)).max(8),
+            canonicalSemanticAnswer: z.string().max(4_000).nullable(),
+            candidateEvidenceIds: z.array(z.string().max(512)).max(8),
+            jobEvidenceIds: z.array(z.string().max(512)).max(8),
+            grounding: z.enum(["GROUNDED", "INSUFFICIENT", "CONFLICTING"]),
+            answerBasis: z.enum([
+              "FACTUAL",
+              "COMPUTED",
+              "POLICY",
+              "CANDIDATE_DECISION",
+            ]),
+            employerOptionTargets: z.array(z.string().max(500)).max(8),
+            requiresCandidateConfirmation: z.boolean(),
+            reasonCode: z
+              .string()
+              .regex(/^[A-Z][A-Z0-9_]*$/u)
+              .max(96),
             confidence: z.number().min(0).max(1),
           }),
         )
-        .max(50),
+        .max(25),
     }),
   },
   FREE_TEXT_APPLICATION_GENERATION: {

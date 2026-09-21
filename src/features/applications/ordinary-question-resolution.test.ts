@@ -347,6 +347,538 @@ describe("ordinary application question resolution", () => {
   });
 });
 
+describe("held-out generalized application resolution", () => {
+  const employment = knowledge("EMPLOYMENT_HISTORY", {
+    items: [
+      {
+        identity: "security-engineer",
+        title: "Security Engineer",
+        employer: "Northstar Digital",
+        startDate: "2022-01-01T00:00:00.000Z",
+        endDate: "2025-01-01T00:00:00.000Z",
+        responsibilities: [
+          "Protected cloud estates and automated controls with Python",
+        ],
+      },
+    ],
+  });
+  const skill = knowledge("SKILLS", {
+    items: [{ identity: "python", text: "Python" }],
+  });
+
+  function semanticResolution(input: {
+    questionId: string;
+    resolutionClass?:
+      | "FACTUAL_VALUE"
+      | "PROFESSIONAL_PREDICATE"
+      | "EXPERIENCE_DURATION"
+      | "TAXONOMY_TARGET";
+    concept?: CandidateKnowledgeConcept | null;
+    answer?: string | null;
+    evidenceIds: readonly string[];
+    optionTargets?: readonly string[];
+    requiresConfirmation?: boolean;
+  }) {
+    return {
+      questionId: input.questionId,
+      resolutionClass: input.resolutionClass ?? "PROFESSIONAL_PREDICATE",
+      canonicalConcept: input.concept ?? null,
+      canonicalSemanticAnswer: input.answer ?? "Yes",
+      candidateEvidenceIds: input.evidenceIds,
+      jobEvidenceIds: [],
+      grounding: "GROUNDED",
+      answerBasis: "FACTUAL",
+      employerOptionTargets: input.optionTargets ?? [],
+      requiresCandidateConfirmation: input.requiresConfirmation ?? false,
+      reasonCode: "SUPPORTED_BY_CITED_EVIDENCE",
+      confidence: 0.96,
+    };
+  }
+
+  it("auto-resolves an unfamiliar professional paraphrase from cited history", async () => {
+    const heldOut = question(
+      "Has your work ever required safeguarding cloud estates?",
+      { options: ["Yes", "No"], fieldTypes: ["input_radio"] },
+    );
+    const fake = fakeAI([
+      semanticResolution({
+        questionId: heldOut.id,
+        evidenceIds: ["EXPERIENCE:security-engineer"],
+      }),
+    ]);
+    const [result] = await resolveApplicationQuestions({
+      ai: fake.ai,
+      correlationId: "held-out-cloud-paraphrase",
+      userId: "candidate-1",
+      questions: [heldOut],
+      knowledge: [employment],
+    });
+    expect(result).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: "Yes",
+      reasonCode: "EXPLICIT_EXPERIENCE_SUPPORTS_YES",
+      resolutionMetadata: {
+        method: "SEMANTIC_AI",
+        taskVersion: "application-question-resolution-v4",
+      },
+    });
+  });
+
+  it("keeps raw employer identities out of AI and maps a multilingual semantic target in code", async () => {
+    const heldOut = question("Assinale a tecnologia que domina", {
+      options: ["Java", "Python", "Rust"],
+      optionIdentities: [
+        { label: "Java", value: "raw-10" },
+        { label: "Python", value: "raw-20" },
+        { label: "Rust", value: "raw-30" },
+      ],
+      fieldTypes: ["multi_value_single_select"],
+    });
+    const fake = fakeAI([
+      semanticResolution({
+        questionId: heldOut.id,
+        resolutionClass: "TAXONOMY_TARGET",
+        concept: "SKILLS",
+        answer: "Python",
+        evidenceIds: ["SKILL:python"],
+        optionTargets: ["Python"],
+      }),
+    ]);
+    const [result] = await resolveApplicationQuestions({
+      ai: fake.ai,
+      correlationId: "held-out-multilingual-taxonomy",
+      userId: "candidate-1",
+      questions: [heldOut],
+      knowledge: [skill],
+    });
+    expect(result).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: "raw-20",
+    });
+    const sent = JSON.stringify(
+      fake.generateStructured.mock.calls[0] as unknown,
+    );
+    expect(sent).toContain('"optionLabels":["Java","Python","Rust"]');
+    expect(sent).not.toContain("raw-10");
+    expect(sent).not.toContain("raw-20");
+    expect(sent).not.toContain("raw-30");
+  });
+
+  it("permits an unseen professional-history negative only with both current authorities", async () => {
+    const heldOut = question(
+      "Has enterprise selling ever formed part of your remit?",
+      { options: ["Yes", "No"], fieldTypes: ["input_radio"] },
+    );
+    const authorityIds = [
+      "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION:ANSWER_MEMORY:PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION-1",
+      "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION:ANSWER_MEMORY:NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION-1",
+    ];
+    const output = semanticResolution({
+      questionId: heldOut.id,
+      answer: "No",
+      evidenceIds: authorityIds,
+    });
+    const authorities = [
+      knowledge(
+        "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+        { attested: true },
+        { applicationUse: "PREFERENCE_CONTEXT_ONLY", autoAnswerAllowed: false },
+      ),
+      knowledge(
+        "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
+        { authorized: true },
+        { applicationUse: "PREFERENCE_CONTEXT_ONLY", autoAnswerAllowed: false },
+      ),
+    ];
+    const withAuthority = await resolveApplicationQuestions({
+      ai: fakeAI([output]).ai,
+      correlationId: "held-out-negative-authorized",
+      userId: "candidate-1",
+      questions: [heldOut],
+      knowledge: [employment, ...authorities],
+    });
+    const withoutAuthority = await resolveApplicationQuestions({
+      ai: fakeAI([output]).ai,
+      correlationId: "held-out-negative-unauthorized",
+      userId: "candidate-1",
+      questions: [heldOut],
+      knowledge: [employment],
+    });
+    expect(withAuthority[0]).toMatchObject({
+      disposition: "AUTO_RESOLVED",
+      value: "No",
+      reasonCode: "SEMANTIC_COMPLETE_HISTORY_SUPPORTS_NO",
+    });
+    expect(withoutAuthority[0]).toMatchObject({
+      disposition: "CANDIDATE_REQUIRED",
+      value: null,
+    });
+  });
+
+  it("limits one semantic batch to 25 questions and leaves the remainder candidate-controlled", async () => {
+    const questions = Array.from({ length: 30 }, (_, index) =>
+      question(`Unfamiliar professional capability ${index}`),
+    );
+    const fake = fakeAI([]);
+    const results = await resolveApplicationQuestions({
+      ai: fake.ai,
+      correlationId: "bounded-general-batch",
+      userId: "candidate-1",
+      questions,
+      knowledge: [skill],
+    });
+    expect(fake.generateStructured).toHaveBeenCalledOnce();
+    const [request] = fake.generateStructured.mock.calls[0] as unknown as [
+      { readonly input: { readonly questions: readonly unknown[] } },
+    ];
+    expect(request.input.questions).toHaveLength(25);
+    expect(results).toHaveLength(30);
+    expect(
+      results.every((item) => item.disposition === "CANDIDATE_REQUIRED"),
+    ).toBe(true);
+  });
+
+  it("measures ten heterogeneous schemas with no fabricated factual resolution", async () => {
+    const authority = [
+      knowledge(
+        "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+        { attested: true },
+        { applicationUse: "PREFERENCE_CONTEXT_ONLY", autoAnswerAllowed: false },
+      ),
+      knowledge(
+        "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
+        { authorized: true },
+        { applicationUse: "PREFERENCE_CONTEXT_ONLY", autoAnswerAllowed: false },
+      ),
+    ];
+    interface EvaluationFixture {
+      readonly name: string;
+      readonly questions: readonly ResolvableApplicationQuestion[];
+      readonly knowledge: readonly CandidateKnowledgeQueryResult[];
+      readonly semanticEvidenceId?: string;
+      readonly taxonomy?: boolean;
+      readonly requiresConfirmation?: boolean;
+    }
+    const fixtures: readonly EvaluationFixture[] = [
+      {
+        name: "matching cybersecurity role",
+        questions: [
+          question("Do you have Python experience?", {
+            options: ["Yes", "No"],
+            fieldTypes: ["input_radio"],
+          }),
+        ],
+        knowledge: [employment],
+      },
+      {
+        name: "deliberately mismatched sales role",
+        questions: [
+          question("Existing experience in enterprise sales?", {
+            options: ["Yes", "No"],
+            fieldTypes: ["input_radio"],
+          }),
+        ],
+        knowledge: [employment],
+      },
+      {
+        name: "software terminology",
+        questions: [
+          question("Have you produced automation in a scripting language?", {
+            options: ["Yes", "No"],
+          }),
+        ],
+        knowledge: [skill],
+        semanticEvidenceId: "SKILL:python",
+      },
+      {
+        name: "operations and business",
+        questions: [
+          question("Has your remit included operational control design?", {
+            options: ["Yes", "No"],
+          }),
+        ],
+        knowledge: [
+          knowledge(
+            "PROJECTS",
+            {
+              items: [
+                { identity: "controls", title: "Operational control design" },
+              ],
+            },
+            { autoAnswerAllowed: false },
+          ),
+        ],
+        semanticEvidenceId: "PROJECT:controls",
+        requiresConfirmation: true,
+      },
+      {
+        name: "multilingual question",
+        questions: [
+          question("Já protegeu ambientes de nuvem?", {
+            options: ["Sim", "Não"],
+          }),
+        ],
+        knowledge: [employment],
+        semanticEvidenceId: "EXPERIENCE:security-engineer",
+      },
+      {
+        name: "unfamiliar paraphrase",
+        questions: [
+          question(
+            "Did safeguarding digital estates form part of your remit?",
+            { options: ["Yes", "No"] },
+          ),
+        ],
+        knowledge: [employment],
+        semanticEvidenceId: "EXPERIENCE:security-engineer",
+      },
+      {
+        name: "large choice taxonomy",
+        questions: [
+          question("Select the substantiated capability", {
+            options: [
+              "C",
+              "C++",
+              "C#",
+              "Go",
+              "Java",
+              "JavaScript",
+              "Kotlin",
+              "PHP",
+              "Python",
+              "Ruby",
+              "Rust",
+              "Swift",
+            ],
+            fieldTypes: ["multi_value_single_select"],
+          }),
+        ],
+        knowledge: [skill],
+        semanticEvidenceId: "SKILL:python",
+        taxonomy: true,
+      },
+      {
+        name: "conflicting candidate evidence",
+        questions: [
+          question("Has your remit included platform engineering?", {
+            options: ["Yes", "No"],
+          }),
+        ],
+        knowledge: [
+          knowledge(
+            "SKILLS",
+            { items: [{ identity: "platform", text: "Platform engineering" }] },
+            { conflict: true },
+          ),
+        ],
+      },
+      {
+        name: "sparse resume",
+        questions: [
+          question("Has your remit included forensic investigation?", {
+            options: ["Yes", "No"],
+          }),
+          question("Upload a government record", {
+            controlDisposition: "CANDIDATE_REQUIRED_EXTERNAL",
+          }),
+        ],
+        knowledge: [],
+      },
+      {
+        name: "complete history negative",
+        questions: [
+          question("Existing experience in enterprise sales?", {
+            options: ["Yes", "No"],
+          }),
+        ],
+        knowledge: [employment, ...authority],
+      },
+    ];
+
+    const matrix = [];
+    for (const fixture of fixtures) {
+      const semanticEvidenceId = fixture.semanticEvidenceId;
+      const semanticQuestion = semanticEvidenceId
+        ? (fixture.questions[0] ?? null)
+        : null;
+      const fake = fakeAI(
+        semanticQuestion
+          ? [
+              semanticResolution({
+                questionId: semanticQuestion.id,
+                resolutionClass: fixture.taxonomy
+                  ? "TAXONOMY_TARGET"
+                  : "PROFESSIONAL_PREDICATE",
+                concept: fixture.taxonomy ? "SKILLS" : null,
+                answer: fixture.taxonomy ? "Python" : "Yes",
+                evidenceIds: [semanticEvidenceId!],
+                optionTargets: fixture.taxonomy ? ["Python"] : [],
+                requiresConfirmation: fixture.requiresConfirmation,
+              }),
+            ]
+          : [],
+      );
+      const results = await resolveApplicationQuestions({
+        ai: fake.ai,
+        correlationId: `matrix:${fixture.name}`,
+        userId: "candidate-1",
+        questions: fixture.questions,
+        knowledge: fixture.knowledge,
+        jobContext: { title: fixture.name },
+      });
+      const incorrect = results.filter(
+        (item) => item.disposition === "AUTO_RESOLVED" && item.value == null,
+      ).length;
+      matrix.push({
+        name: fixture.name,
+        ordinaryTotal: results.length,
+        deterministicAuto: results.filter(
+          (item) =>
+            item.disposition === "AUTO_RESOLVED" &&
+            item.resolutionMetadata?.method !== "SEMANTIC_AI",
+        ).length,
+        semanticAuto: results.filter(
+          (item) =>
+            item.disposition === "AUTO_RESOLVED" &&
+            item.resolutionMetadata?.method === "SEMANTIC_AI",
+        ).length,
+        proposal: results.filter(
+          (item) => item.disposition === "PROPOSED_FOR_CANDIDATE",
+        ).length,
+        candidateRequired: results.filter(
+          (item) => item.disposition === "CANDIDATE_REQUIRED",
+        ).length,
+        employerSite: results.filter(
+          (item) => item.disposition === "HUMAN_REQUIRED",
+        ).length,
+        unsupported: results.filter(
+          (item) => item.disposition === "UNSUPPORTED",
+        ).length,
+        incorrect,
+      });
+    }
+    expect(matrix).toEqual([
+      {
+        name: "matching cybersecurity role",
+        ordinaryTotal: 1,
+        deterministicAuto: 1,
+        semanticAuto: 0,
+        proposal: 0,
+        candidateRequired: 0,
+        employerSite: 0,
+        unsupported: 0,
+        incorrect: 0,
+      },
+      {
+        name: "deliberately mismatched sales role",
+        ordinaryTotal: 1,
+        deterministicAuto: 0,
+        semanticAuto: 0,
+        proposal: 0,
+        candidateRequired: 1,
+        employerSite: 0,
+        unsupported: 0,
+        incorrect: 0,
+      },
+      {
+        name: "software terminology",
+        ordinaryTotal: 1,
+        deterministicAuto: 0,
+        semanticAuto: 1,
+        proposal: 0,
+        candidateRequired: 0,
+        employerSite: 0,
+        unsupported: 0,
+        incorrect: 0,
+      },
+      {
+        name: "operations and business",
+        ordinaryTotal: 1,
+        deterministicAuto: 0,
+        semanticAuto: 0,
+        proposal: 1,
+        candidateRequired: 0,
+        employerSite: 0,
+        unsupported: 0,
+        incorrect: 0,
+      },
+      {
+        name: "multilingual question",
+        ordinaryTotal: 1,
+        deterministicAuto: 0,
+        semanticAuto: 1,
+        proposal: 0,
+        candidateRequired: 0,
+        employerSite: 0,
+        unsupported: 0,
+        incorrect: 0,
+      },
+      {
+        name: "unfamiliar paraphrase",
+        ordinaryTotal: 1,
+        deterministicAuto: 0,
+        semanticAuto: 1,
+        proposal: 0,
+        candidateRequired: 0,
+        employerSite: 0,
+        unsupported: 0,
+        incorrect: 0,
+      },
+      {
+        name: "large choice taxonomy",
+        ordinaryTotal: 1,
+        deterministicAuto: 0,
+        semanticAuto: 1,
+        proposal: 0,
+        candidateRequired: 0,
+        employerSite: 0,
+        unsupported: 0,
+        incorrect: 0,
+      },
+      {
+        name: "conflicting candidate evidence",
+        ordinaryTotal: 1,
+        deterministicAuto: 0,
+        semanticAuto: 0,
+        proposal: 0,
+        candidateRequired: 1,
+        employerSite: 0,
+        unsupported: 0,
+        incorrect: 0,
+      },
+      {
+        name: "sparse resume",
+        ordinaryTotal: 2,
+        deterministicAuto: 0,
+        semanticAuto: 0,
+        proposal: 0,
+        candidateRequired: 1,
+        employerSite: 1,
+        unsupported: 0,
+        incorrect: 0,
+      },
+      {
+        name: "complete history negative",
+        ordinaryTotal: 1,
+        deterministicAuto: 1,
+        semanticAuto: 0,
+        proposal: 0,
+        candidateRequired: 0,
+        employerSite: 0,
+        unsupported: 0,
+        incorrect: 0,
+      },
+    ]);
+    expect(matrix.every((fixture) => fixture.incorrect === 0)).toBe(true);
+    expect(
+      matrix.reduce((sum, fixture) => sum + fixture.semanticAuto, 0),
+    ).toBeGreaterThanOrEqual(4);
+    expect(matrix.some((fixture) => fixture.proposal === 1)).toBe(true);
+    expect(matrix.some((fixture) => fixture.candidateRequired > 0)).toBe(true);
+    expect(matrix.some((fixture) => fixture.employerSite === 1)).toBe(true);
+  });
+});
+
 describe("ordinary application intervention fixtures", () => {
   const preRp040ResidualBaseline = {
     totalEmployerSemanticDecisions: 7,

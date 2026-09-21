@@ -25,16 +25,20 @@ import {
   employerQuestionOptions,
   normalizePersonalNameForEmployerPresentation,
 } from "@/core/domain/applications/control-adaptation";
+import { normalizedChoiceText } from "@/core/domain/applications/choice-taxonomy";
 import { aiTaskDefinitions } from "@/features/ai/task-definitions";
 import { resolveChoiceTaxonomyDeterministically } from "@/features/applications/resolve-choice-taxonomy";
 import {
+  contextualCandidateEvidence,
   minimizedApplicationJobContext,
+  professionalHistoryNegativeAuthority,
   relevantExperienceResolution,
   resolveExperienceContextualQuestion,
   resolveKnownContextualQuestion,
   semanticExperienceYesResolution,
   type ApplicationJobContext,
   type ContextualAIQuestion,
+  type ContextualEvidence,
 } from "@/features/applications/resolve-contextual-question";
 import type { Logger } from "@/lib/logging/logger";
 
@@ -371,7 +375,7 @@ export function candidateKnowledgeDisplayValue(
       if (typeof item === "string" && item.trim()) return [item.trim()];
       if (!item || typeof item !== "object" || Array.isArray(item)) return [];
       const record = item as Record<string, unknown>;
-      for (const key of ["text", "name", "value"]) {
+      for (const key of ["text", "name", "value", "program", "title"]) {
         const candidate = record[key];
         if (typeof candidate === "string" && candidate.trim())
           return [candidate.trim()];
@@ -461,11 +465,18 @@ const EXPLICIT_APPLICATION_DECISION =
   /\b(?:consent|privacy|data processing|retention|transcription|acknowledg|concordo|consentimento|privacidade|processamento de dados|reten[cç][aã]o|transcri[cç][aã]o)\b/iu;
 
 const AI_REFRAME_CONCEPTS = new Set<CandidateKnowledgeConcept>([
+  "CURRENT_LOCATION",
   "EMPLOYMENT_HISTORY",
   "EDUCATION_HISTORY",
   "CERTIFICATIONS",
   "SKILLS",
   "PROJECTS",
+  "CURRENT_EMPLOYMENT_STATUS",
+  "NOTICE_PERIOD",
+  "REMOTE_PREFERENCE",
+  "WILLING_TO_RELOCATE",
+  "TRAVEL_AVAILABILITY",
+  "START_AVAILABILITY",
   "TARGET_ROLE",
   "WORK_ENVIRONMENT_PREFERENCE",
   "PROFESSIONAL_STRENGTHS",
@@ -750,6 +761,61 @@ function groundedProposal(input: {
   );
 }
 
+const MAX_SEMANTIC_QUESTIONS = 25;
+const MAX_CANDIDATE_EVIDENCE = 80;
+
+interface SemanticCandidateEvidence {
+  readonly id: string;
+  readonly concept: CandidateKnowledgeConcept | null;
+  readonly type: ContextualEvidence["type"];
+  readonly summary: string;
+  readonly startDate?: string;
+  readonly endDate?: string;
+  readonly isCurrent?: boolean;
+  readonly autoResolve: boolean;
+}
+
+function boundedJobEvidence(context: ApplicationJobContext | undefined) {
+  const bounded = minimizedApplicationJobContext(context);
+  if (!bounded) return [];
+  return [
+    ...(bounded.title
+      ? [{ id: "JOB:TITLE", type: "TITLE", text: bounded.title }]
+      : []),
+    ...bounded.requirements.map((text, index) => ({
+      id: `JOB:REQUIREMENT:${index}`,
+      type: "REQUIREMENT",
+      text,
+    })),
+    ...bounded.preferredRequirements.map((text, index) => ({
+      id: `JOB:PREFERRED_REQUIREMENT:${index}`,
+      type: "PREFERRED_REQUIREMENT",
+      text,
+    })),
+    ...bounded.skills.map((text, index) => ({
+      id: `JOB:SKILL:${index}`,
+      type: "SKILL",
+      text,
+    })),
+  ].slice(0, 40);
+}
+
+function semanticResolutionMetadata(input: {
+  readonly definition: { readonly promptVersion: string };
+  readonly metadata: { readonly provider?: string; readonly model?: string };
+  readonly jobEvidenceReferences: readonly string[];
+  readonly employerOptionTargets: readonly string[];
+}): NonNullable<ApplicationQuestionResolution["resolutionMetadata"]> {
+  return {
+    method: "SEMANTIC_AI",
+    taskVersion: input.definition.promptVersion,
+    ...(input.metadata.provider ? { provider: input.metadata.provider } : {}),
+    ...(input.metadata.model ? { model: input.metadata.model } : {}),
+    jobEvidenceReferences: input.jobEvidenceReferences,
+    employerOptionTargets: input.employerOptionTargets,
+  };
+}
+
 export async function resolveApplicationQuestions(input: {
   readonly ai?: AIProvider;
   readonly aiFactory?: () => AIProvider | undefined;
@@ -919,16 +985,9 @@ export async function resolveApplicationQuestions(input: {
             id: question.id,
             label: question.label,
             fieldTypes: question.fieldTypes,
-            optionIdentities: (question.optionIdentities?.length
-              ? question.optionIdentities
-              : question.options.map((option) => ({
-                  label: option,
-                  value: option,
-                }))
-            ).map((option) => ({
-              label: option.label,
-              value: option.value,
-            })),
+            optionLabels: employerQuestionOptions(question).map(
+              (option) => option.label,
+            ),
             candidateKnowledge: (taxonomyEvidence.get(question.id) ?? []).map(
               ({ referenceId, concept, value }) => ({
                 referenceId,
@@ -947,9 +1006,14 @@ export async function resolveApplicationQuestions(input: {
         );
         if (!question || results.has(question.id)) continue;
         const evidence = taxonomyEvidence.get(question.id) ?? [];
-        const proposedReferences = [
-          ...new Set(proposal.candidateKnowledgeReferences),
-        ];
+        const compatibilityProposal = proposal as typeof proposal & {
+          readonly candidateKnowledgeReferences?: readonly string[];
+        };
+        const submittedReferences =
+          proposal.candidateEvidenceIds ??
+          compatibilityProposal.candidateKnowledgeReferences ??
+          [];
+        const proposedReferences = [...new Set(submittedReferences)];
         const referenced = proposedReferences.flatMap((id) =>
           evidence.filter((item) => item.referenceId === id),
         );
@@ -959,13 +1023,26 @@ export async function resolveApplicationQuestions(input: {
               label: option,
               value: option,
             }));
-        const selected = [...new Set(proposal.selectedOptionValues ?? [])];
+        const optionTargets = [
+          ...new Set(proposal.employerOptionTargets ?? []),
+        ];
+        const selected = optionTargets.flatMap((target) => {
+          const normalizedTarget = normalizedChoiceText(target);
+          const match = allowedOptions.find(
+            (option) => normalizedChoiceText(option.label) === normalizedTarget,
+          );
+          return match ? [match.value] : [];
+        });
         const grounded =
           proposal.canonicalConcept === "EDUCATION_HISTORY" &&
+          (!proposal.resolutionClass ||
+            proposal.resolutionClass === "TAXONOMY_TARGET") &&
+          (!proposal.grounding || proposal.grounding === "GROUNDED") &&
+          (proposal.jobEvidenceIds?.length ?? 0) === 0 &&
           referenced.length > 0 &&
-          proposedReferences.length ===
-            proposal.candidateKnowledgeReferences.length &&
+          proposedReferences.length === submittedReferences.length &&
           referenced.length === proposedReferences.length &&
+          optionTargets.length === selected.length &&
           selected.length > 0 &&
           selected.length <= referenced.length &&
           selected.every((value) =>
@@ -991,6 +1068,12 @@ export async function resolveApplicationQuestions(input: {
           reasonCode: autoResolved
             ? "SEMANTIC_TAXONOMY_MATCH"
             : "SEMANTIC_TAXONOMY_APPROVAL_REQUIRED",
+          resolutionMetadata: semanticResolutionMetadata({
+            definition,
+            metadata: generated.metadata,
+            jobEvidenceReferences: proposal.jobEvidenceIds ?? [],
+            employerOptionTargets: optionTargets,
+          }),
         });
         accepted += 1;
       }
@@ -1055,14 +1138,85 @@ export async function resolveApplicationQuestions(input: {
           ]
         : [];
     });
-    const contextualEligible = ordinaryUnknown.filter((question) =>
-      contextualAIQuestions.has(question.id),
+    const contextualEvidence = contextualCandidateEvidence(knowledge);
+    const contextualConcept: Readonly<
+      Record<ContextualEvidence["type"], CandidateKnowledgeConcept | null>
+    > = {
+      EXPERIENCE: "EMPLOYMENT_HISTORY",
+      SKILL: "SKILLS",
+      PROJECT: "PROJECTS",
+      CERTIFICATION: "CERTIFICATIONS",
+      EDUCATION: "EDUCATION_HISTORY",
+      LANGUAGE: null,
+      FACT: null,
+    };
+    const authorityEvidence = input.knowledge.flatMap(
+      (item): SemanticCandidateEvidence[] => {
+        if (
+          item.status !== "AVAILABLE" ||
+          item.freshness !== "CURRENT" ||
+          item.conflict ||
+          !item.candidateApproved ||
+          !item.reusable ||
+          item.applicationUse !== "PREFERENCE_CONTEXT_ONLY" ||
+          ![
+            "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION",
+            "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION",
+          ].includes(item.concept)
+        )
+          return [];
+        if (
+          (item.concept === "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION" &&
+            item.value?.attested !== true) ||
+          (item.concept ===
+            "NEGATIVE_PROFESSIONAL_HISTORY_INFERENCE_AUTHORIZATION" &&
+            item.value?.authorized !== true)
+        )
+          return [];
+        return [
+          {
+            id: referenceId(item),
+            concept: item.concept,
+            type: "FACT",
+            summary:
+              item.concept === "PROFESSIONAL_HISTORY_COMPLETENESS_ATTESTATION"
+                ? "Candidate attested that professional history is complete."
+                : "Candidate authorized bounded negative professional-history inference.",
+            autoResolve: false,
+          },
+        ];
+      },
     );
-    if (!suppliedKnowledge.length && !contextualEligible.length) {
+    const semanticEvidence = [
+      ...authorityEvidence,
+      ...contextualEvidence.map((item): SemanticCandidateEvidence => ({
+        ...item,
+        concept: contextualConcept[item.type],
+      })),
+      ...suppliedKnowledge.map((item): SemanticCandidateEvidence => ({
+        id: item.referenceId,
+        concept: item.concept,
+        type:
+          item.concept.startsWith("LANGUAGE:") ||
+          item.concept.startsWith("LANGUAGE_PROFICIENCY:")
+            ? "LANGUAGE"
+            : "FACT",
+        summary: item.value,
+        autoResolve: true,
+      })),
+    ]
+      .filter(
+        (item, index, items) =>
+          items.findIndex((candidate) => candidate.id === item.id) === index,
+      )
+      .slice(0, MAX_CANDIDATE_EVIDENCE);
+    const jobEvidence = boundedJobEvidence(input.jobContext);
+    const batchedQuestions = ordinaryUnknown.slice(0, MAX_SEMANTIC_QUESTIONS);
+    if (!semanticEvidence.length) {
       emit({
         status: "NO_ELIGIBLE_QUESTIONS",
         reason: "NO_SAFE_SUPPORTED_CANDIDATE_KNOWLEDGE",
-        questionCount: ordinaryUnknown.length,
+        questionCount: batchedQuestions.length,
       });
     } else {
       let ai = input.ai;
@@ -1102,60 +1256,108 @@ export async function resolveApplicationQuestions(input: {
             correlationId: input.correlationId,
             rateLimitSubject: input.userId,
             input: {
-              mode: "CONTEXTUAL_ORDINARY",
-              jobContext: minimizedApplicationJobContext(input.jobContext),
-              questions: ordinaryUnknown.map((question) => ({
+              mode: "GENERAL_EVIDENCE_GROUNDED",
+              jobEvidence,
+              questions: batchedQuestions.map((question) => ({
                 id: question.id,
                 label: question.label,
                 fieldTypes: question.fieldTypes,
-                optionIdentities: employerQuestionOptions(question),
+                optionLabels: employerQuestionOptions(question).map(
+                  (option) => option.label,
+                ),
                 ...(contextualAIQuestions.has(question.id)
                   ? {
                       contextualKind: contextualAIQuestions.get(question.id)!
                         .kind,
                       proposition: contextualAIQuestions.get(question.id)!
                         .proposition,
-                      candidateEvidence: contextualAIQuestions
+                      candidateEvidenceIds: contextualAIQuestions
                         .get(question.id)!
-                        .evidence.map((item) => ({
-                          id: item.id,
-                          type: item.type,
-                          summary: item.summary,
-                          startDate: item.startDate,
-                          endDate: item.endDate,
-                          isCurrent: item.isCurrent,
-                        })),
+                        .evidence.map((item) => item.id),
                     }
                   : {}),
               })),
-              candidateKnowledge: suppliedKnowledge,
-              allowedConcepts: [
-                ...new Set(suppliedKnowledge.map((item) => item.concept)),
-              ],
+              candidateEvidence: semanticEvidence.map((item) => ({
+                id: item.id,
+                concept: item.concept,
+                type: item.type,
+                summary: item.summary,
+                startDate: item.startDate,
+                endDate: item.endDate,
+                isCurrent: item.isCurrent,
+              })),
             },
           });
           const byReference = new Map(
-            suppliedKnowledge.map((item) => [item.referenceId, item]),
+            semanticEvidence.map((item) => [item.id, item]),
           );
           let accepted = 0;
           for (const proposal of generated.data.resolutions) {
-            const question = ordinaryUnknown.find(
+            const question = batchedQuestions.find(
               (item) => item.id === proposal.questionId,
             );
             if (!question || results.has(question.id)) continue;
+            const compatibilityProposal = proposal as typeof proposal & {
+              readonly candidateKnowledgeReferences?: readonly string[];
+              readonly contextualKind?: ContextualAIQuestion["kind"];
+              readonly proposition?: string;
+              readonly proposedValue?: string | null;
+              readonly supported?: boolean;
+            };
+            const submittedReferenceIds =
+              proposal.candidateEvidenceIds ??
+              compatibilityProposal.candidateKnowledgeReferences ??
+              [];
+            const referenceIds = [...new Set(submittedReferenceIds)];
+            const references = referenceIds.flatMap((id) => {
+              const item = byReference.get(id);
+              return item ? [item] : [];
+            });
+            const submittedJobIds = proposal.jobEvidenceIds ?? [];
+            const jobReferenceIds = [...new Set(submittedJobIds)];
+            const citationsGrounded =
+              referenceIds.length > 0 &&
+              referenceIds.length === submittedReferenceIds.length &&
+              references.length === referenceIds.length &&
+              jobReferenceIds.length === submittedJobIds.length &&
+              jobReferenceIds.every((id) =>
+                jobEvidence.some((item) => item.id === id),
+              );
+            const outputGrounded =
+              proposal.grounding === "GROUNDED" ||
+              (!proposal.grounding &&
+                compatibilityProposal.supported !== false);
+            if (
+              !citationsGrounded ||
+              !outputGrounded ||
+              proposal.confidence < 0.85
+            )
+              continue;
+            const optionTargets = [
+              ...new Set(proposal.employerOptionTargets ?? []),
+            ];
+            const resolutionMetadata = semanticResolutionMetadata({
+              definition,
+              metadata: generated.metadata,
+              jobEvidenceReferences: jobReferenceIds,
+              employerOptionTargets: optionTargets,
+            });
             const contextual = contextualAIQuestions.get(question.id);
             if (contextual) {
-              const references = [
-                ...new Set(proposal.candidateKnowledgeReferences),
-              ];
+              const resolutionClass =
+                proposal.resolutionClass ??
+                (compatibilityProposal.contextualKind === "RELEVANT_EXPERIENCE"
+                  ? "EXPERIENCE_DURATION"
+                  : "PROFESSIONAL_PREDICATE");
               const supported =
-                proposal.supported === true &&
-                proposal.contextualKind === contextual.kind &&
-                proposal.proposition === contextual.proposition &&
-                proposal.confidence >= 0.85 &&
-                references.length ===
-                  proposal.candidateKnowledgeReferences.length &&
-                references.every((id) =>
+                (resolutionClass === "EXPERIENCE_DURATION" ||
+                  resolutionClass === "PROFESSIONAL_PREDICATE") &&
+                (!compatibilityProposal.contextualKind ||
+                  compatibilityProposal.contextualKind === contextual.kind) &&
+                (!compatibilityProposal.proposition ||
+                  compatibilityProposal.proposition ===
+                    contextual.proposition) &&
+                referenceIds.every((id) =>
                   contextual.evidence.some((item) => item.id === id),
                 );
               if (!supported) continue;
@@ -1164,53 +1366,167 @@ export async function resolveApplicationQuestions(input: {
                   ? relevantExperienceResolution({
                       question,
                       evidence: contextual.evidence,
-                      selectedEvidenceIds: references,
+                      selectedEvidenceIds: referenceIds,
                       now: input.now,
+                      automatic:
+                        proposal.requiresCandidateConfirmation === false,
                     })
                   : semanticExperienceYesResolution({
                       question,
                       evidence: contextual.evidence,
-                      selectedEvidenceIds: references,
+                      selectedEvidenceIds: referenceIds,
+                      automatic:
+                        proposal.requiresCandidateConfirmation === false,
                     });
               if (!resolution) continue;
-              results.set(question.id, resolution);
+              results.set(question.id, {
+                ...resolution,
+                resolutionMetadata,
+              });
               accepted += 1;
               continue;
             }
-            const references = proposal.candidateKnowledgeReferences.flatMap(
-              (id) => {
-                const item = byReference.get(id);
-                return item ? [item] : [];
-              },
-            );
+            const resolutionClass = proposal.resolutionClass ?? "FACTUAL_VALUE";
+            if (
+              resolutionClass === "CANDIDATE_DECISION_REQUIRED" ||
+              resolutionClass === "UNSUPPORTED" ||
+              proposal.answerBasis === "CANDIDATE_DECISION"
+            )
+              continue;
+            if (resolutionClass === "EXPERIENCE_DURATION") {
+              const experienceReferences = references.filter(
+                (item) => item.type === "EXPERIENCE",
+              );
+              if (experienceReferences.length !== references.length) continue;
+              const resolution = relevantExperienceResolution({
+                question,
+                evidence: contextualEvidence,
+                selectedEvidenceIds: referenceIds,
+                now: input.now,
+                automatic: proposal.requiresCandidateConfirmation === false,
+              });
+              if (!resolution) continue;
+              results.set(question.id, { ...resolution, resolutionMetadata });
+              accepted += 1;
+              continue;
+            }
+            if (resolutionClass === "PROFESSIONAL_PREDICATE") {
+              const semanticAnswer =
+                proposal.canonicalSemanticAnswer ??
+                compatibilityProposal.proposedValue;
+              if (
+                semanticAnswer &&
+                /^(?:no|nao|não|false)$/iu.test(normalized(semanticAnswer))
+              ) {
+                const authority =
+                  professionalHistoryNegativeAuthority(knowledge);
+                const booleanOptions = employerQuestionOptions(question).map(
+                  (option) => normalizedChoiceText(option.label),
+                );
+                const boundedBooleanControl =
+                  booleanOptions.some((label) =>
+                    /^(?:yes|sim|true)$/u.test(label),
+                  ) &&
+                  booleanOptions.some((label) =>
+                    /^(?:no|nao|false)$/u.test(label),
+                  );
+                if (
+                  !authority ||
+                  !boundedBooleanControl ||
+                  referenceIds.length !== authority.references.length ||
+                  !referenceIds.every((id) => authority.references.includes(id))
+                )
+                  continue;
+                const value = adaptKnownValueToEmployerControl("No", question);
+                if (!value) continue;
+                results.set(question.id, {
+                  questionId: question.id,
+                  canonicalConcept: null,
+                  disposition: "AUTO_RESOLVED",
+                  value,
+                  candidateKnowledgeReferences: authority.references,
+                  reasonCode: "SEMANTIC_COMPLETE_HISTORY_SUPPORTS_NO",
+                  resolutionMetadata,
+                });
+                accepted += 1;
+                continue;
+              }
+              if (
+                semanticAnswer &&
+                !/^(?:yes|sim|true)$/iu.test(normalized(semanticAnswer))
+              )
+                continue;
+              const resolution = semanticExperienceYesResolution({
+                question,
+                evidence: semanticEvidence,
+                selectedEvidenceIds: referenceIds,
+                automatic: proposal.requiresCandidateConfirmation === false,
+              });
+              if (!resolution) continue;
+              results.set(question.id, { ...resolution, resolutionMetadata });
+              accepted += 1;
+              continue;
+            }
+            const allowedOptions = employerQuestionOptions(question);
+            const selected = optionTargets.flatMap((target) => {
+              const normalizedTarget = normalizedChoiceText(target);
+              const match = allowedOptions.find(
+                (option) =>
+                  normalizedChoiceText(option.label) === normalizedTarget,
+              );
+              return match ? [match.value] : [];
+            });
+            if (
+              optionTargets.length &&
+              (selected.length !== optionTargets.length || !selected.length)
+            )
+              continue;
             const conceptAllowed =
               proposal.canonicalConcept != null &&
-              references.length > 0 &&
-              references.length ===
-                proposal.candidateKnowledgeReferences.length &&
               references.every(
                 (item) => item.concept === proposal.canonicalConcept,
               );
+            const semanticAnswer =
+              proposal.canonicalSemanticAnswer ??
+              compatibilityProposal.proposedValue;
+            const value = selected.length
+              ? question.fieldTypes.includes("multi_value_multi_select")
+                ? JSON.stringify(selected)
+                : encodedApplicationAnswer(selected)
+              : semanticAnswer
+                ? adaptKnownValueToEmployerControl(semanticAnswer, question)
+                : null;
             const grounded =
-              proposal.proposedValue != null &&
+              semanticAnswer != null &&
               groundedProposal({
-                proposed: proposal.proposedValue,
+                proposed: semanticAnswer,
                 question: question.label,
-                referencedValues: references.map((item) => item.value),
-                options: question.options,
+                referencedValues: references.map((item) => item.summary),
+                options: optionTargets.length ? [] : question.options,
               });
-            if (conceptAllowed && grounded) {
+            if (
+              conceptAllowed &&
+              value &&
+              (grounded ||
+                (resolutionClass === "TAXONOMY_TARGET" && selected.length))
+            ) {
+              const autoResolved =
+                proposal.requiresCandidateConfirmation === false &&
+                references.every((item) => item.autoResolve);
               accepted += 1;
               results.set(question.id, {
                 questionId: question.id,
                 canonicalConcept:
                   proposal.canonicalConcept as CandidateKnowledgeConcept,
-                disposition: "PROPOSED_FOR_CANDIDATE",
-                value: proposal.proposedValue,
-                candidateKnowledgeReferences: references.map(
-                  (item) => item.referenceId,
-                ),
-                reasonCode: "AI_GROUNDED_REFRAME_APPROVAL_REQUIRED",
+                disposition: autoResolved
+                  ? "AUTO_RESOLVED"
+                  : "PROPOSED_FOR_CANDIDATE",
+                value,
+                candidateKnowledgeReferences: referenceIds,
+                reasonCode: autoResolved
+                  ? "SEMANTIC_EVIDENCE_GROUNDED"
+                  : "AI_GROUNDED_REFRAME_APPROVAL_REQUIRED",
+                resolutionMetadata,
               });
             }
           }

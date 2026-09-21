@@ -1233,7 +1233,7 @@ describe("application question resolver", () => {
     });
   });
 
-  it("accepts only a grounded raw identity from semantic education mapping", async () => {
+  it("maps a grounded semantic education label to the current raw identity", async () => {
     const course = question("Em qual curso você se formou?", {
       fieldTypes: ["multi_value_multi_select"],
       options: [
@@ -1251,11 +1251,16 @@ describe("application question resolver", () => {
       {
         questionId: course.id,
         canonicalConcept: "EDUCATION_HISTORY",
-        proposedValue: null,
-        selectedOptionValues: ["course-100"],
-        candidateKnowledgeReferences: [
+        resolutionClass: "TAXONOMY_TARGET",
+        canonicalSemanticAnswer: "Ciência da Computação",
+        employerOptionTargets: ["Ciência da Computação"],
+        candidateEvidenceIds: [
           "EDUCATION_HISTORY:ANSWER_MEMORY:memory-1:item-1",
         ],
+        jobEvidenceIds: [],
+        grounding: "GROUNDED",
+        answerBasis: "FACTUAL",
+        reasonCode: "EQUIVALENT_DEGREE_FIELD",
         confidence: 0.98,
         requiresCandidateConfirmation: false,
       },
@@ -1322,11 +1327,16 @@ describe("application question resolver", () => {
       {
         questionId: course.id,
         canonicalConcept: "EDUCATION_HISTORY",
-        proposedValue: null,
-        selectedOptionValues: ["100"],
-        candidateKnowledgeReferences: [
+        resolutionClass: "TAXONOMY_TARGET",
+        canonicalSemanticAnswer: "Ciência da Computação",
+        employerOptionTargets: ["Ciência da Computação"],
+        candidateEvidenceIds: [
           "EDUCATION_HISTORY:ANSWER_MEMORY:memory-1:item-1",
         ],
+        jobEvidenceIds: [],
+        grounding: "GROUNDED",
+        answerBasis: "FACTUAL",
+        reasonCode: "AMBIGUOUS_DEGREE_FIELD",
         confidence: 0.8,
         requiresCandidateConfirmation: true,
       },
@@ -1367,11 +1377,16 @@ describe("application question resolver", () => {
       {
         questionId: course.id,
         canonicalConcept: "EDUCATION_HISTORY",
-        proposedValue: null,
-        selectedOptionValues: ["invented-option"],
-        candidateKnowledgeReferences: [
+        resolutionClass: "TAXONOMY_TARGET",
+        canonicalSemanticAnswer: "Invented option",
+        employerOptionTargets: ["Invented option"],
+        candidateEvidenceIds: [
           "EDUCATION_HISTORY:ANSWER_MEMORY:memory-1:item-1",
         ],
+        jobEvidenceIds: [],
+        grounding: "GROUNDED",
+        answerBasis: "FACTUAL",
+        reasonCode: "FORGED_OPTION",
         confidence: 1,
         requiresCandidateConfirmation: false,
       },

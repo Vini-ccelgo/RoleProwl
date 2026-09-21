@@ -603,7 +603,7 @@ describe("application packet actions", () => {
     );
   });
 
-  it("saves only typed application-specific fields for the owner", async () => {
+  it("saves typed fields and preserves an explicit reusable-answer confirmation on the application", async () => {
     findFirst.mockResolvedValue({
       submissionPayloadSnapshot: {
         packet: packetForResolution({
@@ -624,7 +624,7 @@ describe("application packet actions", () => {
         applicationId: "application-1",
         userId: "user-1",
         identity: [{ key: "phone", value: "+55 51 5555 0100" }],
-        answers: [],
+        answers: [{ key: "question-42", value: "Yes" }],
       }),
     );
     expect(saveApplicationOverrides).toHaveBeenCalledOnce();
@@ -638,19 +638,40 @@ describe("application packet actions", () => {
     ]);
   });
 
-  it("fans one compatible candidate answer to duplicate controls with one memory write", async () => {
+  it("records a same-value proposal confirmation as an application override", async () => {
+    findFirst.mockResolvedValue({
+      submissionPayloadSnapshot: {
+        packet: packetForResolution({
+          concept: "LANGUAGE_PROFICIENCY:english",
+          disposition: "PROPOSED_FOR_CANDIDATE",
+          reasonCode: "SEMANTIC_TAXONOMY_APPROVAL_REQUIRED",
+          value: "Fluent",
+        }),
+      },
+    });
+    const value = form();
+    value.set("answer:question-42", "Fluent");
+    await saveApplicationOverridesAction(value);
+    expect(saveApplicationOverrides).toHaveBeenCalledWith(
+      expect.objectContaining({
+        answers: [{ key: "question-42", value: "Fluent" }],
+      }),
+    );
+  });
+
+  it("fans one compatible candidate answer to duplicate controls and preserves both application overrides", async () => {
     findFirst.mockResolvedValue({
       submissionPayloadSnapshot: { packet: packetForDuplicateFirstName() },
     });
     const value = form();
     value.set("answer:first_name", "Avery");
     await saveApplicationOverridesAction(value);
-    expect(saveApplicationOverrides).not.toHaveBeenCalled();
-    expect(refreshApplicationPacket).toHaveBeenCalledOnce();
-    expect(refreshApplicationPacket).toHaveBeenCalledWith(
+    expect(saveApplicationOverrides).toHaveBeenCalledWith(
       expect.objectContaining({
-        applicationId: "application-1",
-        userId: "user-1",
+        answers: [
+          { key: "first_name", value: "Avery" },
+          { key: "nome", value: "Avery" },
+        ],
       }),
     );
     expect(saveDirectCandidateKnowledgeBatch).toHaveBeenCalledOnce();
@@ -793,7 +814,11 @@ describe("application packet actions", () => {
         resolvesConflicts: false,
       },
     ]);
-    expect(saveApplicationOverrides).not.toHaveBeenCalled();
+    expect(saveApplicationOverrides).toHaveBeenCalledWith(
+      expect.objectContaining({
+        answers: [{ key: "question-42", value: "notice-30" }],
+      }),
+    );
   });
 
   it("stores a semantic proficiency label while retaining the employer identity in the packet", async () => {
