@@ -1,5 +1,6 @@
 import "server-only";
 import { databaseClient } from "@/lib/db/client";
+import { buildEffectiveCandidateProfile } from "@/core/domain/candidate/effective-candidate-profile";
 
 export async function getCandidateTruthVault(userId: string) {
   const database = databaseClient();
@@ -57,8 +58,14 @@ export async function getCandidateTruthVault(userId: string) {
     database.workAuthorizationProfile.findUnique({ where: { userId } }),
   ]);
 
+  const effectiveProfile = buildEffectiveCandidateProfile({
+    profile,
+    facts: verifiedResumeFacts,
+  });
+
   return {
     profile,
+    effectiveProfile,
     experiences,
     education,
     skills,

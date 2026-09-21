@@ -53,13 +53,15 @@ export function ResumeImporter({
       const result = (await response.json()) as {
         error?: string;
         interpretationStatus?: "NORMAL_REVIEW" | "INCOMPLETE";
+        importedCount?: number;
         proposalCount?: number;
+        reviewCount?: number;
       };
       if (!response.ok) throw new Error(result.error ?? "Upload failed.");
       setMessage(
         result.interpretationStatus === "INCOMPLETE"
           ? "RoleProwl extracted machine-readable text from this résumé, but could not reliably identify much structured résumé information. Review any proposals below or try a DOCX or text-selectable PDF export."
-          : `${result.proposalCount ?? 0} possible profile facts are ready for review. Nothing was added automatically.`,
+          : `Imported ${result.importedCount ?? 0} explicit profile facts from your résumé.${result.reviewCount ? ` ${result.reviewCount} uncertain item${result.reviewCount === 1 ? " needs" : "s need"} review.` : " No obvious facts need individual approval."}`,
       );
       if (input.current) input.current.value = "";
       setSelectedFile(undefined);
@@ -130,6 +132,11 @@ export function ResumeImporter({
             <p className="mt-1 text-sm">
               PDF with selectable text or DOCX, up to 4 MB. OCR is not included.
             </p>
+            <p className="mt-2 text-xs text-foreground-muted">
+              RoleProwl extracts explicit information from your résumé to
+              populate your Career Profile and reduce repeated application
+              questions. You can review, edit, or remove imported information.
+            </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -179,7 +186,7 @@ export function ResumeImporter({
         </button>
         <p id="resume-import-message" role="status" className="m-0 text-sm">
           {message ??
-            "Extracted values remain proposals until you accept or edit them."}
+            "Explicit, unambiguous facts are imported automatically. Uncertain or interpretive values remain review items."}
         </p>
       </section>
 

@@ -98,20 +98,29 @@ function VerifiedResumeFactRecord({ item }: { item: VerifiedResumeFact }) {
 
 export function VerifiedResumeFactsSection({
   vault,
+  factTypes,
+  title = "Imported résumé facts",
 }: {
   vault: CandidateTruthVault;
+  factTypes?: readonly string[];
+  title?: string;
 }) {
+  const facts = factTypes
+    ? vault.verifiedResumeFacts.filter((item) =>
+        factTypes.includes(item.factType),
+      )
+    : vault.verifiedResumeFacts;
   return (
     <VaultSection
-      title="Verified résumé facts"
-      description="Accepted résumé claims remain linked to their source document and review decision. They do not overwrite structured profile records or your sign-in email."
+      title={title}
+      description="Source-explicit facts remain linked to their résumé. Expand an item only when you need provenance or correction controls."
     >
-      {vault.verifiedResumeFacts.length === 0 ? (
+      {facts.length === 0 ? (
         <p className="m-0 text-sm text-foreground-muted">
-          No résumé proposals have been accepted yet.
+          No source-explicit résumé facts are available in this section.
         </p>
       ) : (
-        vault.verifiedResumeFacts.map((item) => (
+        facts.map((item) => (
           <VerifiedResumeFactRecord key={item.id} item={item} />
         ))
       )}
@@ -182,69 +191,98 @@ export function ProfileDetailsSection({
 }: {
   vault: CandidateTruthVault;
 }) {
-  const item = vault.profile;
+  const effective = vault.effectiveProfile.values;
+  const hint = (field: keyof typeof effective) => {
+    const value = effective[field];
+    if (!value.source) return undefined;
+    const agreements = value.agreeingSources.length - 1;
+    return `${value.source.label}${agreements > 0 ? ` · ${agreements} agreeing source${agreements === 1 ? "" : "s"}` : ""}`;
+  };
+  const warning = (field: keyof typeof effective) => {
+    const conflicts = effective[field].conflicts;
+    if (!conflicts.length) return undefined;
+    return `Needs attention: ${conflicts.map((conflict) => `${conflict.source.label} says “${conflict.value}”`).join("; ")}. Saving this form keeps the value shown above.`;
+  };
   return (
     <VaultSection
       title="Professional details"
-      description="Core identity and professional information. User-entered changes remain unverified until explicitly confirmed."
+      description="The current identity and contact details RoleProwl uses to prepare applications."
     >
       <VaultForm action={saveCandidateProfile} submitLabel="Save details">
         <TextField
           name="firstName"
           label="First name"
-          defaultValue={item?.firstName}
+          defaultValue={effective.firstName.value}
+          hint={hint("firstName")}
+          warning={warning("firstName")}
           required
         />
         <TextField
           name="lastName"
           label="Last name"
-          defaultValue={item?.lastName}
+          defaultValue={effective.lastName.value}
+          hint={hint("lastName")}
+          warning={warning("lastName")}
           required
         />
         <TextField
           name="applicationEmail"
           label="Application email"
           type="email"
-          defaultValue={item?.applicationEmail}
+          defaultValue={effective.applicationEmail.value}
+          hint={hint("applicationEmail")}
+          warning={warning("applicationEmail")}
         />
         <TextField
           name="professionalTitle"
           label="Professional title"
-          defaultValue={item?.professionalTitle}
+          defaultValue={effective.professionalTitle.value}
+          hint={hint("professionalTitle")}
+          warning={warning("professionalTitle")}
         />
         <TextField
           name="location"
           label="City / location"
-          defaultValue={item?.location}
+          defaultValue={effective.location.value}
+          hint={hint("location")}
+          warning={warning("location")}
         />
         <TextField
           name="countryCode"
           label="Country code"
-          defaultValue={item?.countryCode}
+          defaultValue={effective.countryCode.value}
+          hint={hint("countryCode")}
+          warning={warning("countryCode")}
           placeholder="US"
         />
         <TextField
           name="phone"
           label="Phone"
           type="tel"
-          defaultValue={item?.phone}
+          defaultValue={effective.phone.value}
+          hint={hint("phone")}
+          warning={warning("phone")}
         />
         <TextField
           name="websiteUrl"
           label="Website"
           type="url"
-          defaultValue={item?.websiteUrl}
+          defaultValue={effective.websiteUrl.value}
+          hint={hint("websiteUrl")}
+          warning={warning("websiteUrl")}
         />
         <TextField
           name="linkedInUrl"
           label="LinkedIn URL"
           type="url"
-          defaultValue={item?.linkedInUrl}
+          defaultValue={effective.linkedInUrl.value}
+          hint={hint("linkedInUrl")}
+          warning={warning("linkedInUrl")}
         />
         <TextAreaField
           name="summary"
           label="Professional summary"
-          defaultValue={item?.summary}
+          defaultValue={effective.summary.value}
           wide
         />
       </VaultForm>

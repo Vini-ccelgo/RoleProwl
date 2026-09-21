@@ -263,3 +263,24 @@ describe("resume interpretation quality", () => {
     });
   });
 });
+
+describe("canonical profile extraction", () => {
+  it("extracts explicitly labeled professional title and country", () => {
+    expect(
+      proposeFactsFromResumeText(
+        "Maya Chen\nProfessional title: Security Analyst\nCountry: Brazil",
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          factType: "PROFILE_PROFESSIONAL_TITLE",
+          proposedValue: { text: "Security Analyst" },
+        }),
+        expect.objectContaining({
+          factType: "PROFILE_COUNTRY",
+          proposedValue: { text: "Brazil" },
+        }),
+      ]),
+    );
+  });
+});

@@ -416,23 +416,86 @@ export function candidateKnowledgeConflictSourceLabels(
   ].slice(0, 4);
 }
 
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalize);
+function canonicalize(value: unknown, normalizeText = false): unknown {
+  if (typeof value === "string")
+    return normalizeText
+      ? value
+          .normalize("NFKC")
+          .replace(/\s+/gu, " ")
+          .trim()
+          .toLocaleLowerCase("en-US")
+      : value;
+  if (Array.isArray(value))
+    return value.map((item) => canonicalize(item, normalizeText));
   if (value && typeof value === "object")
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
         .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
-        .map(([key, child]) => [key, canonicalize(child)]),
+        .map(([key, child]) => [key, canonicalize(child, normalizeText)]),
     );
   return value;
 }
 
 function sameValue(
+  concept: CandidateKnowledgeConcept,
   left: Readonly<Record<string, unknown>>,
   right: Readonly<Record<string, unknown>>,
 ) {
+  const normalizeScalar = (candidate: string | number | boolean) => {
+    const clean = String(candidate)
+      .normalize("NFKC")
+      .replace(/\s+/gu, " ")
+      .trim();
+    if (concept === "WEBSITE_URL" || concept === "LINKEDIN_URL") {
+      try {
+        const url = new URL(
+          /^https?:\/\//iu.test(clean) ? clean : `https://${clean}`,
+        );
+        return `${url.hostname.toLocaleLowerCase("en-US")}${url.pathname.replace(/\/$/u, "")}${url.search}`;
+      } catch {
+        return clean;
+      }
+    }
+    return clean.toLocaleLowerCase("en-US");
+  };
+  const scalarValues = (value: Readonly<Record<string, unknown>>) => {
+    const candidates = [
+      value.text,
+      value.proficiency,
+      value.status,
+      ...(Array.isArray(value.value) ? value.value : [value.value]),
+    ];
+    return candidates
+      .flatMap((candidate) =>
+        typeof candidate === "string" ||
+        typeof candidate === "number" ||
+        typeof candidate === "boolean"
+          ? [normalizeScalar(candidate)]
+          : [],
+      )
+      .filter(Boolean)
+      .sort();
+  };
+  const leftScalars = scalarValues(left);
+  const rightScalars = scalarValues(right);
+  if (leftScalars.length && rightScalars.length) {
+    if (JSON.stringify(leftScalars) !== JSON.stringify(rightScalars))
+      return false;
+    if (concept !== "CURRENT_LOCATION") return true;
+    const leftCountry =
+      typeof left.countryCode === "string"
+        ? left.countryCode.trim().toUpperCase()
+        : null;
+    const rightCountry =
+      typeof right.countryCode === "string"
+        ? right.countryCode.trim().toUpperCase()
+        : null;
+    return !leftCountry || !rightCountry || leftCountry === rightCountry;
+  }
+  const normalizeText = concept !== "WEBSITE_URL" && concept !== "LINKEDIN_URL";
   return (
-    JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right))
+    JSON.stringify(canonicalize(left, normalizeText)) ===
+    JSON.stringify(canonicalize(right, normalizeText))
   );
 }
 
@@ -495,7 +558,7 @@ function resolveCollectionKnowledge(input: {
   const uniqueItems = [
     ...new Map(
       entries.map((entry) => [
-        `${entry.identity}:${JSON.stringify(canonicalize(entry.value))}`,
+        `${entry.identity}:${JSON.stringify(canonicalize(entry.value, true))}`,
         entry.value,
       ]),
     ).values(),
@@ -508,8 +571,9 @@ function resolveCollectionKnowledge(input: {
     ]);
   const conflictingGroups = [...byIdentity.values()].filter(
     (items) =>
-      new Set(items.map((item) => JSON.stringify(canonicalize(item.value))))
-        .size > 1,
+      new Set(
+        items.map((item) => JSON.stringify(canonicalize(item.value, true))),
+      ).size > 1,
   );
   const conflictingEntries = conflictingGroups.flat();
   const alternativeEntries = conflictingEntries.filter(
@@ -625,7 +689,7 @@ export function resolveCandidateKnowledge(input: {
   const isStale = stale(selected, policy, input.now ?? new Date());
   const conflictingEvidence = ranked
     .slice(1)
-    .filter((item) => !sameValue(item.value, selected.value))
+    .filter((item) => !sameValue(input.concept, item.value, selected.value))
     .map((item) => ({
       confirmedAt: item.confirmedAt,
       origin: item.origin as Exclude<CandidateKnowledgeOrigin, "INFERRED">,

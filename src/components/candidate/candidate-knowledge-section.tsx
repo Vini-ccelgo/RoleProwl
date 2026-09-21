@@ -69,17 +69,19 @@ function profileTarget(concept: CandidateKnowledgeConcept) {
       "LINKEDIN_URL",
     ].includes(concept)
   )
-    return "#details";
+    return "#personal";
   if (concept === "EMPLOYMENT_HISTORY") return "#experience";
-  if (concept === "EDUCATION_HISTORY") return "#education";
-  if (concept === "SKILLS" || concept.startsWith("LANGUAGE")) return "#skills";
-  if (["PROJECTS", "CERTIFICATIONS"].includes(concept)) return "#projects";
+  if (concept === "EDUCATION_HISTORY") return "#education-skills";
+  if (concept === "SKILLS" || concept.startsWith("LANGUAGE"))
+    return "#education-skills";
+  if (["PROJECTS", "CERTIFICATIONS"].includes(concept))
+    return "#education-skills";
   if (
     concept.startsWith("WORK_AUTHORIZATION:") ||
     concept.startsWith("SPONSORSHIP_REQUIREMENT:")
   )
-    return "#authorization";
-  return "#profile-optional";
+    return "#preferences";
+  return "#preferences";
 }
 
 function record(value: unknown): Readonly<Record<string, unknown>> {
@@ -203,41 +205,14 @@ export function CandidateKnowledgeSection({
     <section className="vault-section candidate-knowledge-section">
       <header>
         <div>
-          <h2>Reusable application details</h2>
+          <h2>Additional preferences and application answers</h2>
           <p>
-            Review what RoleProwl remembers and can reuse on future
-            applications. Suggested details from longer answers are never reused
-            until you approve them.
+            Add information that a résumé usually cannot establish. RoleProwl
+            may reuse candidate-approved answers when employer questions match.
           </p>
         </div>
       </header>
       <div className="vault-section-body">
-        <nav
-          className="candidate-knowledge-counts"
-          aria-label="Recurring detail coverage"
-        >
-          {(
-            [
-              [profileGroups.KNOWN.length, "Already known", "#profile-known"],
-              [
-                profileGroups.RECOMMENDED.length,
-                "Worth completing",
-                "#profile-recommended",
-              ],
-              [profileGroups.OPTIONAL.length, "Optional", "#profile-optional"],
-              [
-                attentionItems.length,
-                "Conflicts / stale",
-                "#profile-attention",
-              ],
-            ] satisfies readonly (readonly [number, string, string])[]
-          ).map(([count, text, href]) => (
-            <a href={href} key={text}>
-              <strong>{count}</strong>
-              <span>{text}</span>
-            </a>
-          ))}
-        </nav>
         {attentionItems.length > 0 ? (
           <section
             className="candidate-knowledge-guidance"

@@ -48,6 +48,109 @@ function emptySources() {
 }
 
 describe("candidate knowledge coverage", () => {
+  it("does not create a conflict for semantically identical textual values", () => {
+    const result = resolveCandidateKnowledge({
+      concept: "TARGET_ROLE",
+      evidence: [
+        item({
+          concept: "TARGET_ROLE",
+          source: "ANSWER_MEMORY",
+          value: { text: "Security" },
+        }),
+        item({
+          concept: "TARGET_ROLE",
+          source: "TRUTH_VAULT",
+          sourceId: "fact-2",
+          value: { text: "  security  " },
+        }),
+      ],
+      now,
+    });
+    expect(result.value).toEqual({ text: "Security" });
+    expect(result.conflict).toBe(false);
+    expect(result.conflictingEvidence).toEqual([]);
+  });
+
+  it("treats a one-item candidate preference array as the same target role text", () => {
+    const result = resolveCandidateKnowledge({
+      concept: "TARGET_ROLE",
+      evidence: [
+        item({
+          concept: "TARGET_ROLE",
+          source: "ANSWER_MEMORY",
+          value: { text: "Security" },
+        }),
+        item({
+          concept: "TARGET_ROLE",
+          source: "CANDIDATE_DIRECT",
+          sourceId: "preferences-1",
+          value: { value: [" security "] },
+        }),
+      ],
+      now,
+    });
+    expect(result.conflict).toBe(false);
+    expect(result.conflictingEvidence).toEqual([]);
+  });
+
+  it("retains a true textual conflict for candidate review", () => {
+    const result = resolveCandidateKnowledge({
+      concept: "TARGET_ROLE",
+      evidence: [
+        item({
+          concept: "TARGET_ROLE",
+          source: "ANSWER_MEMORY",
+          value: { text: "Security" },
+        }),
+        item({
+          concept: "TARGET_ROLE",
+          source: "TRUTH_VAULT",
+          sourceId: "fact-2",
+          value: { text: "Sales" },
+        }),
+      ],
+      now,
+    });
+    expect(result.conflict).toBe(true);
+    expect(result.conflictingEvidence[0]?.value).toEqual({ text: "Sales" });
+  });
+
+  it("normalizes URL hosts but preserves meaningful path casing", () => {
+    const agreeing = resolveCandidateKnowledge({
+      concept: "WEBSITE_URL",
+      evidence: [
+        item({
+          concept: "WEBSITE_URL",
+          value: { text: "https://Example.test/Portfolio/" },
+        }),
+        item({
+          concept: "WEBSITE_URL",
+          sourceId: "fact-2",
+          value: { text: "example.test/Portfolio" },
+        }),
+      ],
+      now,
+    });
+    const disagreeing = resolveCandidateKnowledge({
+      concept: "WEBSITE_URL",
+      evidence: [
+        item({
+          concept: "WEBSITE_URL",
+          value: { text: "https://example.test/Portfolio" },
+        }),
+        item({
+          concept: "WEBSITE_URL",
+          sourceId: "fact-2",
+          value: { text: "https://example.test/portfolio" },
+        }),
+      ],
+      now,
+    });
+
+    expect(agreeing.conflict).toBe(false);
+    expect(disagreeing.conflict).toBe(true);
+  });
+
   it.each([
     ["FIRST_NAME", "Maya"],
     ["LAST_NAME", "Chen"],
@@ -943,6 +1046,7 @@ describe("candidate knowledge coverage", () => {
       ["PROFILE_EMAIL", "avery@example.test"],
       ["PROFILE_PHONE", "+55 31 99999-0000"],
       ["PROFILE_LOCATION", "Belo Horizonte, MG"],
+      ["PROFILE_COUNTRY", "Brazil"],
       ["PROFILE_LINKEDIN_URL", "https://linkedin.com/in/avery"],
       ["PROFILE_WEBSITE_URL", "https://avery.example.test"],
       ["WORK_EXPERIENCE_TEXT", "Security analyst — Example"],
@@ -966,6 +1070,13 @@ describe("candidate knowledge coverage", () => {
       .filter((item) => item.status === "KNOWN")
       .map((item) => item.concept);
     expect(known).toHaveLength(14);
+    expect(
+      resolveCandidateKnowledge({
+        concept: "CURRENT_LOCATION",
+        evidence,
+        now,
+      }).value,
+    ).toEqual({ text: "Belo Horizonte, MG", countryCode: "BR" });
     expect(known).toEqual(
       expect.arrayContaining([
         "FIRST_NAME",

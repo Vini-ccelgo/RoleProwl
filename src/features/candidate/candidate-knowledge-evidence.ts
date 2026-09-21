@@ -6,6 +6,7 @@ import {
   type CandidateKnowledgeEvidence,
   type CandidateKnowledgeOrigin,
 } from "@/core/domain/candidate/candidate-knowledge";
+import { resumeCountryCode } from "@/core/domain/candidate/resume-auto-ingest";
 
 type Dated = { readonly id: string; readonly updatedAt: Date };
 
@@ -117,7 +118,6 @@ const FACT_CONCEPTS = {
   PROFILE_PHONE: "PHONE",
   PROFILE_LINKEDIN_URL: "LINKEDIN_URL",
   PROFILE_WEBSITE_URL: "WEBSITE_URL",
-  PROFILE_LOCATION: "CURRENT_LOCATION",
   WORK_EXPERIENCE_TEXT: "EMPLOYMENT_HISTORY",
   EDUCATION_TEXT: "EDUCATION_HISTORY",
   SKILL_TEXT: "SKILLS",
@@ -359,6 +359,48 @@ export function evidenceFromCandidateSources(
       }),
     );
   }
+
+  const locationFacts = sources.verifiedResumeFacts.flatMap((fact) => {
+    const factText =
+      fact.factType === "PROFILE_LOCATION" ? text(fact.value) : "";
+    return factText ? [{ fact, factText }] : [];
+  });
+  const countryFacts = sources.verifiedResumeFacts.flatMap((fact) => {
+    const factText =
+      fact.factType === "PROFILE_COUNTRY" ? text(fact.value) : "";
+    const countryCode = factText ? resumeCountryCode(factText) : null;
+    return countryCode ? [{ fact, countryCode }] : [];
+  });
+  const countryCodes = [
+    ...new Set(countryFacts.map((item) => item.countryCode)),
+  ];
+  const agreedCountryCode = countryCodes.length === 1 ? countryCodes[0] : null;
+  for (const { fact, factText } of locationFacts)
+    items.push(
+      evidence({
+        concept: "CURRENT_LOCATION",
+        confirmedAt: fact.updatedAt,
+        source: "RESUME",
+        sourceId: fact.id,
+        origin: "DERIVED",
+        value: {
+          text: factText.replace(/\s+/gu, " "),
+          ...(agreedCountryCode ? { countryCode: agreedCountryCode } : {}),
+        },
+      }),
+    );
+  if (!locationFacts.length || countryCodes.length > 1)
+    for (const { fact, countryCode } of countryFacts)
+      items.push(
+        evidence({
+          concept: "CURRENT_LOCATION",
+          confirmedAt: fact.updatedAt,
+          source: "RESUME",
+          sourceId: fact.id,
+          origin: "DERIVED",
+          value: { countryCode },
+        }),
+      );
 
   const preferences = sources.preferences;
   if (preferences) {

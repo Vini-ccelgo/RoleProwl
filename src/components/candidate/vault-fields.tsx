@@ -9,6 +9,8 @@ export function TextField({
   min,
   max,
   placeholder,
+  hint,
+  warning,
 }: {
   label: string;
   name: string;
@@ -18,11 +20,14 @@ export function TextField({
   min?: number;
   max?: number;
   placeholder?: string;
+  hint?: string;
+  warning?: string;
 }) {
   return (
     <label className="field">
       <span>{label}</span>
       <input
+        data-field-label={label}
         name={name}
         type={type}
         defaultValue={defaultValue ?? ""}
@@ -31,6 +36,13 @@ export function TextField({
         max={max}
         placeholder={placeholder}
       />
+      {hint ? <small className="field-hint">{hint}</small> : null}
+      {warning ? (
+        <small className="field-warning" role="status">
+          {warning}
+        </small>
+      ) : null}
+      <small className="field-error" data-validation-message hidden />
     </label>
   );
 }
@@ -55,11 +67,13 @@ export function TextAreaField({
     <label className={cn("field", wide && "field-wide")}>
       <span>{label}</span>
       <textarea
+        data-field-label={label}
         name={name}
         defaultValue={value}
         rows={list ? 3 : 4}
         placeholder={list ? "One per line or comma-separated" : undefined}
       />
+      <small className="field-error" data-validation-message hidden />
     </label>
   );
 }
@@ -80,7 +94,12 @@ export function SelectField({
   return (
     <label className="field">
       <span>{label}</span>
-      <select name={name} defaultValue={defaultValue ?? ""} required={required}>
+      <select
+        data-field-label={label}
+        name={name}
+        defaultValue={defaultValue ?? ""}
+        required={required}
+      >
         <option value="">Select…</option>
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -88,6 +107,7 @@ export function SelectField({
           </option>
         ))}
       </select>
+      <small className="field-error" data-validation-message hidden />
     </label>
   );
 }

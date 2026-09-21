@@ -28,6 +28,7 @@ import { storageFailureLogContext } from "@/integrations/storage/storage-diagnos
 import { PrismaRateLimiter } from "@/integrations/security/prisma-rate-limiter";
 import { databaseClient } from "@/lib/db/client";
 import { invalidateReadyApplicationPackets } from "@/integrations/applications/invalidate-application-packets";
+import { autoIngestSourceExplicitResumeFacts } from "@/integrations/candidate/prisma-resume-auto-ingest";
 import { prismaFailureLogContext } from "@/lib/db/prisma-diagnostics";
 import { logger } from "@/lib/logging/logger";
 import {
@@ -274,13 +275,29 @@ export async function POST(request: Request) {
       },
     );
     pipelineState.persistenceSubstage = null;
+    let ingestion = { importedCount: 0, reviewCount: drafts.length };
+    try {
+      ingestion = await autoIngestSourceExplicitResumeFacts(db, {
+        userId: actor.id,
+        documentId: document.id,
+      });
+    } catch (autoIngestError) {
+      logger.log("warn", "candidate_resume_auto_ingest_failed", {
+        correlationId,
+        errorType:
+          autoIngestError instanceof Error ? autoIngestError.name : "unknown",
+        fallback: "PENDING_REVIEW",
+      });
+    }
     ingestionComplete = true;
     await invalidateReadyApplicationPackets(db, actor.id);
     return NextResponse.json(
       {
         documentId: document.id,
         interpretationStatus: interpretation.status,
+        importedCount: ingestion.importedCount,
         proposalCount: drafts.length,
+        reviewCount: ingestion.reviewCount,
         status: "EXTRACTED",
       },
       { status: 201 },

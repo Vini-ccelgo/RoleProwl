@@ -41,6 +41,18 @@ export const PROPOSAL_DESTINATIONS = {
     label: "Current location",
     cardinality: "MULTIPLE",
   },
+  PROFILE_COUNTRY: {
+    canonicalPath: "candidateFacts.profileCountries",
+    legacyPaths: [],
+    label: "Country",
+    cardinality: "MULTIPLE",
+  },
+  PROFILE_PROFESSIONAL_TITLE: {
+    canonicalPath: "candidateFacts.professionalTitles",
+    legacyPaths: [],
+    label: "Professional title",
+    cardinality: "MULTIPLE",
+  },
   WORK_EXPERIENCE_TEXT: {
     canonicalPath: "candidateFacts.workExperience",
     legacyPaths: ["workExperiences"],

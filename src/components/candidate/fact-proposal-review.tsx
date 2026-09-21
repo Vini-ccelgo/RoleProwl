@@ -61,7 +61,7 @@ export function FactProposalReview({
       setMessage(
         decision === "REJECT"
           ? "Proposal rejected and retained in history."
-          : "Fact accepted into your verified Truth Vault.",
+          : "Fact accepted into your Career Profile.",
       );
       router.refresh();
     } catch (error) {
@@ -81,8 +81,8 @@ export function FactProposalReview({
           Review extracted facts
         </h2>
         <p className="mt-1 text-sm">
-          Accept, correct, or reject each suggestion. Only accepted values
-          become verified facts.
+          Explicit, unambiguous résumé facts are imported automatically. Only
+          uncertain, conflicting, or unsupported interpretations remain here.
         </p>
       </div>
       <p role="status" className="m-0 text-sm">
@@ -144,7 +144,7 @@ export function FactProposalReview({
                   <p className="m-0 text-xs">
                     Destination:{" "}
                     {destination?.label ?? "Unsupported proposal type"}
-                    {destination ? " · Verified résumé facts" : ""}
+                    {destination ? " · Career Profile" : ""}
                   </p>
                   {!proposal.supported && (
                     <p className="m-0 text-xs text-foreground-muted">

@@ -154,16 +154,14 @@ describe("candidate knowledge profile gaps", () => {
     expect(markup).not.toContain(">NOTICE_PERIOD<");
   });
 
-  it("derives actionable status links and guided selector groups from the same coverage", () => {
+  it("keeps guided selector groups while the profile overview owns status navigation", () => {
     const coverage = buildCandidateKnowledgeCoverage({
       evidence: [evidence("TARGET_ROLE", { text: "Security engineer" })],
       now: confirmedAt,
     });
     const target = coverage.find((item) => item.concept === "TARGET_ROLE")!;
     const markup = renderSnapshot({ coverage, currentDetails: [target] });
-    expect(markup).toContain('href="#profile-known"');
-    expect(markup).toContain('href="#profile-recommended"');
-    expect(markup).toContain('href="#profile-optional"');
+    expect(markup).toContain("Additional preferences and application answers");
     expect(markup).toContain('optgroup label="Recommended to complete"');
     expect(markup).toContain('optgroup label="Other reusable details"');
     expect(markup).toContain("Already saved");

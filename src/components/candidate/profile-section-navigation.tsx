@@ -1,37 +1,50 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 
 export const PROFILE_SECTIONS = [
-  { id: "recurring-details", label: "Reusable details" },
-  { id: "details", label: "Identity & contact" },
-  { id: "resume-facts", label: "Résumé evidence" },
-  { id: "experience", label: "Professional history" },
-  { id: "education", label: "Education" },
-  { id: "skills", label: "Skills & languages" },
-  { id: "projects", label: "Projects & credentials" },
-  { id: "authorization", label: "Work authorization" },
-  { id: "preferences", label: "Work preferences" },
+  { id: "overview", label: "Overview" },
+  { id: "personal", label: "Personal" },
+  { id: "experience", label: "Experience" },
+  { id: "education-skills", label: "Education & skills" },
+  { id: "preferences", label: "Preferences" },
+  { id: "application-defaults", label: "Application defaults" },
 ] as const;
 
-function subscribeToHashChange(onStoreChange: () => void) {
-  window.addEventListener("hashchange", onStoreChange);
-  return () => window.removeEventListener("hashchange", onStoreChange);
-}
-
-function getCurrentSection() {
-  const hash = window.location.hash.slice(1);
-  return PROFILE_SECTIONS.some((section) => section.id === hash)
-    ? hash
-    : PROFILE_SECTIONS[0].id;
-}
-
 export function ProfileSectionNavigation() {
-  const currentSection = useSyncExternalStore(
-    subscribeToHashChange,
-    getCurrentSection,
-    () => PROFILE_SECTIONS[0].id,
+  const [currentSection, setCurrentSection] = useState<string>(
+    PROFILE_SECTIONS[0].id,
   );
+
+  useEffect(() => {
+    const updateFromHash = () => {
+      const hash = window.location.hash.slice(1);
+      if (PROFILE_SECTIONS.some((section) => section.id === hash))
+        setCurrentSection(hash);
+    };
+    updateFromHash();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort(
+            (left, right) =>
+              left.boundingClientRect.top - right.boundingClientRect.top,
+          )[0];
+        if (visible?.target.id) setCurrentSection(visible.target.id);
+      },
+      { rootMargin: "-20% 0px -65% 0px", threshold: 0 },
+    );
+    for (const section of PROFILE_SECTIONS) {
+      const element = document.getElementById(section.id);
+      if (element) observer.observe(element);
+    }
+    window.addEventListener("hashchange", updateFromHash);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("hashchange", updateFromHash);
+    };
+  }, []);
 
   return (
     <>
@@ -57,6 +70,7 @@ export function ProfileSectionNavigation() {
           aria-label="Career Profile section"
           value={currentSection}
           onChange={(event) => {
+            setCurrentSection(event.target.value);
             window.location.hash = event.target.value;
           }}
         >

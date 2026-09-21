@@ -25,10 +25,34 @@ describe("RP-032A profile and form contracts", () => {
     expect(markup).toContain('aria-current="location"');
 
     const css = readFileSync("src/app/globals.css", "utf8");
+    const navigation = readFileSync(
+      "src/components/candidate/profile-section-navigation.tsx",
+      "utf8",
+    );
+    const page = readFileSync("src/app/(app)/profile/page.tsx", "utf8");
+    const vaultForm = readFileSync(
+      "src/components/candidate/vault-form.tsx",
+      "utf8",
+    );
     expect(css).toContain("grid-template-columns: 260px minmax(0, 1fr)");
     expect(css).toMatch(/\.app-main \{[\s\S]*?min-width: 0/u);
     expect(css).toMatch(/\.vault-jump-nav \{[\s\S]*?flex-wrap: wrap/u);
     expect(css).not.toMatch(/\.vault-jump-nav \{[\s\S]*?overflow-x: auto/u);
+    expect(css).toMatch(
+      /\.vault-jump-nav \{[\s\S]*?background: var\(--surface\)[\s\S]*?isolation: isolate/u,
+    );
+    expect(css).toMatch(
+      /\.profile-action-queue \{[\s\S]*?grid-template-columns:[\s\S]*?minmax\(0, 1\.25fr\)/u,
+    );
+    expect(navigation).toContain("IntersectionObserver");
+    expect(page).toContain("CandidateProfileOverview");
+    expect(page.indexOf("<CandidateProfileOverview")).toBeLessThan(
+      page.indexOf("<ProfileSectionNavigation"),
+    );
+    expect(vaultForm).toContain("noValidate");
+    expect(vaultForm).toContain('control.setAttribute("aria-invalid", "true")');
+    expect(vaultForm).toContain('control.setAttribute("aria-describedby"');
+    expect(vaultForm).toContain("scrollIntoView");
     expect(css).toMatch(
       /@media \(max-width: 1000px\) \{[\s\S]*?\.vault-jump-nav-desktop \{[\s\S]*?display: none[\s\S]*?\.vault-jump-select \{[\s\S]*?display: grid/u,
     );

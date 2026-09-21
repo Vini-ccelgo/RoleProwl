@@ -242,6 +242,15 @@ export function proposeFactsFromResumeText(
       )?.[1];
       if (location) add("PROFILE_LOCATION", location, line, index, 0.92);
 
+      const country = line.match(/^(?:country|pa[ií]s)\s*:\s*(.+)$/iu)?.[1];
+      if (country) add("PROFILE_COUNTRY", country, line, index, 0.98);
+
+      const professionalTitle = line.match(
+        /^(?:professional\s+title|headline|job\s+title|cargo|t[ií]tulo\s+profissional)\s*:\s*(.+)$/iu,
+      )?.[1];
+      if (professionalTitle)
+        add("PROFILE_PROFESSIONAL_TITLE", professionalTitle, line, index, 0.98);
+
       const labeledName = line.match(
         /^(?:full\s+name|name|nome)\s*:\s*(.+)$/iu,
       )?.[1];

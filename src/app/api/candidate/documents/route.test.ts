@@ -6,6 +6,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_RESUME_BYTES } from "@/core/domain/candidate/resume-import";
 
 const mocks = vi.hoisted(() => ({
+  autoIngestSourceExplicitResumeFacts: vi.fn(async () => ({
+    importedCount: 2,
+    reviewCount: 1,
+  })),
   consumeRateLimit: vi.fn(),
   databaseClient: vi.fn(),
   documentStorage: vi.fn(),
@@ -33,6 +37,10 @@ vi.mock("@/integrations/security/prisma-rate-limiter", () => ({
 }));
 vi.mock("@/integrations/applications/invalidate-application-packets", () => ({
   invalidateReadyApplicationPackets: mocks.invalidateReadyApplicationPackets,
+}));
+vi.mock("@/integrations/candidate/prisma-resume-auto-ingest", () => ({
+  autoIngestSourceExplicitResumeFacts:
+    mocks.autoIngestSourceExplicitResumeFacts,
 }));
 vi.mock("@/lib/db/client", () => ({
   databaseClient: mocks.databaseClient,
@@ -331,7 +339,9 @@ describe("candidate document upload acceptance", () => {
       JSON.stringify({ logs: mocks.logger.log.mock.calls, result }),
     ).toBe(201);
     await expect(response.json()).resolves.toMatchObject({
+      importedCount: 2,
       proposalCount: expect.any(Number),
+      reviewCount: 1,
       status: "EXTRACTED",
     });
     expect([...harness.documents.values()]).toEqual([
@@ -343,6 +353,30 @@ describe("candidate document upload acceptance", () => {
     expect(harness.proposals.length).toBeGreaterThan(0);
     expect(harness.objects.size).toBe(1);
     expect(harness.storage.put).toHaveBeenCalledOnce();
+  });
+
+  it("keeps explicit facts pending for review if auto-ingestion is unavailable", async () => {
+    mocks.autoIngestSourceExplicitResumeFacts.mockRejectedValueOnce(
+      new Error("synthetic auto-ingest failure"),
+    );
+    const response = await POST(
+      uploadRequest({
+        bytes: await textPdf(),
+        fileName: "valid-resume.pdf",
+        mimeType: "application/pdf",
+      }),
+    );
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      importedCount: 0,
+      reviewCount: expect.any(Number),
+      status: "EXTRACTED",
+    });
+    expect(mocks.logger.log).toHaveBeenCalledWith(
+      "warn",
+      "candidate_resume_auto_ingest_failed",
+      expect.objectContaining({ fallback: "PENDING_REVIEW" }),
+    );
   });
 
   it("persists a structurally valid image-only PDF as extraction unsupported", async () => {

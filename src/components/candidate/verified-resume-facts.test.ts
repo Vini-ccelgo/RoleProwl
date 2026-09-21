@@ -39,7 +39,7 @@ describe("verified résumé facts rendering", () => {
     expect(markup).toContain("Save correction");
     expect(markup).toContain("Remove from active facts");
     expect(markup).toContain(
-      "Accepted résumé claims remain linked to their source document",
+      "Source-explicit facts remain linked to their résumé",
     );
     expect(markup).not.toContain("Verified from résumé");
     expect(markup).not.toContain("verified-fact-badge");
@@ -52,6 +52,8 @@ describe("verified résumé facts rendering", () => {
     const markup = renderToStaticMarkup(
       createElement(VerifiedResumeFactsSection, { vault }),
     );
-    expect(markup).toContain("No résumé proposals have been accepted yet.");
+    expect(markup).toContain(
+      "No source-explicit résumé facts are available in this section.",
+    );
   });
 });
